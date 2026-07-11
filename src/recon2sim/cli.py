@@ -7,6 +7,7 @@ from typing import Annotated
 
 import typer
 from pydantic import ValidationError
+
 from recon2sim.adapters import REGISTRY
 from recon2sim.config import load_config
 from recon2sim.ir import SceneIR

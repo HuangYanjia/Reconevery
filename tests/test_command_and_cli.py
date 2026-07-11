@@ -5,11 +5,11 @@ import sys
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 from recon2sim.cli import app
 from recon2sim.config import AdapterConfig, OutputConfig, PipelineConfig, StageConfig
 from recon2sim.pipeline import OutputValidationError, PipelineRunner
-from typer.testing import CliRunner
 
 
 def _command_config(

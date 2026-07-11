@@ -5,6 +5,7 @@ from pathlib import Path, PurePosixPath
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, Field, field_validator
+
 from recon2sim.config import StageConfig
 from recon2sim.ir import StrictModel
 

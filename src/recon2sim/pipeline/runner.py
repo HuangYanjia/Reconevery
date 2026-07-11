@@ -7,6 +7,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 from pydantic import TypeAdapter
+
 from recon2sim.adapters import REGISTRY, ArtifactRecord, OutputSpec
 from recon2sim.adapters.base import Adapter, StageContext
 from recon2sim.config import PipelineConfig

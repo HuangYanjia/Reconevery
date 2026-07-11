@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
+
 from recon2sim.adapters.base import HealthcheckResult, OutputSpec, StageContext, StageResult
 from recon2sim.artifacts import (
     CameraReconstruction,

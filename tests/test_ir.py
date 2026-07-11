@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from pydantic import ValidationError
+
 from recon2sim.artifacts import (
     CameraReconstruction,
     IngestManifest,

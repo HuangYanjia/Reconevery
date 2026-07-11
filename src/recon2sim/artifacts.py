@@ -5,6 +5,7 @@ from pathlib import PurePosixPath
 from typing import Annotated, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
+
 from recon2sim.ir import (
     AssetType,
     CameraIntrinsics,

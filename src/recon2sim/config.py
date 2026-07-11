@@ -6,6 +6,7 @@ from typing import Any, Literal, cast
 
 import yaml
 from pydantic import Field, field_validator
+
 from recon2sim.ir import StrictModel
 
 
