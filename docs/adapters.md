@@ -1,57 +1,123 @@
 # Adapters
 
-Adapters isolate implementation environments from the core package. Phase 0.1 contains only
-deterministic mock adapters plus generic subprocess and future Docker command boundaries. No
-heavyweight reconstruction package is imported or executed.
+Adapters isolate implementation environments from the core package. They expose `name`,
+`version`, `healthcheck`, `prepare`, declared `expected_outputs`, and `run`. The runner validates
+and hashes the union of declared and dynamic outputs inside the current attempt workspace.
 
-## Contract
+Missing files, invalid typed JSON, malformed PNG/OBJ data, conflicting output declarations, and
+zero-return processes that produced no new output all fail the attempt.
 
-An adapter exposes:
+## Real ingest: `ffmpeg_ingest`
 
-- `name` and `version` for signatures and provenance;
-- `healthcheck()`;
-- `prepare(context)`;
-- `expected_outputs(context)` with path, artifact type, media type, source type, validation mode,
-  schema identifier, and optional Pydantic model;
-- `run(context)` with additional dynamic outputs and metrics.
+Input modes are `auto`, `video`, `image_directory`, and an explicit fixture-oriented `mock` mode.
+Auto mode accepts one supported video or a deterministic recursive set of `.jpg`, `.jpeg`, and
+`.png` files; mixed image/video inputs and multiple videos are rejected.
 
-The runner validates and hashes the union of declared and dynamic outputs. Missing files, malformed
-JSON, invalid Scene IR, invalid PNG/OBJ content, and conflicting declarations fail the attempt.
+Video mode checks `ffmpeg -version` and `ffprobe -version`, probes JSON stream metadata, then runs
+an argument-list equivalent of:
 
-## Mock stage contracts
+```text
+ffmpeg -nostdin -hide_banner -loglevel info -n -i <video>
+  -vf fps=<target>[,select=...][,scale=...]
+  -frames:v <max> -start_number 0 -fps_mode vfr
+  <attempt>/raw_frames/frame_%06d.png
+```
 
-| Stage | Reads | Writes |
-| --- | --- | --- |
-| ingest | input PNG directory | typed manifest and copied PNG frames |
-| camera recovery | manifest and frames | typed intrinsics, poses, convention, confidence, provenance |
-| segmentation/tracking | manifest and camera JSON | typed tracks, per-frame boxes, valid PNG masks |
-| global reconstruction | camera JSON | valid floor OBJ and typed metadata |
-| object reconstruction | track JSON | one typed result per track and visual/collision OBJs |
-| Scene IR assembly | all upstream typed artifacts | validated canonical Scene IR |
-| compilation | Scene IR | mock package JSON and derived mesh |
-| validation | Scene IR and package | typed validation report |
-| export | package and validation report | typed export manifest |
+The exact command, detected versions, probe payload, original video SHA-256, and logs are
+retained. `-n` plus a fresh attempt workspace prevents overwrite.
 
-The cabinet reconstruction result contains body and drawer parts in one articulation. There is no
-independent drawer track or object result.
+Image-directory mode uses Pillow only: EXIF orientation is applied, RGB is normalized to PNG,
+aspect ratio is preserved during optional resize, source order is path-sorted, and EXIF capture
+times are used as relative timestamps when available. Unreadable supported files fail with their
+path.
 
-## Command adapters
+Frame QA downsamples grayscale data and computes:
 
-`AdapterConfig.env` is an allowlist; the child receives no other environment variables. Commands
-run in the run directory, with a new process group, configured timeout, and configured retry count.
-Each attempt preserves separate stdout, stderr, and command-result JSON files. Timeout handling
-sends termination to the process group and escalates to kill if necessary.
+- mean brightness;
+- grayscale intensity variance;
+- variance of a discrete Laplacian as a sharpness/blur score;
+- similarity to the last selected frame from 16×16 mean absolute pixel difference;
+- selected/rejected state and an explicit reason.
 
-`AdapterConfig.expected_outputs` declares command output paths and validation modes. A zero return
-code with missing or invalid output is a failed attempt.
+Defaults (`blur_threshold=0`, `duplicate_threshold=0.995`, brightness 5–250) are conservative
+engineering defaults, not universal quality criteria. Tune them per capture. Selected frames go
+to `frames/`; optionally retained rejections go to `diagnostics/rejected_frames/`. The typed
+`inputs/frame_qa.json` covers every extracted candidate; `inputs/manifest.json` lists selected
+frames only.
 
-## Future real adapters
+## COLMAP: `colmap_camera_recovery`
 
-A real adapter must document and test inputs, outputs, schema IDs, command template, environment
-allowlist, timeout, retries, GPU metadata, healthcheck, provenance, coordinate conversion, and
-failure artifacts. It must emit the existing typed contract before any downstream stage accepts
-its work.
+The adapter consumes `inputs/manifest.json` and normalized `frames/*.png`. Core Python does not
+import COLMAP or PyCOLMAP. Local mode invokes the configured executable; Docker mode invokes the
+Docker CLI and explicit mounts.
 
-The first real adapter should be COLMAP camera recovery only: consume `inputs/manifest.json` and
-`frames/*.png`, run out of process, and emit `camera/reconstruction.json`. SAM 3, GenRecon,
-SceneSmith, Blender, and simulator integrations remain later phases.
+The command sequence is:
+
+```text
+colmap -h
+colmap feature_extractor --database_path ... --image_path ...
+  --ImageReader.camera_model <model>
+  --ImageReader.single_camera 0|1
+  --FeatureExtraction.use_gpu 0|1
+colmap sequential_matcher|exhaustive_matcher --database_path ...
+  --FeatureMatching.use_gpu 0|1
+colmap mapper --database_path ... --image_path ... --output_path ...
+  --Mapper.multiple_models 0|1
+```
+
+Sequential matching additionally sets overlap and loop detection. Arguments are lists and are
+never evaluated by a shell. `gpu_flag_style: auto` inspects both subcommand help texts and chooses
+modern `FeatureExtraction`/`FeatureMatching` flags or legacy
+`SiftExtraction`/`SiftMatching` flags. An unknown CLI fails instead of guessing. The provided
+Docker base is from the COLMAP 4.0.4 release period.
+
+The adapter parses `cameras.bin`, `images.bin`, and `points3D.bin` without console scraping.
+Supported camera models are `SIMPLE_PINHOLE`, `PINHOLE`, `SIMPLE_RADIAL`, `RADIAL`, and `OPENCV`;
+all distortion coefficients are retained. Unsupported named models fail after preserving the raw
+attempt. Phase 1 rejects multiple used camera IDs rather than merging incompatible intrinsics.
+
+Sparse models are ranked by registered frames, registration ratio, sparse points, mean track
+length, reprojection error, and stable model ID. Configured minimum count/ratio are enforced.
+Diagnostics record the winner and rejected candidates. Confidence is a documented diagnostic
+score: 55% registration ratio, 20% frame support, 15% sparse-point support, and 10% inverse mean
+reprojection error. It is not a calibrated probability.
+
+Outputs are:
+
+| Path | Contract |
+| --- | --- |
+| `camera/reconstruction.json` | intrinsics/distortion, registered poses, registered/unregistered IDs, confidence, convention, scale, provenance |
+| `camera/diagnostics.json` | model ranking, thresholds, points, ratio, warnings |
+| `camera/colmap/database.db` | raw feature/match database |
+| `camera/colmap/sparse/**` | raw native sparse models |
+| `camera/colmap/logs/**` | stdout/stderr per subcommand |
+| `camera/colmap/workspace_manifest.json` | tool version, exact commands, config, input hashes, selected model |
+
+## Local and Docker healthchecks
+
+`recon2sim adapters healthcheck` actually executes FFmpeg/FFprobe version checks and local
+`colmap -h`. With a Docker-configured pipeline it executes `docker version` and
+`docker image inspect <image>`. Results state available/unavailable, resolved executable/image,
+detected output where possible, and installation/remediation guidance.
+
+Docker runs mount the canonical run directory read-only at `/run` and only the attempt's raw
+workspace writable at `/workspace`. GPU mode adds `--gpus all`; CPU mode does not. The image in
+`docker/colmap/` is optional and contains no data or checkpoints.
+
+## Process and failure behavior
+
+`AdapterConfig.env` is an allowlist; no other parent variables reach a subprocess. Timeout or
+interrupt terminates the process group, escalating to kill after a grace period. Nonzero return,
+timeout, missing database/model, bad frame names, malformed binary records, unsupported cameras,
+low registration, and missing output are actionable failures. The stage manifest records the
+failed COLMAP subcommand when applicable.
+
+Every retry has a new attempt directory. Only fully validated output is promoted, so a failed
+attempt cannot overwrite the prior camera result and a successful no-op cannot reuse stale files.
+
+## Mock downstream contracts
+
+The downstream mock adapters consume real manifests/cameras without pretending their own geometry
+is real. Segmentation emits typed tracks/boxes/masks, global reconstruction emits a valid mock OBJ,
+object reconstruction emits one typed result per track, and Scene IR assembly connects all of
+those artifacts. No SAM 3 or real object/global reconstruction is present in Phase 1.

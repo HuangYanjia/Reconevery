@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
@@ -44,9 +47,17 @@ def _stable_digest(payload: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _directory_snapshot(root: Path) -> list[dict[str, str | int]]:
+def _input_snapshot(root: Path) -> list[dict[str, str | int]]:
+    if root.is_file():
+        return [
+            {
+                "relative_path": root.name,
+                "sha256": _sha256(root),
+                "size_bytes": root.stat().st_size,
+            }
+        ]
     if not root.is_dir():
-        raise FileNotFoundError(f"input directory does not exist or is not a directory: {root}")
+        raise FileNotFoundError(f"input path does not exist or is not readable: {root}")
     return [
         {
             "relative_path": path.relative_to(root).as_posix(),
@@ -147,9 +158,9 @@ class PipelineRunner:
         from_stage: str | None = None,
         until_stage: str | None = None,
     ) -> Manifest:
-        if not self.input_dir.is_dir():
+        if not self.input_dir.exists() or not (self.input_dir.is_dir() or self.input_dir.is_file()):
             raise FileNotFoundError(
-                f"input directory does not exist or is not a directory: {self.input_dir}"
+                f"input path does not exist or is not readable: {self.input_dir}"
             )
         ordered = self.order()
         selected = self.selected(from_stage, until_stage)
@@ -194,7 +205,15 @@ class PipelineRunner:
                 self.logger.info("stage cache hit", extra={"stage": stage_name})
                 continue
 
-            health = adapter.healthcheck()
+            health_context = StageContext(
+                stage_name=stage_name,
+                input_dir=self.input_dir,
+                run_dir=self.run_dir,
+                config=stage_config,
+                seed=self.config.seed,
+                attempt=int(entry.get("attempt_sequence", 0)) + 1,
+            )
+            health = adapter.healthcheck(health_context)
             if not health.ok:
                 raise RuntimeError(
                     f"adapter {adapter.name!r} healthcheck failed for stage "
@@ -266,9 +285,13 @@ class PipelineRunner:
         stage_config = self.config.stages[stage_name]
         total_attempts = stage_config.adapter.retries + 1
         last_error: Exception | None = None
-        for attempt in range(1, total_attempts + 1):
+        attempt_sequence = int(entry.get("attempt_sequence", 0))
+        for retry_index in range(1, total_attempts + 1):
+            attempt_sequence += 1
+            entry["attempt_sequence"] = attempt_sequence
             attempt_entry: dict[str, Any] = {
-                "attempt": attempt,
+                "attempt": attempt_sequence,
+                "retry_index": retry_index,
                 "start_time": _now(),
                 "status": "running",
             }
@@ -281,17 +304,27 @@ class PipelineRunner:
                 run_dir=self.run_dir,
                 config=stage_config,
                 seed=self.config.seed,
-                attempt=attempt,
+                attempt=attempt_sequence,
             )
+            attempt_entry["workspace"] = context.attempt_dir.relative_to(self.run_dir).as_posix()
             try:
+                if context.attempt_dir.exists():
+                    raise RuntimeError(
+                        f"attempt workspace already exists and will not be overwritten: "
+                        f"{context.attempt_dir}"
+                    )
+                context.attempt_dir.mkdir(parents=True)
                 adapter.prepare(context)
                 declared = adapter.expected_outputs(context)
                 result = adapter.run(context)
+                specs = self._unique_output_specs(stage_name, [*declared, *result.outputs])
                 records = self._validate_outputs(
                     stage_name,
                     adapter.name,
-                    [*declared, *result.outputs],
+                    specs,
+                    context.attempt_dir,
                 )
+                self._promote_outputs(stage_name, specs, context.attempt_dir, entry)
                 attempt_entry.update(status="succeeded", end_time=_now(), error=None)
                 self.save_manifest(manifest)
                 return records, result.metrics
@@ -306,9 +339,9 @@ class PipelineRunner:
                 if isinstance(details, dict):
                     attempt_entry["details"] = details
                 self.save_manifest(manifest)
-                if attempt < total_attempts:
+                if retry_index < total_attempts:
                     self.logger.warning(
-                        f"stage attempt {attempt} failed; retrying: {exc}",
+                        f"stage attempt {attempt_sequence} failed; retrying: {exc}",
                         extra={"stage": stage_name},
                     )
         if last_error is None:
@@ -319,33 +352,16 @@ class PipelineRunner:
         self,
         stage_name: str,
         adapter_name: str,
-        specs: list[OutputSpec],
+        specs: dict[str, OutputSpec],
+        output_root: Path,
     ) -> list[ArtifactRecord]:
-        unique_specs: dict[str, OutputSpec] = {}
-        for spec in specs:
-            existing = unique_specs.get(spec.relative_path)
-            if existing is not None and existing != spec:
-                raise OutputValidationError(
-                    f"stage {stage_name!r} declared conflicting metadata for output "
-                    f"{spec.relative_path!r}"
-                )
-            unique_specs[spec.relative_path] = spec
-        if not unique_specs:
-            raise OutputValidationError(
-                f"stage {stage_name!r} declared no outputs; every stage must declare outputs"
-            )
-
         records: list[ArtifactRecord] = []
-        for relative_path, spec in sorted(unique_specs.items()):
-            pure_path = PurePosixPath(relative_path)
-            if pure_path.is_absolute() or ".." in pure_path.parts or relative_path in {"", "."}:
-                raise OutputValidationError(
-                    f"stage {stage_name!r} declared unsafe output path {relative_path!r}"
-                )
-            path = self.run_dir / relative_path
+        for relative_path, spec in sorted(specs.items()):
+            path = output_root / relative_path
             if not path.is_file():
                 raise OutputValidationError(
-                    f"stage {stage_name!r} did not produce required output {relative_path!r}"
+                    f"stage {stage_name!r} did not produce required output {relative_path!r} "
+                    f"in attempt workspace {output_root}"
                 )
             try:
                 self._validate_output_content(path, spec)
@@ -367,6 +383,99 @@ class PipelineRunner:
                 )
             )
         return records
+
+    @staticmethod
+    def _unique_output_specs(stage_name: str, specs: list[OutputSpec]) -> dict[str, OutputSpec]:
+        unique_specs: dict[str, OutputSpec] = {}
+        for spec in specs:
+            existing = unique_specs.get(spec.relative_path)
+            if existing is not None and existing != spec:
+                raise OutputValidationError(
+                    f"stage {stage_name!r} declared conflicting metadata for output "
+                    f"{spec.relative_path!r}"
+                )
+            unique_specs[spec.relative_path] = spec
+        if not unique_specs:
+            raise OutputValidationError(
+                f"stage {stage_name!r} declared no outputs; every stage must declare outputs"
+            )
+
+        for relative_path in unique_specs:
+            pure_path = PurePosixPath(relative_path)
+            if pure_path.is_absolute() or ".." in pure_path.parts or relative_path in {"", "."}:
+                raise OutputValidationError(
+                    f"stage {stage_name!r} declared unsafe output path {relative_path!r}"
+                )
+        return unique_specs
+
+    def _promote_outputs(
+        self,
+        stage_name: str,
+        specs: dict[str, OutputSpec],
+        attempt_dir: Path,
+        entry: StageEntry,
+    ) -> None:
+        new_paths = set(specs)
+        old_paths: set[str] = set()
+        for raw_record in cast(list[dict[str, Any]], entry.get("artifacts", [])):
+            try:
+                record = ArtifactRecord.model_validate(raw_record)
+            except Exception:
+                continue
+            if record.producer_stage == stage_name:
+                old_paths.add(record.relative_path)
+        affected_paths = new_paths | old_paths
+        backup_root = attempt_dir / ".promotion_backup"
+        prepared: dict[str, Path] = {}
+
+        try:
+            for relative_path in sorted(new_paths):
+                source = attempt_dir / relative_path
+                target = self.run_dir / relative_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                fd, temporary = tempfile.mkstemp(
+                    prefix=f".{target.name}.promote.", dir=target.parent
+                )
+                os.close(fd)
+                temporary_path = Path(temporary)
+                shutil.copy2(source, temporary_path)
+                prepared[relative_path] = temporary_path
+
+            for relative_path in sorted(affected_paths):
+                target = self.run_dir / relative_path
+                if target.is_file():
+                    backup = backup_root / relative_path
+                    backup.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(target, backup)
+
+            for relative_path, temporary_path in prepared.items():
+                os.replace(temporary_path, self.run_dir / relative_path)
+            for stale_path in sorted(old_paths - new_paths):
+                (self.run_dir / stale_path).unlink(missing_ok=True)
+        except Exception:
+            for relative_path in sorted(affected_paths):
+                target = self.run_dir / relative_path
+                backup = backup_root / relative_path
+                if backup.is_file():
+                    self._atomic_copy(backup, target)
+                else:
+                    target.unlink(missing_ok=True)
+            raise
+        finally:
+            for temporary_path in prepared.values():
+                temporary_path.unlink(missing_ok=True)
+
+    @staticmethod
+    def _atomic_copy(source: Path, target: Path) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.restore.", dir=target.parent)
+        os.close(fd)
+        temporary_path = Path(temporary)
+        try:
+            shutil.copy2(source, temporary_path)
+            os.replace(temporary_path, target)
+        finally:
+            temporary_path.unlink(missing_ok=True)
 
     @staticmethod
     def _validate_output_content(path: Path, spec: OutputSpec) -> None:
@@ -427,7 +536,7 @@ class PipelineRunner:
             "seed": self.config.seed,
             "input_artifacts": upstream_artifacts,
             "upstream_execution_signatures": upstream_signatures,
-            "source_input_files": _directory_snapshot(self.input_dir)
+            "source_input_files": _input_snapshot(self.input_dir)
             if not stage_config.depends_on
             else [],
         }

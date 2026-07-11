@@ -29,7 +29,11 @@ def _relative_path(value: str) -> str:
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        validate_assignment=True,
+        allow_inf_nan=False,
+    )
 
 
 class AssetType(StrEnum):
@@ -50,6 +54,17 @@ class GeometrySourceType(StrEnum):
     MOCK = "mock"
 
 
+class ScaleStatus(StrEnum):
+    METRIC_SCALE_KNOWN = "metric_scale_known"
+    SCALE_AMBIGUOUS = "scale_ambiguous"
+    EXTERNALLY_SCALED = "externally_scaled"
+
+
+class WorldFrameStatus(StrEnum):
+    RECON2SIM_ALIGNED = "recon2sim_aligned"
+    COLMAP_UNALIGNED = "colmap_unaligned"
+
+
 class RelationType(StrEnum):
     SUPPORTED_BY = "supported_by"
     CONTAINS = "contains"
@@ -63,9 +78,9 @@ class RelationType(StrEnum):
 
 
 class CoordinateConvention(StrictModel):
-    world_axes: Literal["x_forward_y_left_z_up"] = "x_forward_y_left_z_up"
+    world_axes: Literal["x_forward_y_left_z_up", "colmap_arbitrary"] = "x_forward_y_left_z_up"
     handedness: Literal["right"] = "right"
-    units: Literal["meters"] = "meters"
+    units: Literal["meters", "arbitrary_scale"] = "meters"
     quaternion_order: Literal["xyzw"] = "xyzw"
     camera_transform_direction: Literal["world_from_camera"] = "world_from_camera"
 
@@ -119,8 +134,34 @@ class SceneMetadata(StrictModel):
     name: Annotated[str, Field(min_length=1)]
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     coordinate_convention: CoordinateConvention = Field(default_factory=CoordinateConvention)
+    scale_status: ScaleStatus = ScaleStatus.METRIC_SCALE_KNOWN
+    world_frame_status: WorldFrameStatus = WorldFrameStatus.RECON2SIM_ALIGNED
     source: GeometrySourceType
     provenance: list[ProvenanceRecord] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def scale_and_world_labels_are_consistent(self) -> Self:
+        if (
+            self.scale_status is ScaleStatus.SCALE_AMBIGUOUS
+            and self.coordinate_convention.units != "arbitrary_scale"
+        ):
+            raise ValueError("scale_ambiguous scenes must use arbitrary_scale units")
+        if (
+            self.scale_status is not ScaleStatus.SCALE_AMBIGUOUS
+            and self.coordinate_convention.units != "meters"
+        ):
+            raise ValueError("known or externally scaled scenes must use meter units")
+        if (
+            self.world_frame_status is WorldFrameStatus.COLMAP_UNALIGNED
+            and self.coordinate_convention.world_axes != "colmap_arbitrary"
+        ):
+            raise ValueError("colmap_unaligned scenes must use colmap_arbitrary world axes")
+        if (
+            self.world_frame_status is WorldFrameStatus.RECON2SIM_ALIGNED
+            and self.coordinate_convention.world_axes != "x_forward_y_left_z_up"
+        ):
+            raise ValueError("aligned scenes must use x_forward_y_left_z_up world axes")
+        return self
 
 
 class CameraIntrinsics(StrictModel):

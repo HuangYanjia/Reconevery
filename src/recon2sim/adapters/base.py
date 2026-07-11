@@ -65,14 +65,26 @@ class StageContext:
     attempt: int = 1
 
     def path(self, *parts: str) -> Path:
+        """Return a canonical run path for reading committed upstream artifacts."""
         return self.run_dir.joinpath(*parts)
+
+    @property
+    def attempt_dir(self) -> Path:
+        return self.run_dir / "work" / self.stage_name / f"attempt_{self.attempt}"
+
+    def output_path(self, *parts: str) -> Path:
+        """Return an isolated path where the current attempt must write outputs."""
+        return self.attempt_dir.joinpath(*parts)
+
+    def workspace_relative(self, relative_path: str) -> str:
+        return (self.attempt_dir / relative_path).relative_to(self.run_dir).as_posix()
 
 
 class Adapter(Protocol):
     name: str
     version: str
 
-    def healthcheck(self) -> HealthcheckResult: ...
+    def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult: ...
 
     def prepare(self, context: StageContext) -> None: ...
 

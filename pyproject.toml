@@ -1,9 +1,10 @@
 [project]
 name = "recon2sim"
 version = "0.1.0"
-description = "Typed observation-to-simulation pipeline foundation"
+description = "Typed observation-to-simulation pipeline with isolated FFmpeg and COLMAP adapters"
 requires-python = ">=3.12"
 dependencies = [
+  "pillow>=12.2,<13",
   "pydantic>=2.10,<3",
   "pyyaml>=6.0.2,<7",
   "typer>=0.16,<1",
@@ -44,3 +45,9 @@ warn_unreachable = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not integration'"
+markers = [
+  "integration: optional tests that invoke installed external tools",
+  "requires_colmap: requires a local COLMAP executable",
+  "requires_ffmpeg: requires local FFmpeg and FFprobe executables",
+]

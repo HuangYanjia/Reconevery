@@ -1,0 +1,90 @@
+seed: 7
+paths: {}
+stages:
+  ingest:
+    enabled: true
+    adapter:
+      name: ffmpeg_ingest
+      timeout_s: 3600
+      retries: 0
+      env: [PATH, HOME, TMPDIR]
+      config:
+        input_mode: auto
+        target_fps: 3.0
+        max_frames: 300
+        image_format: png
+        resize_max_edge: 1920
+        scene_change_threshold: null
+        blur_threshold: 0.0
+        duplicate_threshold: 0.995
+        min_brightness: 5.0
+        max_brightness: 250.0
+        keep_rejected_frames: true
+    depends_on: []
+  camera_recovery:
+    enabled: true
+    adapter:
+      name: colmap_camera_recovery
+      timeout_s: 14400
+      retries: 0
+      env: [PATH, HOME, TMPDIR, DOCKER_HOST]
+      config:
+        execution_mode: docker
+        docker_executable: docker
+        docker_image: reconevery/colmap:phase1
+        executable: colmap
+        matcher: sequential
+        camera_model: OPENCV
+        single_camera: true
+        use_gpu: false
+        gpu_flag_style: auto
+        min_registered_frames: 8
+        min_registration_ratio: 0.4
+        mapper:
+          multiple_models: true
+        sequential_matcher:
+          overlap: 10
+          loop_detection: false
+    depends_on: [ingest]
+  segmentation_tracking:
+    enabled: true
+    adapter:
+      name: mock_segmentation_tracking
+      config: {source: mock}
+    depends_on: [ingest, camera_recovery]
+  global_reconstruction:
+    enabled: true
+    adapter:
+      name: mock_global_reconstruction
+      config: {source: mock}
+    depends_on: [camera_recovery]
+  object_reconstruction:
+    enabled: true
+    adapter:
+      name: mock_object_reconstruction
+      config: {source: mock}
+    depends_on: [segmentation_tracking]
+  scene_ir_assembly:
+    enabled: true
+    adapter:
+      name: mock_scene_ir_assembly
+      config: {source: mock_downstream_of_colmap}
+    depends_on: [global_reconstruction, object_reconstruction]
+  scene_compilation:
+    enabled: true
+    adapter:
+      name: mock_scene_compiler
+      config: {source: mock}
+    depends_on: [scene_ir_assembly]
+  validation:
+    enabled: true
+    adapter:
+      name: mock_physics_validator
+      config: {source: mock}
+    depends_on: [scene_compilation]
+  export:
+    enabled: true
+    adapter:
+      name: mock_export
+      config: {source: mock}
+    depends_on: [validation]

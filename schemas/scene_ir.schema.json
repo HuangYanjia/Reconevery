@@ -252,14 +252,20 @@
           "type": "string"
         },
         "units": {
-          "const": "meters",
           "default": "meters",
+          "enum": [
+            "meters",
+            "arbitrary_scale"
+          ],
           "title": "Units",
           "type": "string"
         },
         "world_axes": {
-          "const": "x_forward_y_left_z_up",
           "default": "x_forward_y_left_z_up",
+          "enum": [
+            "x_forward_y_left_z_up",
+            "colmap_arbitrary"
+          ],
           "title": "World Axes",
           "type": "string"
         }
@@ -820,6 +826,15 @@
       "title": "RelationType",
       "type": "string"
     },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
     "SceneMetadata": {
       "additionalProperties": false,
       "properties": {
@@ -843,6 +858,10 @@
           "title": "Provenance",
           "type": "array"
         },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
         "scene_id": {
           "minLength": 1,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
@@ -851,6 +870,10 @@
         },
         "source": {
           "$ref": "#/$defs/GeometrySourceType"
+        },
+        "world_frame_status": {
+          "$ref": "#/$defs/WorldFrameStatus",
+          "default": "recon2sim_aligned"
         }
       },
       "required": [
@@ -1051,6 +1074,14 @@
       ],
       "title": "ValidationReport",
       "type": "object"
+    },
+    "WorldFrameStatus": {
+      "enum": [
+        "recon2sim_aligned",
+        "colmap_unaligned"
+      ],
+      "title": "WorldFrameStatus",
+      "type": "string"
     }
   },
   "additionalProperties": false,
