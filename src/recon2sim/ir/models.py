@@ -2,13 +2,34 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from pathlib import PurePosixPath
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+Identifier = Annotated[str, Field(min_length=1, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")]
+ConfidenceScore = Annotated[float, Field(ge=0.0, le=1.0)]
+
+
+def _duplicates(values: list[str]) -> set[str]:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for value in values:
+        if value in seen:
+            duplicates.add(value)
+        seen.add(value)
+    return duplicates
+
+
+def _relative_path(value: str) -> str:
+    path = PurePosixPath(value)
+    if path.is_absolute() or ".." in path.parts or value in {"", "."}:
+        raise ValueError("artifact paths must be non-empty paths relative to the run directory")
+    return value
 
 
 class StrictModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
 class AssetType(StrEnum):
@@ -41,21 +62,45 @@ class RelationType(StrEnum):
     REACHABLE_BY = "reachable_by"
 
 
+class CoordinateConvention(StrictModel):
+    world_axes: Literal["x_forward_y_left_z_up"] = "x_forward_y_left_z_up"
+    handedness: Literal["right"] = "right"
+    units: Literal["meters"] = "meters"
+    quaternion_order: Literal["xyzw"] = "xyzw"
+    camera_transform_direction: Literal["world_from_camera"] = "world_from_camera"
+
+
 class Transform(StrictModel):
     translation_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
     rotation_xyzw: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
     scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
 
+    @field_validator("rotation_xyzw")
+    @classmethod
+    def nonzero_quaternion(
+        cls, value: tuple[float, float, float, float]
+    ) -> tuple[float, float, float, float]:
+        if sum(component * component for component in value) == 0:
+            raise ValueError("rotation quaternion must be non-zero")
+        return value
+
+    @field_validator("scale")
+    @classmethod
+    def positive_scale(cls, value: tuple[float, float, float]) -> tuple[float, float, float]:
+        if any(component <= 0 for component in value):
+            raise ValueError("scale components must be positive")
+        return value
+
 
 class ConfidenceRecord(StrictModel):
-    score: float = Field(ge=0.0, le=1.0)
-    method: str
+    score: ConfidenceScore
+    method: Annotated[str, Field(min_length=1)]
     notes: str | None = None
 
 
 class ProvenanceRecord(StrictModel):
-    adapter_name: str
-    adapter_version: str | None = None
+    adapter_name: Annotated[str, Field(min_length=1)]
+    adapter_version: Annotated[str, Field(min_length=1)]
     configuration: dict[str, Any] = Field(default_factory=dict)
     input_artifact_paths: list[str] = Field(default_factory=list)
     output_artifact_paths: list[str] = Field(default_factory=list)
@@ -63,12 +108,17 @@ class ProvenanceRecord(StrictModel):
     confidence: ConfidenceRecord
     source: GeometrySourceType
 
+    @field_validator("input_artifact_paths", "output_artifact_paths")
+    @classmethod
+    def relative_artifact_paths(cls, values: list[str]) -> list[str]:
+        return [_relative_path(value) for value in values]
+
 
 class SceneMetadata(StrictModel):
-    scene_id: str
-    name: str
+    scene_id: Identifier
+    name: Annotated[str, Field(min_length=1)]
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    units: Literal["meters"] = "meters"
+    coordinate_convention: CoordinateConvention = Field(default_factory=CoordinateConvention)
     source: GeometrySourceType
     provenance: list[ProvenanceRecord] = Field(default_factory=list)
 
@@ -78,64 +128,118 @@ class CameraIntrinsics(StrictModel):
     height: int = Field(gt=0)
     fx: float = Field(gt=0)
     fy: float = Field(gt=0)
-    cx: float
-    cy: float
+    cx: float = Field(ge=0)
+    cy: float = Field(ge=0)
     distortion: list[float] = Field(default_factory=list)
 
 
 class CameraPose(StrictModel):
-    frame_id: str
+    frame_id: Identifier
     transform_world_from_camera: Transform
     confidence: ConfidenceRecord
 
 
 class Camera(StrictModel):
-    camera_id: str
-    model: str
+    camera_id: Identifier
+    model: Annotated[str, Field(min_length=1)]
     intrinsics: CameraIntrinsics
     poses: list[CameraPose] = Field(default_factory=list)
     provenance: ProvenanceRecord
 
+    @model_validator(mode="after")
+    def unique_pose_frames(self) -> Self:
+        duplicates = _duplicates([pose.frame_id for pose in self.poses])
+        if duplicates:
+            raise ValueError(
+                f"camera {self.camera_id!r} has duplicate pose frames: {sorted(duplicates)}"
+            )
+        return self
+
 
 class ObjectObservation(StrictModel):
-    object_id: str
-    frame_id: str
+    object_id: Identifier
+    frame_id: Identifier
     bbox_xywh: tuple[int, int, int, int]
-    mask_path: str | None = None
+    mask_path: str
     confidence: ConfidenceRecord
+
+    @field_validator("bbox_xywh")
+    @classmethod
+    def valid_bbox(cls, value: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+        x, y, width, height = value
+        if x < 0 or y < 0 or width <= 0 or height <= 0:
+            raise ValueError("bounding boxes require non-negative origins and positive dimensions")
+        return value
+
+    @field_validator("mask_path")
+    @classmethod
+    def relative_mask_path(cls, value: str) -> str:
+        return _relative_path(value)
 
 
 class FrameObservation(StrictModel):
-    frame_id: str
+    frame_id: Identifier
     frame_path: str
-    timestamp_s: float
-    camera_id: str
+    timestamp_s: float = Field(ge=0)
+    camera_id: Identifier
     observations: list[ObjectObservation] = Field(default_factory=list)
+
+    @field_validator("frame_path")
+    @classmethod
+    def relative_frame_path(cls, value: str) -> str:
+        return _relative_path(value)
+
+    @model_validator(mode="after")
+    def observations_match_frame(self) -> Self:
+        mismatches = [obs.frame_id for obs in self.observations if obs.frame_id != self.frame_id]
+        if mismatches:
+            raise ValueError(f"observations must refer to frame {self.frame_id!r}")
+        return self
 
 
 class GeometryAsset(StrictModel):
-    asset_id: str
+    asset_id: Identifier
     asset_type: AssetType
     uri: str
-    format: str
+    format: Literal["obj", "glb", "ply"]
     source: GeometrySourceType
     provenance: ProvenanceRecord
+
+    @field_validator("uri")
+    @classmethod
+    def relative_uri(cls, value: str) -> str:
+        return _relative_path(value)
 
 
 class MaterialAsset(StrictModel):
-    material_id: str
-    name: str
-    base_color_rgba: tuple[float, float, float, float]
+    asset_id: Identifier
+    name: Annotated[str, Field(min_length=1)]
+    base_color_rgba: tuple[
+        Annotated[float, Field(ge=0, le=1)],
+        Annotated[float, Field(ge=0, le=1)],
+        Annotated[float, Field(ge=0, le=1)],
+        Annotated[float, Field(ge=0, le=1)],
+    ]
     uri: str | None = None
     provenance: ProvenanceRecord
 
+    @field_validator("uri")
+    @classmethod
+    def relative_optional_uri(cls, value: str | None) -> str | None:
+        return _relative_path(value) if value is not None else None
+
 
 class CollisionAsset(StrictModel):
-    collision_id: str
+    asset_id: Identifier
     uri: str
-    format: str
+    format: Literal["obj", "glb", "ply"]
     source: GeometrySourceType
     provenance: ProvenanceRecord
+
+    @field_validator("uri")
+    @classmethod
+    def relative_uri(cls, value: str) -> str:
+        return _relative_path(value)
 
 
 class PhysicsProperties(StrictModel):
@@ -146,65 +250,111 @@ class PhysicsProperties(StrictModel):
 
 
 class Link(StrictModel):
-    link_id: str
-    name: str
+    link_id: Identifier
+    name: Annotated[str, Field(min_length=1)]
     transform: Transform = Field(default_factory=Transform)
-    geometry_asset_ids: list[str] = Field(default_factory=list)
+    geometry_asset_ids: list[Identifier] = Field(default_factory=list)
+    material_asset_ids: list[Identifier] = Field(default_factory=list)
+    collision_asset_ids: list[Identifier] = Field(default_factory=list)
 
 
 class Joint(StrictModel):
-    joint_id: str
-    parent_link_id: str
-    child_link_id: str
+    joint_id: Identifier
+    parent_link_id: Identifier
+    child_link_id: Identifier
     joint_type: Literal["fixed", "revolute", "prismatic"]
     axis_xyz: tuple[float, float, float] = (1.0, 0.0, 0.0)
     limits: tuple[float, float] | None = None
 
+    @field_validator("axis_xyz")
+    @classmethod
+    def nonzero_axis(cls, value: tuple[float, float, float]) -> tuple[float, float, float]:
+        if all(component == 0 for component in value):
+            raise ValueError("joint axis must be non-zero")
+        return value
+
+    @field_validator("limits")
+    @classmethod
+    def ordered_limits(cls, value: tuple[float, float] | None) -> tuple[float, float] | None:
+        if value is not None and value[0] > value[1]:
+            raise ValueError("joint limits must be ordered lower, upper")
+        return value
+
 
 class Articulation(StrictModel):
-    articulation_id: str
-    links: list[Link]
-    joints: list[Joint]
+    articulation_id: Identifier
+    links: Annotated[list[Link], Field(min_length=1)]
+    joints: list[Joint] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def valid_link_graph(self) -> Self:
+        link_ids = [link.link_id for link in self.links]
+        duplicate_links = _duplicates(link_ids)
+        duplicate_joints = _duplicates([joint.joint_id for joint in self.joints])
+        if duplicate_links:
+            raise ValueError(f"duplicate articulation link IDs: {sorted(duplicate_links)}")
+        if duplicate_joints:
+            raise ValueError(f"duplicate articulation joint IDs: {sorted(duplicate_joints)}")
+        known_links = set(link_ids)
+        for joint in self.joints:
+            missing = {joint.parent_link_id, joint.child_link_id} - known_links
+            if missing:
+                raise ValueError(
+                    f"joint {joint.joint_id!r} references unknown links: {sorted(missing)}"
+                )
+            if joint.parent_link_id == joint.child_link_id:
+                raise ValueError(f"joint {joint.joint_id!r} cannot connect a link to itself")
+        return self
 
 
 class ObjectInstance(StrictModel):
-    object_id: str
-    name: str
+    object_id: Identifier
+    name: Annotated[str, Field(min_length=1)]
     asset_type: AssetType
     transform: Transform = Field(default_factory=Transform)
-    geometry_asset_ids: list[str] = Field(default_factory=list)
-    material_asset_ids: list[str] = Field(default_factory=list)
-    collision_asset_ids: list[str] = Field(default_factory=list)
+    geometry_asset_ids: list[Identifier] = Field(default_factory=list)
+    material_asset_ids: list[Identifier] = Field(default_factory=list)
+    collision_asset_ids: list[Identifier] = Field(default_factory=list)
     physics: PhysicsProperties = Field(default_factory=PhysicsProperties)
     articulation: Articulation | None = None
     provenance: list[ProvenanceRecord] = Field(default_factory=list)
     confidence: ConfidenceRecord
 
+    @model_validator(mode="after")
+    def articulation_matches_type(self) -> Self:
+        if self.asset_type is AssetType.ARTICULATED and self.articulation is None:
+            raise ValueError(f"articulated object {self.object_id!r} must contain an articulation")
+        if self.asset_type is not AssetType.ARTICULATED and self.articulation is not None:
+            raise ValueError(
+                f"non-articulated object {self.object_id!r} must not contain an articulation"
+            )
+        return self
+
 
 class SceneRelation(StrictModel):
     relation_type: RelationType
-    subject_id: str
-    object_id: str
+    subject_id: Identifier
+    object_id: Identifier
     confidence: ConfidenceRecord
     provenance: ProvenanceRecord
 
 
 class ValidationIssue(StrictModel):
     severity: Literal["info", "warning", "error"]
-    code: str
-    message: str
-    object_id: str | None = None
+    code: Identifier
+    message: Annotated[str, Field(min_length=1)]
+    object_id: Identifier | None = None
 
 
 class ValidationReport(StrictModel):
-    scene_id: str
+    scene_id: Identifier
     passed: bool
     issues: list[ValidationIssue] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class SceneIR(StrictModel):
-    schema_version: str = "0.1.0"
+    schema_version: Literal["0.1.0"] = "0.1.0"
     metadata: SceneMetadata
     cameras: list[Camera] = Field(default_factory=list)
     frames: list[FrameObservation] = Field(default_factory=list)
@@ -215,10 +365,119 @@ class SceneIR(StrictModel):
     relations: list[SceneRelation] = Field(default_factory=list)
     validation: ValidationReport | None = None
 
-    @field_validator("objects")
-    @classmethod
-    def unique_objects(cls, objects: list[ObjectInstance]) -> list[ObjectInstance]:
-        ids = [obj.object_id for obj in objects]
-        if len(ids) != len(set(ids)):
-            raise ValueError("object_id values must be unique")
-        return objects
+    @model_validator(mode="after")
+    def validate_references(self) -> Self:
+        object_ids = [obj.object_id for obj in self.objects]
+        camera_ids = [camera.camera_id for camera in self.cameras]
+        frame_ids = [frame.frame_id for frame in self.frames]
+        asset_ids = [asset.asset_id for asset in self.geometry_assets]
+        asset_ids += [asset.asset_id for asset in self.material_assets]
+        asset_ids += [asset.asset_id for asset in self.collision_assets]
+        link_ids = [
+            link.link_id
+            for obj in self.objects
+            if obj.articulation is not None
+            for link in obj.articulation.links
+        ]
+        joint_ids = [
+            joint.joint_id
+            for obj in self.objects
+            if obj.articulation is not None
+            for joint in obj.articulation.joints
+        ]
+
+        for label, values in (
+            ("object", object_ids),
+            ("camera", camera_ids),
+            ("frame", frame_ids),
+            ("asset", asset_ids),
+            ("articulation link", link_ids),
+            ("articulation joint", joint_ids),
+        ):
+            duplicates = _duplicates(values)
+            if duplicates:
+                raise ValueError(f"duplicate {label} IDs: {sorted(duplicates)}")
+
+        known_objects = set(object_ids)
+        known_cameras = set(camera_ids)
+        known_frames = set(frame_ids)
+        geometry_ids = {asset.asset_id for asset in self.geometry_assets}
+        material_ids = {asset.asset_id for asset in self.material_assets}
+        collision_ids = {asset.asset_id for asset in self.collision_assets}
+
+        for obj in self.objects:
+            self._check_asset_references(
+                f"object {obj.object_id!r}",
+                obj.geometry_asset_ids,
+                obj.material_asset_ids,
+                obj.collision_asset_ids,
+                geometry_ids,
+                material_ids,
+                collision_ids,
+            )
+            if obj.articulation is not None:
+                for link in obj.articulation.links:
+                    self._check_asset_references(
+                        f"link {link.link_id!r}",
+                        link.geometry_asset_ids,
+                        link.material_asset_ids,
+                        link.collision_asset_ids,
+                        geometry_ids,
+                        material_ids,
+                        collision_ids,
+                    )
+
+        for relation in self.relations:
+            missing = {relation.subject_id, relation.object_id} - known_objects
+            if missing:
+                raise ValueError(
+                    f"relation {relation.relation_type.value!r} references unknown objects: "
+                    f"{sorted(missing)}"
+                )
+
+        for frame in self.frames:
+            if frame.camera_id not in known_cameras:
+                raise ValueError(
+                    f"frame {frame.frame_id!r} references unknown camera {frame.camera_id!r}"
+                )
+            missing_objects = {obs.object_id for obs in frame.observations} - known_objects
+            if missing_objects:
+                raise ValueError(
+                    f"frame {frame.frame_id!r} references unknown objects: "
+                    f"{sorted(missing_objects)}"
+                )
+
+        for camera in self.cameras:
+            missing_pose_frames = {pose.frame_id for pose in camera.poses} - known_frames
+            if missing_pose_frames:
+                raise ValueError(
+                    f"camera {camera.camera_id!r} has poses for unknown frames: "
+                    f"{sorted(missing_pose_frames)}"
+                )
+        return self
+
+    @staticmethod
+    def _check_asset_references(
+        owner: str,
+        geometry_references: list[str],
+        material_references: list[str],
+        collision_references: list[str],
+        geometry_ids: set[str],
+        material_ids: set[str],
+        collision_ids: set[str],
+    ) -> None:
+        missing_geometry = set(geometry_references) - geometry_ids
+        missing_material = set(material_references) - material_ids
+        missing_collision = set(collision_references) - collision_ids
+        if missing_geometry:
+            raise ValueError(
+                f"{owner} references unknown geometry assets: {sorted(missing_geometry)}"
+            )
+        if missing_material:
+            raise ValueError(
+                f"{owner} references unknown material assets: {sorted(missing_material)}"
+            )
+        if missing_collision:
+            raise ValueError(
+                f"{owner} references unknown collision assets: {sorted(missing_collision)}"
+            )

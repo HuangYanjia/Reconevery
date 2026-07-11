@@ -6,13 +6,20 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from pydantic import ValidationError
 from recon2sim.adapters import REGISTRY
 from recon2sim.config import load_config
 from recon2sim.ir import SceneIR
-from recon2sim.pipeline import PipelineRunner
+from recon2sim.pipeline import PipelineConfigurationError, PipelineRunner
 
-app = typer.Typer(help="Recon2Sim Phase 0 observation-to-simulation CLI.")
-adapters_app = typer.Typer(help="Inspect configured adapter implementations.")
+app = typer.Typer(
+    help="Recon2Sim typed observation-to-simulation pipeline.",
+    no_args_is_help=True,
+)
+adapters_app = typer.Typer(
+    help="Inspect configured adapter implementations.",
+    no_args_is_help=True,
+)
 app.add_typer(adapters_app, name="adapters")
 
 
@@ -26,23 +33,61 @@ def init(
 
 @app.command()
 def run(
-    input: Annotated[Path, typer.Option("--input", help="Input observation directory.")],
-    config: Annotated[Path, typer.Option("--config", help="Pipeline YAML config.")],
+    input_dir: Annotated[
+        Path,
+        typer.Option(
+            "--input",
+            help="Input observation directory.",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+            readable=True,
+        ),
+    ],
+    config_path: Annotated[
+        Path,
+        typer.Option(
+            "--config",
+            help="Pipeline YAML config.",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
     run_dir: Annotated[Path, typer.Option("--run-dir", help="Run output directory.")],
     resume: Annotated[
-        bool, typer.Option(help="Skip successful stages with matching signatures.")
+        bool,
+        typer.Option(help="Reuse successful stages whose signatures and outputs still match."),
     ] = False,
-    from_stage: Annotated[str | None, typer.Option(help="First stage to run.")] = None,
-    until_stage: Annotated[str | None, typer.Option(help="Last stage to run.")] = None,
+    from_stage: Annotated[
+        str | None,
+        typer.Option("--from-stage", help="First stage to execute."),
+    ] = None,
+    until_stage: Annotated[
+        str | None,
+        typer.Option("--until-stage", help="Last stage to execute."),
+    ] = None,
 ) -> None:
-    manifest = PipelineRunner(load_config(config), input, run_dir).run(
-        resume=resume, from_stage=from_stage, until_stage=until_stage
-    )
+    try:
+        manifest = PipelineRunner(load_config(config_path), input_dir, run_dir).run(
+            resume=resume,
+            from_stage=from_stage,
+            until_stage=until_stage,
+        )
+    except (FileNotFoundError, PipelineConfigurationError, ValidationError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
     typer.echo(
         json.dumps(
             {
                 "run_dir": str(run_dir),
-                "stages": {k: v["status"] for k, v in manifest["stages"].items()},
+                "stages": {
+                    name: {
+                        "status": entry["status"],
+                        "last_execution": entry.get("last_execution"),
+                    }
+                    for name, entry in manifest["stages"].items()
+                },
             },
             indent=2,
         )
@@ -50,25 +95,64 @@ def run(
 
 
 @app.command()
-def status(run_dir: Path) -> None:
-    typer.echo((run_dir / "manifest.json").read_text())
+def status(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Existing run directory.",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+        ),
+    ],
+) -> None:
+    manifest_path = run_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise typer.BadParameter(f"run manifest does not exist: {manifest_path}")
+    typer.echo(manifest_path.read_text(encoding="utf-8"))
 
 
 @app.command("validate-ir")
-def validate_ir(path: Path) -> None:
-    scene = SceneIR.model_validate_json(path.read_text())
+def validate_ir(
+    path: Annotated[
+        Path,
+        typer.Argument(
+            help="Scene IR JSON file.",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ],
+) -> None:
+    try:
+        scene = SceneIR.model_validate_json(path.read_text(encoding="utf-8"))
+    except ValidationError as exc:
+        raise typer.BadParameter(f"invalid Scene IR {path}: {exc}") from exc
     typer.echo(f"valid Scene IR: {scene.metadata.scene_id} ({len(scene.objects)} objects)")
 
 
 @app.command()
-def inspect(run_dir: Path) -> None:
+def inspect(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Existing run directory.",
+            exists=True,
+            file_okay=False,
+            dir_okay=True,
+        ),
+    ],
+) -> None:
     scene_path = run_dir / "scene_ir" / "scene.json"
-    scene = SceneIR.model_validate_json(scene_path.read_text())
+    if not scene_path.is_file():
+        raise typer.BadParameter(f"Scene IR does not exist: {scene_path}")
+    scene = SceneIR.model_validate_json(scene_path.read_text(encoding="utf-8"))
     typer.echo(
         json.dumps(
             {
                 "scene_id": scene.metadata.scene_id,
-                "objects": [o.object_id for o in scene.objects],
+                "objects": [obj.object_id for obj in scene.objects],
                 "relations": len(scene.relations),
             },
             indent=2,
@@ -78,11 +162,17 @@ def inspect(run_dir: Path) -> None:
 
 @app.command()
 def clean(
-    run_dir: Path, force: bool = typer.Option(False, help="Required to delete the run directory.")
+    run_dir: Annotated[Path, typer.Argument(help="Run directory to delete.")],
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Required to delete the run directory."),
+    ] = False,
 ) -> None:
     if not force:
         raise typer.BadParameter("Pass --force to delete a run directory.")
-    shutil.rmtree(run_dir, ignore_errors=True)
+    if not run_dir.is_dir():
+        raise typer.BadParameter(f"run directory does not exist: {run_dir}")
+    shutil.rmtree(run_dir)
     typer.echo(f"deleted {run_dir}")
 
 
@@ -94,46 +184,6 @@ def list_adapters() -> None:
 
 @adapters_app.command("healthcheck")
 def healthcheck() -> None:
-    for name, cls in sorted(REGISTRY.items()):
-        result = cls().healthcheck()
+    for name, adapter_class in sorted(REGISTRY.items()):
+        result = adapter_class().healthcheck()
         typer.echo(f"{name}: {'ok' if result.ok else 'fail'} - {result.message}")
-
-
-def main() -> None:
-    import sys
-    from pathlib import Path as _Path
-
-    args = sys.argv[1:]
-    if not args:
-        typer.echo("Recon2Sim CLI")
-        return
-    if args[0] == "adapters":
-        group = app.groups["adapters"]
-        fn = group.commands[args[1]]
-        fn()
-        return
-    cmd = args[0]
-    rest = args[1:]
-    kwargs = {}
-    pos = []
-    i = 0
-    while i < len(rest):
-        if rest[i].startswith("--"):
-            key = rest[i][2:].replace("-", "_")
-            if i + 1 < len(rest) and not rest[i + 1].startswith("--"):
-                val = rest[i + 1]
-                kwargs[key] = (
-                    _Path(val) if key in {"input", "config", "run_dir"} or "/" in val else val
-                )
-                i += 2
-            else:
-                kwargs[key] = True
-                i += 1
-        else:
-            pos.append(_Path(rest[i]))
-            i += 1
-    app.commands[cmd](*pos, **kwargs)
-
-
-if __name__ == "__main__":
-    main()

@@ -1,24 +1,42 @@
 [project]
 name = "recon2sim"
 version = "0.1.0"
-description = "Phase 0 observation-to-simulation pipeline"
+description = "Typed observation-to-simulation pipeline foundation"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "pydantic>=2.10,<3",
+  "pyyaml>=6.0.2,<7",
+  "typer>=0.16,<1",
+]
+
 [project.scripts]
 recon2sim = "recon2sim.cli:app"
+
 [build-system]
-requires = []
-build-backend = "build_backend"
-backend-path = ["."]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.15,<2",
+  "pytest>=8.3,<9",
+  "ruff>=0.11,<1",
+  "types-pyyaml>=6.0.12.20241230",
+]
+
 [tool.ruff]
 line-length = 100
+target-version = "py312"
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-ignore = ["E501", "E701", "E702", "B017", "F401", "F403", "F405"]
+
 [tool.mypy]
 python_version = "3.12"
-strict = false
-ignore_errors = true
-warn_unused_ignores = false
+strict = true
+files = ["src"]
+show_error_codes = true
+warn_unreachable = true
+
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+testpaths = ["tests"]
