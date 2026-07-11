@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import PurePosixPath
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 
@@ -14,7 +14,9 @@ from recon2sim.ir import (
     CoordinateConvention,
     PhysicsProperties,
     ProvenanceRecord,
+    ScaleStatus,
     StrictModel,
+    WorldFrameStatus,
 )
 
 
@@ -25,7 +27,16 @@ def _relative_artifact_path(value: str) -> str:
     return value
 
 
+def _relative_source_reference(value: str) -> str:
+    path = PurePosixPath(value)
+    if path.is_absolute() or ".." in path.parts or value == "":
+        raise ValueError("source references must be relative to the configured input path")
+    return value
+
+
 class InputSourceType(StrEnum):
+    MOCK = "mock"
+    VIDEO = "video"
     GENERATED_TEST_IMAGE = "generated_test_image"
     IMAGE_DIRECTORY = "image_directory"
 
@@ -38,17 +49,46 @@ class FrameManifestEntry(StrictModel):
     height: int = Field(gt=0)
     timestamp_s: float = Field(ge=0)
     source_type: InputSourceType
+    source_file_reference: str | None = None
+    original_frame_index: int | None = Field(default=None, ge=0)
 
     @field_validator("relative_path")
     @classmethod
     def validate_relative_path(cls, value: str) -> str:
         return _relative_artifact_path(value)
 
+    @field_validator("source_file_reference")
+    @classmethod
+    def validate_source_reference(cls, value: str | None) -> str | None:
+        return _relative_source_reference(value) if value is not None else None
+
 
 class IngestManifest(StrictModel):
     source_type: InputSourceType
     frames: Annotated[list[FrameManifestEntry], Field(min_length=1)]
+    source_input_reference: str | None = None
+    source_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    ffmpeg_version: str | None = None
+    ffprobe_version: str | None = None
+    extraction_configuration: dict[str, Any] = Field(default_factory=dict)
+    total_decoded_frames: int | None = Field(default=None, ge=0)
+    selected_frames: int | None = Field(default=None, ge=0)
+    dropped_frames: int | None = Field(default=None, ge=0)
+    output_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]] = Field(
+        default_factory=dict
+    )
+    frame_qa_path: str | None = None
     provenance: ProvenanceRecord
+
+    @field_validator("frame_qa_path")
+    @classmethod
+    def validate_optional_artifact_path(cls, value: str | None) -> str | None:
+        return _relative_artifact_path(value) if value is not None else None
+
+    @field_validator("source_input_reference")
+    @classmethod
+    def validate_input_reference(cls, value: str | None) -> str | None:
+        return _relative_source_reference(value) if value is not None else None
 
     @model_validator(mode="after")
     def unique_frames(self) -> Self:
@@ -58,17 +98,205 @@ class IngestManifest(StrictModel):
             raise ValueError("ingest frame IDs must be unique")
         if len(paths) != len(set(paths)):
             raise ValueError("ingest frame paths must be unique")
+        if self.selected_frames is not None and self.selected_frames != len(self.frames):
+            raise ValueError("selected_frames must equal the normalized manifest frame count")
+        if (
+            self.total_decoded_frames is not None
+            and self.selected_frames is not None
+            and self.dropped_frames is not None
+            and self.total_decoded_frames != self.selected_frames + self.dropped_frames
+        ):
+            raise ValueError("decoded frame count must equal selected plus dropped frames")
+        if self.output_hashes and self.output_hashes != {
+            frame.relative_path: frame.sha256 for frame in self.frames
+        }:
+            raise ValueError("ingest output hashes must exactly match normalized frame entries")
         return self
 
 
 class CameraReconstruction(StrictModel):
     camera_id: Annotated[str, Field(min_length=1)]
-    model: Literal["pinhole"] = "pinhole"
+    model: Annotated[str, Field(min_length=1)] = "pinhole"
     intrinsics: CameraIntrinsics
     poses: Annotated[list[CameraPose], Field(min_length=1)]
+    registered_frame_ids: list[str] = Field(default_factory=list)
+    unregistered_frame_ids: list[str] = Field(default_factory=list)
     confidence: ConfidenceRecord
     coordinate_convention: CoordinateConvention
+    scale_status: ScaleStatus = ScaleStatus.METRIC_SCALE_KNOWN
+    world_frame_status: WorldFrameStatus = WorldFrameStatus.RECON2SIM_ALIGNED
     provenance: ProvenanceRecord
+
+    @model_validator(mode="before")
+    @classmethod
+    def default_legacy_registration_ids(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "registered_frame_ids" in value:
+            return value
+        payload = dict(value)
+        frame_ids: list[str] = []
+        raw_poses = payload.get("poses", [])
+        if isinstance(raw_poses, list):
+            for pose in raw_poses:
+                if isinstance(pose, CameraPose):
+                    frame_ids.append(pose.frame_id)
+                elif isinstance(pose, dict) and isinstance(pose.get("frame_id"), str):
+                    frame_ids.append(pose["frame_id"])
+        payload["registered_frame_ids"] = frame_ids
+        return payload
+
+    @model_validator(mode="after")
+    def frame_registration_is_consistent(self) -> Self:
+        pose_ids = [pose.frame_id for pose in self.poses]
+        if len(pose_ids) != len(set(pose_ids)):
+            raise ValueError("camera pose frame IDs must be unique")
+        if len(self.registered_frame_ids) != len(set(self.registered_frame_ids)):
+            raise ValueError("registered frame IDs must be unique")
+        if len(self.unregistered_frame_ids) != len(set(self.unregistered_frame_ids)):
+            raise ValueError("unregistered frame IDs must be unique")
+        if set(self.registered_frame_ids) != set(pose_ids):
+            raise ValueError("registered frame IDs must exactly match camera pose frame IDs")
+        overlap = set(self.registered_frame_ids) & set(self.unregistered_frame_ids)
+        if overlap:
+            raise ValueError(
+                f"frames cannot be both registered and unregistered: {sorted(overlap)}"
+            )
+        if (
+            self.scale_status is ScaleStatus.SCALE_AMBIGUOUS
+            and self.coordinate_convention.units != "arbitrary_scale"
+        ):
+            raise ValueError("scale_ambiguous cameras must use arbitrary_scale units")
+        if (
+            self.scale_status is not ScaleStatus.SCALE_AMBIGUOUS
+            and self.coordinate_convention.units != "meters"
+        ):
+            raise ValueError("known or externally scaled cameras must use meter units")
+        if (
+            self.world_frame_status is WorldFrameStatus.COLMAP_UNALIGNED
+            and self.coordinate_convention.world_axes != "colmap_arbitrary"
+        ):
+            raise ValueError("colmap_unaligned cameras must use colmap_arbitrary world axes")
+        if (
+            self.world_frame_status is WorldFrameStatus.RECON2SIM_ALIGNED
+            and self.coordinate_convention.world_axes != "x_forward_y_left_z_up"
+        ):
+            raise ValueError("aligned cameras must use x_forward_y_left_z_up world axes")
+        return self
+
+
+class FrameQualityEntry(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    source_file_reference: Annotated[str, Field(min_length=1)]
+    normalized_path: str | None = None
+    rejected_path: str | None = None
+    original_frame_index: int = Field(ge=0)
+    blur_score: float = Field(ge=0)
+    mean_brightness: float = Field(ge=0, le=255)
+    intensity_variance: float = Field(ge=0)
+    duplicate_score: float | None = Field(default=None, ge=0, le=1)
+    is_duplicate: bool
+    selected: bool
+    rejection_reason: str | None = None
+
+    @field_validator("source_file_reference")
+    @classmethod
+    def validate_source_path(cls, value: str) -> str:
+        return _relative_source_reference(value)
+
+    @field_validator("normalized_path", "rejected_path")
+    @classmethod
+    def validate_output_paths(cls, value: str | None) -> str | None:
+        return _relative_artifact_path(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def selection_has_consistent_paths(self) -> Self:
+        if self.selected and self.normalized_path is None:
+            raise ValueError("selected frame QA entries require normalized_path")
+        if self.selected and self.rejection_reason is not None:
+            raise ValueError("selected frame QA entries cannot have a rejection reason")
+        if not self.selected and self.rejection_reason is None:
+            raise ValueError("rejected frame QA entries require a rejection reason")
+        return self
+
+
+class FrameQualityReport(StrictModel):
+    method: Literal["cpu_grayscale_statistics_v1"] = "cpu_grayscale_statistics_v1"
+    thresholds: dict[str, float | bool]
+    entries: Annotated[list[FrameQualityEntry], Field(min_length=1)]
+    selected_count: int = Field(ge=0)
+    dropped_count: int = Field(ge=0)
+    provenance: ProvenanceRecord
+
+    @model_validator(mode="after")
+    def counts_match_entries(self) -> Self:
+        selected = sum(entry.selected for entry in self.entries)
+        if selected != self.selected_count or len(self.entries) - selected != self.dropped_count:
+            raise ValueError("frame QA counts must match entry selection status")
+        frame_ids = [entry.frame_id for entry in self.entries]
+        original_indices = [entry.original_frame_index for entry in self.entries]
+        if len(frame_ids) != len(set(frame_ids)):
+            raise ValueError("frame QA frame IDs must be unique")
+        if len(original_indices) != len(set(original_indices)):
+            raise ValueError("frame QA original indices must be unique")
+        return self
+
+
+class ColmapModelDiagnostic(StrictModel):
+    model_id: Annotated[str, Field(min_length=1)]
+    registered_frames: int = Field(ge=0)
+    registration_ratio: float = Field(ge=0, le=1)
+    sparse_points: int = Field(ge=0)
+    mean_track_length: float = Field(ge=0)
+    mean_reprojection_error: float | None = Field(default=None, ge=0)
+    selected: bool = False
+    rejection_reason: str | None = None
+
+
+class CameraDiagnostics(StrictModel):
+    input_frame_count: int = Field(gt=0)
+    selected_frame_count: int = Field(gt=0)
+    registered_frames: int = Field(ge=0)
+    registration_ratio: float = Field(ge=0, le=1)
+    sparse_points: int = Field(ge=0)
+    camera_model: str | None = None
+    selected_model: str | None = None
+    models: list[ColmapModelDiagnostic] = Field(default_factory=list)
+    scale_status: ScaleStatus
+    world_frame_status: WorldFrameStatus
+    confidence_score: float = Field(ge=0, le=1)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ToolCommandRecord(StrictModel):
+    name: Annotated[str, Field(min_length=1)]
+    arguments: Annotated[list[str], Field(min_length=1)]
+    return_code: int
+    duration_s: float = Field(ge=0)
+    stdout_path: Annotated[str, Field(min_length=1)]
+    stderr_path: Annotated[str, Field(min_length=1)]
+
+    @field_validator("stdout_path", "stderr_path")
+    @classmethod
+    def validate_log_paths(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class ColmapWorkspaceManifest(StrictModel):
+    execution_mode: Literal["local", "docker"]
+    colmap_version: Annotated[str, Field(min_length=1)]
+    database_path: Annotated[str, Field(min_length=1)]
+    sparse_model_paths: list[str]
+    selected_model: str
+    input_frame_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    configuration: dict[str, Any]
+    commands: Annotated[list[ToolCommandRecord], Field(min_length=1)]
+    provenance: ProvenanceRecord
+
+    @field_validator("database_path", "sparse_model_paths")
+    @classmethod
+    def validate_workspace_paths(cls, value: str | list[str]) -> str | list[str]:
+        if isinstance(value, str):
+            return _relative_artifact_path(value)
+        return [_relative_artifact_path(path) for path in value]
 
 
 class TrackObservation(StrictModel):
@@ -272,5 +500,6 @@ class CommandResultArtifact(StrictModel):
     return_code: int | None
     duration_s: float = Field(ge=0)
     timed_out: bool
+    interrupted: bool = False
     stdout_path: Annotated[str, Field(min_length=1)]
     stderr_path: Annotated[str, Field(min_length=1)]

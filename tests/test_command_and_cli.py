@@ -37,10 +37,11 @@ def _command_config(
 def test_command_adapter_retries_and_records_execution(tmp_path: Path) -> None:
     input_dir = tmp_path / "input"
     input_dir.mkdir()
+    counter_path = tmp_path / "attempt_counter.txt"
     script = """
 from pathlib import Path
 import sys
-counter = Path("counter.txt")
+counter = Path(sys.argv[1])
 attempt = int(counter.read_text()) + 1 if counter.exists() else 1
 counter.write_text(str(attempt))
 if attempt < 3:
@@ -48,7 +49,7 @@ if attempt < 3:
 Path("result.json").write_text('{"ok": true}')
 """
     config = _command_config(
-        [sys.executable, "-c", script],
+        [sys.executable, "-c", script, str(counter_path)],
         expected_output=OutputConfig(
             path="result.json",
             artifact_type="test_result",
@@ -65,7 +66,16 @@ Path("result.json").write_text('{"ok": true}')
         "failed",
         "succeeded",
     ]
-    assert (tmp_path / "run" / "logs" / "command_stage.attempt_1.stderr.log").exists()
+    assert (
+        tmp_path
+        / "run"
+        / "work"
+        / "command_stage"
+        / "attempt_1"
+        / "logs"
+        / "command_stage.attempt_1.stderr.log"
+    ).exists()
+    assert (tmp_path / "run" / "logs" / "command_stage.attempt_3.stderr.log").exists()
     assert entry["metrics"]["return_code"] == 0
 
 
@@ -104,16 +114,82 @@ def test_subprocess_timeout_terminates_and_preserves_logs(tmp_path: Path) -> Non
     )
     with pytest.raises(RuntimeError, match="timed out"):
         PipelineRunner(config, input_dir, tmp_path / "run").run()
-    result_path = tmp_path / "run" / "logs" / "command_stage.attempt_1.command.json"
+    result_path = (
+        tmp_path
+        / "run"
+        / "work"
+        / "command_stage"
+        / "attempt_1"
+        / "logs"
+        / "command_stage.attempt_1.command.json"
+    )
     result = json.loads(result_path.read_text(encoding="utf-8"))
     assert result["timed_out"] is True
     assert (tmp_path / "run" / result["stdout_path"]).exists()
     assert (tmp_path / "run" / result["stderr_path"]).exists()
 
 
+def test_stale_canonical_output_is_not_accepted_or_overwritten(tmp_path: Path) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    output = OutputConfig(path="result.json", validation="json")
+    successful = _command_config(
+        [
+            sys.executable,
+            "-c",
+            "from pathlib import Path; Path('result.json').write_text('{\"value\": 1}')",
+        ],
+        expected_output=output,
+    )
+    run_dir = tmp_path / "run"
+    PipelineRunner(successful, input_dir, run_dir).run()
+    canonical_before = (run_dir / "result.json").read_bytes()
+
+    stale_attempt = _command_config(
+        [sys.executable, "-c", "pass"],
+        expected_output=output,
+    )
+    with pytest.raises(OutputValidationError, match="attempt workspace"):
+        PipelineRunner(stale_attempt, input_dir, run_dir).run()
+
+    assert (run_dir / "result.json").read_bytes() == canonical_before
+    assert not (run_dir / "work" / "command_stage" / "attempt_2" / "result.json").exists()
+
+
+def test_command_environment_is_explicitly_allowlisted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    monkeypatch.setenv("RECON2SIM_ALLOWED", "visible")
+    monkeypatch.setenv("RECON2SIM_SECRET", "hidden")
+    script = """
+import json
+import os
+from pathlib import Path
+Path('environment.json').write_text(json.dumps(dict(os.environ)))
+"""
+    config = _command_config(
+        [sys.executable, "-c", script],
+        expected_output=OutputConfig(path="environment.json", validation="json"),
+    )
+    config.stages["command_stage"].adapter.env = ["RECON2SIM_ALLOWED"]
+    PipelineRunner(config, input_dir, tmp_path / "run").run()
+    environment = json.loads((tmp_path / "run" / "environment.json").read_text())
+    assert environment["RECON2SIM_ALLOWED"] == "visible"
+    assert "RECON2SIM_SECRET" not in environment
+
+
 def test_cli_help_uses_real_typer() -> None:
     runner = CliRunner()
-    for arguments in (["--help"], ["run", "--help"], ["adapters", "--help"]):
+    for arguments in (
+        ["--help"],
+        ["run", "--help"],
+        ["adapters", "--help"],
+        ["ingest", "--help"],
+        ["camera", "--help"],
+        ["camera", "inspect", "--help"],
+    ):
         result = runner.invoke(app, arguments)
         assert result.exit_code == 0, result.output
         assert "Usage:" in result.output

@@ -154,11 +154,11 @@ class MockAdapter:
     name = "mock"
     version = "0.1.0"
 
-    def healthcheck(self) -> HealthcheckResult:
+    def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult:
         return HealthcheckResult(True, "deterministic mock adapter ready")
 
     def prepare(self, context: StageContext) -> None:
-        context.run_dir.mkdir(parents=True, exist_ok=True)
+        context.attempt_dir.mkdir(parents=True, exist_ok=True)
 
     def expected_outputs(self, context: StageContext) -> list[OutputSpec]:
         return []
@@ -194,7 +194,7 @@ class MockIngestAdapter(MockAdapter):
         for index, source in enumerate(sources):
             png_dimensions(source)
             relative_path = f"frames/frame_{index:03d}.png"
-            destination = context.path(relative_path)
+            destination = context.output_path(relative_path)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
             width, height = png_dimensions(destination)
@@ -223,7 +223,7 @@ class MockIngestAdapter(MockAdapter):
             frames=frame_entries,
             provenance=provenance,
         )
-        atomic_write_json(context.path(manifest_path), manifest)
+        atomic_write_json(context.output_path(manifest_path), manifest)
         return StageResult(outputs=outputs, metrics={"frame_count": len(frame_entries)})
 
 
@@ -281,11 +281,13 @@ class MockCameraRecoveryAdapter(MockAdapter):
             camera_id="cam0",
             intrinsics=intrinsics,
             poses=poses,
+            registered_frame_ids=[frame.frame_id for frame in manifest.frames],
+            unregistered_frame_ids=[],
             confidence=ConfidenceRecord(score=0.94, method="deterministic_mock"),
             coordinate_convention=CoordinateConvention(),
             provenance=provenance,
         )
-        atomic_write_json(context.path(output_path), reconstruction)
+        atomic_write_json(context.output_path(output_path), reconstruction)
         return StageResult(metrics={"pose_count": len(poses)})
 
 
@@ -307,9 +309,10 @@ class MockSegmentationTrackingAdapter(MockAdapter):
         camera = _read_model(context.path("camera", "reconstruction.json"), CameraReconstruction)
         frame_ids = {frame.frame_id for frame in manifest.frames}
         pose_ids = {pose.frame_id for pose in camera.poses}
-        if pose_ids != frame_ids:
+        if not pose_ids or not pose_ids <= frame_ids:
             raise ValueError(
-                "camera reconstruction poses must exactly match the ingest manifest frames"
+                "camera reconstruction must contain at least one pose and may only reference "
+                "frames from the ingest manifest"
             )
 
         track_specs = [
@@ -324,7 +327,7 @@ class MockSegmentationTrackingAdapter(MockAdapter):
             observations: list[TrackObservation] = []
             for frame in manifest.frames:
                 mask_path = f"observations/masks/{frame.frame_id}_{object_id}.png"
-                write_solid_png(context.path(mask_path), frame.width, frame.height, color)
+                write_solid_png(context.output_path(mask_path), frame.width, frame.height, color)
                 mask_paths.append(mask_path)
                 bbox_width = max(1, frame.width // 3)
                 bbox_height = max(1, frame.height // 3)
@@ -367,7 +370,7 @@ class MockSegmentationTrackingAdapter(MockAdapter):
             score=0.88,
         )
         artifact = ObjectTracksArtifact(tracks=tracks, provenance=provenance)
-        atomic_write_json(context.path(output_path), artifact)
+        atomic_write_json(context.output_path(output_path), artifact)
         outputs = [_png_spec(path, "object_mask") for path in mask_paths]
         return StageResult(
             outputs=outputs,
@@ -395,7 +398,7 @@ class MockGlobalReconstructionAdapter(MockAdapter):
             raise ValueError("global reconstruction requires at least one camera pose")
         mesh_path = "reconstruction/global/floor.obj"
         metadata_path = "reconstruction/global/metadata.json"
-        vertex_count, face_count = _write_obj(context.path(mesh_path), "floor")
+        vertex_count, face_count = _write_obj(context.output_path(mesh_path), "floor")
         provenance = _provenance(
             self.name,
             context.config.adapter.config,
@@ -415,7 +418,7 @@ class MockGlobalReconstructionAdapter(MockAdapter):
             confidence=ConfidenceRecord(score=0.86, method="deterministic_mock"),
             provenance=provenance,
         )
-        atomic_write_json(context.path(metadata_path), metadata)
+        atomic_write_json(context.output_path(metadata_path), metadata)
         return StageResult(metrics={"camera_pose_count": len(camera.poses)})
 
 
@@ -448,10 +451,12 @@ class MockObjectReconstructionAdapter(MockAdapter):
                 geometry_path = f"reconstruction/objects/{part_id}.obj"
                 collision_path = f"reconstruction/objects/{part_id}_collision.obj"
                 vertex_count, face_count = _write_obj(
-                    context.path(geometry_path), part_id, offset=part_index * 0.2
+                    context.output_path(geometry_path), part_id, offset=part_index * 0.2
                 )
                 _write_obj(
-                    context.path(collision_path), f"{part_id}_collision", offset=part_index * 0.2
+                    context.output_path(collision_path),
+                    f"{part_id}_collision",
+                    offset=part_index * 0.2,
                 )
                 all_mesh_paths.extend([geometry_path, collision_path])
                 mesh_outputs.extend(
@@ -542,7 +547,7 @@ class MockObjectReconstructionAdapter(MockAdapter):
             score=0.84,
         )
         artifact = ObjectReconstructionArtifact(results=results, provenance=provenance)
-        atomic_write_json(context.path(output_path), artifact)
+        atomic_write_json(context.output_path(output_path), artifact)
         return StageResult(
             outputs=mesh_outputs,
             metrics={"object_result_count": len(results), "mesh_count": len(mesh_outputs)},
@@ -788,12 +793,23 @@ class MockSceneIRAssemblyAdapter(MockAdapter):
             if {subject, object_id} <= known_objects
         ]
 
+        scene_source = (
+            GeometrySourceType.MOCK
+            if manifest.source_type in {InputSourceType.MOCK, InputSourceType.GENERATED_TEST_IMAGE}
+            else GeometrySourceType.FUSED
+        )
         scene = SceneIR(
             metadata=SceneMetadata(
                 scene_id="tabletop_demo",
-                name="Phase 0.1 mock tabletop",
+                name=(
+                    "Phase 0.1 mock tabletop"
+                    if scene_source is GeometrySourceType.MOCK
+                    else "Phase 1 COLMAP capture with mock downstream geometry"
+                ),
                 coordinate_convention=camera_data.coordinate_convention,
-                source=GeometrySourceType.MOCK,
+                scale_status=camera_data.scale_status,
+                world_frame_status=camera_data.world_frame_status,
+                source=scene_source,
                 provenance=[
                     manifest.provenance,
                     camera_data.provenance,
@@ -811,7 +827,7 @@ class MockSceneIRAssemblyAdapter(MockAdapter):
             collision_assets=collision_assets,
             relations=relations,
         )
-        atomic_write_json(context.path(output_path), scene)
+        atomic_write_json(context.output_path(output_path), scene)
         return StageResult(
             metrics={
                 "camera_count": len(scene.cameras),
@@ -839,13 +855,13 @@ class MockSceneCompilerAdapter(MockAdapter):
         scene = _read_model(context.path("scene_ir", "scene.json"), SceneIR)
         mesh_path = "compiled/scene_package/mock_scene.obj"
         package_path = "compiled/scene_package/package.json"
-        _write_obj(context.path(mesh_path), f"compiled_{scene.metadata.scene_id}")
+        _write_obj(context.output_path(mesh_path), f"compiled_{scene.metadata.scene_id}")
         package = CompiledScenePackage(
             scene_ir_path="scene_ir/scene.json",
             exported_mesh_paths=[mesh_path],
             simulator_outputs=[],
         )
-        atomic_write_json(context.path(package_path), package)
+        atomic_write_json(context.output_path(package_path), package)
         return StageResult(metrics={"object_count": len(scene.objects)})
 
 
@@ -877,7 +893,7 @@ class MockPhysicsValidatorAdapter(MockAdapter):
                 )
             ],
         )
-        atomic_write_json(context.path("validation", "report.json"), report)
+        atomic_write_json(context.output_path("validation", "report.json"), report)
         return StageResult(metrics={"issue_count": len(report.issues)})
 
 
@@ -904,5 +920,5 @@ class MockExportAdapter(MockAdapter):
             validation_report_path="validation/report.json",
             scene_ir_path="scene_ir/scene.json",
         )
-        atomic_write_json(context.path("export_manifest.json"), manifest)
+        atomic_write_json(context.output_path("export_manifest.json"), manifest)
         return StageResult(metrics={"validation_passed": report.passed})

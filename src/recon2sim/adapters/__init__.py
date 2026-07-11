@@ -6,7 +6,9 @@ from recon2sim.adapters.base import (
     StageContext,
     StageResult,
 )
+from recon2sim.adapters.colmap import ColmapCameraRecoveryAdapter
 from recon2sim.adapters.command import CommandAdapter, DockerCommandAdapter
+from recon2sim.adapters.ingest import FfmpegIngestAdapter
 from recon2sim.adapters.mock import (
     MockCameraRecoveryAdapter,
     MockExportAdapter,
@@ -30,14 +32,18 @@ REGISTRY: dict[str, type[Adapter]] = {
     "mock_physics_validator": MockPhysicsValidatorAdapter,
     "mock_export": MockExportAdapter,
     "command": CommandAdapter,
+    "colmap_camera_recovery": ColmapCameraRecoveryAdapter,
     "docker_command": DockerCommandAdapter,
+    "ffmpeg_ingest": FfmpegIngestAdapter,
 }
 
 __all__ = [
     "Adapter",
     "ArtifactRecord",
     "CommandAdapter",
+    "ColmapCameraRecoveryAdapter",
     "DockerCommandAdapter",
+    "FfmpegIngestAdapter",
     "HealthcheckResult",
     "OutputSpec",
     "REGISTRY",

@@ -18,6 +18,7 @@ from recon2sim.ir.models import (
     PhysicsProperties,
     ProvenanceRecord,
     RelationType,
+    ScaleStatus,
     SceneIR,
     SceneMetadata,
     SceneRelation,
@@ -25,6 +26,7 @@ from recon2sim.ir.models import (
     Transform,
     ValidationIssue,
     ValidationReport,
+    WorldFrameStatus,
 )
 
 __all__ = [
@@ -47,6 +49,7 @@ __all__ = [
     "PhysicsProperties",
     "ProvenanceRecord",
     "RelationType",
+    "ScaleStatus",
     "SceneIR",
     "SceneMetadata",
     "SceneRelation",
@@ -54,4 +57,5 @@ __all__ = [
     "Transform",
     "ValidationIssue",
     "ValidationReport",
+    "WorldFrameStatus",
 ]

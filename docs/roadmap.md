@@ -1,35 +1,45 @@
 # Roadmap
 
-## Completed foundation
+## Completed
 
-- Phase 0: lightweight architecture, filesystem DAG, canonical Scene IR, and CPU mocks.
-- Phase 0.1: real dependencies and packaging, strict schemas and references, artifact-driven mock
-  stages, valid PNG/OBJ outputs, DAG validation, byte-sensitive caching, retries, command isolation,
-  output validation, expanded artifact records, real Typer CLI, CI, tests, and documentation.
+- Phase 0: lightweight filesystem architecture, canonical Scene IR, and CPU mocks.
+- Phase 0.1: real packaging/dependencies, strict schemas/references, artifact-driven mocks, DAG
+  validation, byte-sensitive cache/resume, retries, command isolation, output validation, Typer
+  CLI, GitHub Actions, and documentation.
+- Phase 1: real FFmpeg/image ingest, deterministic frame QA, stale-output-safe attempt promotion,
+  local/Docker COLMAP execution, binary sparse-model parsing, supported camera/distortion mapping,
+  pose inversion, explicit scale ambiguity/world alignment state, model ranking/diagnostics,
+  camera inspection/export CLI, fake executable integration tests, and optional native-tool paths.
 
-## Recommended Phase 1: COLMAP camera recovery
+Phase 1 stops after typed sparse camera recovery. Downstream adapters remain mocks by design.
 
-Keep the task narrow:
+## Recommended Phase 2: SAM 3 segmentation and tracking
 
-1. Add an out-of-process COLMAP command/container adapter; do not import COLMAP into core Python.
-2. Consume the existing `inputs/manifest.json` and copied PNG frames.
-3. Convert COLMAP intrinsics and poses into the existing `CameraReconstruction` contract and the
-   documented right-handed, meters, `xyzw`, world-from-camera convention.
-4. Record COLMAP version, command/config, input hashes, confidence method, logs, timing, and
-   provenance.
-5. Add small fixture-based tests for conversion, missing images, command failure, invalid output,
-   and cache invalidation. Keep the default CI path CPU-only and mock-only.
+Keep Phase 2 bounded to the existing `ObjectTracksArtifact` boundary:
 
-This task should stop at `camera/reconstruction.json`; it should not add segmentation,
-reconstruction models, scene compilation, Blender, or simulators.
+1. Add an out-of-process SAM 3 segmentation/tracking adapter; do not import model runtimes into
+   the core package.
+2. Consume selected `inputs/manifest.json`, normalized PNGs, and registered camera information
+   where useful; define behavior for unregistered frames explicitly.
+3. Emit one stable track ID per object, per-frame boxes, valid mask PNGs, confidence, and full
+   provenance through the existing typed artifact.
+4. Isolate checkpoints/cache behind adapter configuration, pin model/license metadata, and never
+   download weights implicitly during the mandatory test path.
+5. Reuse attempt isolation, environment allowlists, timeout/interruption handling, required output
+   validation, hashing, and cache invalidation.
+6. Add fake-process and tiny fixture tests for missing masks, bad dimensions, track-ID instability,
+   invalid JSON, retries, timeout, stale outputs, and failure preserving the previous result.
+7. Keep mandatory CI CPU-only; real model/GPU tests remain separately marked integration tests.
+
+Do not combine Phase 2 with global reconstruction, object mesh generation, SceneSmith, Blender,
+or simulator export.
 
 ## Later phases
 
-- Phase 2: SAM 3 segmentation and tracking adapter.
-- Phase 3: GenRecon global reconstruction adapter.
+- Phase 3: real global scene reconstruction adapter (evaluate GenRecon or another bounded backend).
 - Phase 4: rigid and articulated object reconstruction adapters.
 - Phase 5: SceneSmith or equivalent scene compiler adapter.
 - Phase 6: physics repair and explicit simulator exports.
 
-Each phase must preserve the canonical Scene IR boundary and add real-adapter tests without making
-the CPU-only mock quality gate depend on GPUs, checkpoints, Docker, or network model downloads.
+Every phase must preserve canonical Scene IR, typed normalized files between tools, honest
+scale/coordinate semantics, and a deterministic no-GPU quality gate.

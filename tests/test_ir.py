@@ -135,6 +135,28 @@ def test_checked_in_json_schema_is_complete_and_current() -> None:
     assert generated["$defs"]["CameraIntrinsics"]["additionalProperties"] is False
 
 
+def test_camera_reconstruction_extension_accepts_phase_0_artifact(completed_run: Path) -> None:
+    payload = json.loads(
+        (completed_run / "camera" / "reconstruction.json").read_text(encoding="utf-8")
+    )
+    payload.pop("registered_frame_ids")
+    payload.pop("unregistered_frame_ids")
+    payload.pop("scale_status")
+    payload.pop("world_frame_status")
+    camera = CameraReconstruction.model_validate(payload)
+    assert camera.registered_frame_ids == [pose.frame_id for pose in camera.poses]
+    assert camera.unregistered_frame_ids == []
+
+
+def test_scale_status_cannot_silently_claim_meter_units(completed_run: Path) -> None:
+    payload = json.loads(
+        (completed_run / "camera" / "reconstruction.json").read_text(encoding="utf-8")
+    )
+    payload["scale_status"] = "scale_ambiguous"
+    with pytest.raises(ValidationError, match="must use arbitrary_scale units"):
+        CameraReconstruction.model_validate(payload)
+
+
 def test_mock_artifacts_form_one_connected_data_flow(completed_run: Path) -> None:
     manifest = IngestManifest.model_validate_json(
         (completed_run / "inputs" / "manifest.json").read_text(encoding="utf-8")
