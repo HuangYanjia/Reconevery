@@ -1,0 +1,10 @@
+services:
+  sam3:
+    build: ./sam3
+    profiles: [future]
+  genrecon:
+    build: ./genrecon
+    profiles: [future]
+  scenesmith:
+    build: ./scenesmith
+    profiles: [future]
