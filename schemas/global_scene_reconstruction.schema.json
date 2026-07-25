@@ -1,0 +1,553 @@
+{
+  "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "ConfidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "minLength": 1,
+          "title": "Method",
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "score",
+        "method"
+      ],
+      "title": "ConfidenceRecord",
+      "type": "object"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "GenReconCheckpointRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "access_mode": {
+          "enum": [
+            "downloaded",
+            "local_cache",
+            "fake"
+          ],
+          "title": "Access Mode",
+          "type": "string"
+        },
+        "checkpoint_id": {
+          "enum": [
+            "sparse_structure",
+            "shape_slat",
+            "texture_slat"
+          ],
+          "title": "Checkpoint Id",
+          "type": "string"
+        },
+        "local_filename": {
+          "minLength": 1,
+          "title": "Local Filename",
+          "type": "string"
+        },
+        "resolved_at": {
+          "minLength": 1,
+          "title": "Resolved At",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "exclusiveMinimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "source_url": {
+          "minLength": 1,
+          "title": "Source Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "checkpoint_id",
+        "source_url",
+        "local_filename",
+        "size_bytes",
+        "sha256",
+        "resolved_at",
+        "access_mode"
+      ],
+      "title": "GenReconCheckpointRecord",
+      "type": "object"
+    },
+    "GeometrySourceType": {
+      "enum": [
+        "measured",
+        "radiance_field",
+        "generated",
+        "retrieved",
+        "fused",
+        "mock"
+      ],
+      "title": "GeometrySourceType",
+      "type": "string"
+    },
+    "GlobalSceneMeshStatistics": {
+      "additionalProperties": false,
+      "properties": {
+        "bounding_box_extent": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounding Box Extent",
+          "type": "array"
+        },
+        "bounding_box_max": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounding Box Max",
+          "type": "array"
+        },
+        "bounding_box_min": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounding Box Min",
+          "type": "array"
+        },
+        "degenerate_faces": {
+          "minimum": 0,
+          "title": "Degenerate Faces",
+          "type": "integer"
+        },
+        "disconnected_components": {
+          "minimum": 1,
+          "title": "Disconnected Components",
+          "type": "integer"
+        },
+        "face_count": {
+          "exclusiveMinimum": 0,
+          "title": "Face Count",
+          "type": "integer"
+        },
+        "finite_coordinates": {
+          "const": true,
+          "default": true,
+          "title": "Finite Coordinates",
+          "type": "boolean"
+        },
+        "glb_parse_status": {
+          "const": "valid",
+          "title": "Glb Parse Status",
+          "type": "string"
+        },
+        "material_count": {
+          "minimum": 0,
+          "title": "Material Count",
+          "type": "integer"
+        },
+        "non_manifold_edge_count": {
+          "minimum": 0,
+          "title": "Non Manifold Edge Count",
+          "type": "integer"
+        },
+        "texture_count": {
+          "minimum": 0,
+          "title": "Texture Count",
+          "type": "integer"
+        },
+        "vertex_count": {
+          "exclusiveMinimum": 0,
+          "title": "Vertex Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "vertex_count",
+        "face_count",
+        "disconnected_components",
+        "degenerate_faces",
+        "non_manifold_edge_count",
+        "bounding_box_min",
+        "bounding_box_max",
+        "bounding_box_extent",
+        "material_count",
+        "texture_count",
+        "glb_parse_status"
+      ],
+      "title": "GlobalSceneMeshStatistics",
+      "type": "object"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "ProvenanceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_name": {
+          "minLength": 1,
+          "title": "Adapter Name",
+          "type": "string"
+        },
+        "adapter_version": {
+          "minLength": 1,
+          "title": "Adapter Version",
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ConfidenceRecord"
+        },
+        "configuration": {
+          "additionalProperties": true,
+          "title": "Configuration",
+          "type": "object"
+        },
+        "input_artifact_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Artifact Paths",
+          "type": "array"
+        },
+        "output_artifact_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Artifact Paths",
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/$defs/GeometrySourceType"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter_name",
+        "adapter_version",
+        "confidence",
+        "source"
+      ],
+      "title": "ProvenanceRecord",
+      "type": "object"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "actual_selected_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Actual Selected Frame Ids",
+      "type": "array"
+    },
+    "camera_package_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Sha256",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "checkpoints": {
+      "items": {
+        "$ref": "#/$defs/GenReconCheckpointRecord"
+      },
+      "title": "Checkpoints",
+      "type": "array"
+    },
+    "chunk_count": {
+      "exclusiveMinimum": 0,
+      "title": "Chunk Count",
+      "type": "integer"
+    },
+    "coordinate_convention": {
+      "$ref": "#/$defs/CoordinateConvention"
+    },
+    "eligible_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Eligible Frame Ids",
+      "type": "array"
+    },
+    "format": {
+      "const": "glb",
+      "default": "glb",
+      "title": "Format",
+      "type": "string"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "input_frame_count": {
+      "exclusiveMinimum": 0,
+      "title": "Input Frame Count",
+      "type": "integer"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "mesh": {
+      "$ref": "#/$defs/GlobalSceneMeshStatistics"
+    },
+    "mesh_asset_path": {
+      "const": "reconstruction/global/mesh.ply",
+      "title": "Mesh Asset Path",
+      "type": "string"
+    },
+    "official_code_commit": {
+      "pattern": "^[0-9a-f]{40}$",
+      "title": "Official Code Commit",
+      "type": "string"
+    },
+    "official_repository": {
+      "minLength": 1,
+      "title": "Official Repository",
+      "type": "string"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "provenance": {
+      "$ref": "#/$defs/ProvenanceRecord"
+    },
+    "registered_frame_count": {
+      "exclusiveMinimum": 0,
+      "title": "Registered Frame Count",
+      "type": "integer"
+    },
+    "runtime_model_repository": {
+      "const": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+      "title": "Runtime Model Repository",
+      "type": "string"
+    },
+    "runtime_model_revision": {
+      "pattern": "^[0-9a-f]{40}$",
+      "title": "Runtime Model Revision",
+      "type": "string"
+    },
+    "runtime_repository_revisions": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{40}$",
+        "type": "string"
+      },
+      "title": "Runtime Repository Revisions",
+      "type": "object"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "scale_status": {
+      "$ref": "#/$defs/ScaleStatus"
+    },
+    "scene_asset_path": {
+      "const": "reconstruction/global/scene.glb",
+      "title": "Scene Asset Path",
+      "type": "string"
+    },
+    "scene_ir_path": {
+      "const": "scene_ir/scene.json",
+      "title": "Scene Ir Path",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "unregistered_frame_count": {
+      "minimum": 0,
+      "title": "Unregistered Frame Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "scene_asset_path",
+    "mesh_asset_path",
+    "scene_ir_path",
+    "coordinate_convention",
+    "scale_status",
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "camera_package_sha256",
+    "input_frame_count",
+    "registered_frame_count",
+    "unregistered_frame_count",
+    "eligible_frame_ids",
+    "actual_selected_frame_ids",
+    "mesh",
+    "chunk_count",
+    "checkpoints",
+    "official_repository",
+    "official_code_commit",
+    "runtime_model_repository",
+    "runtime_model_revision",
+    "runtime_repository_revisions",
+    "runtime_seconds",
+    "seed",
+    "provenance"
+  ],
+  "title": "GlobalSceneReconstructionArtifact",
+  "type": "object"
+}

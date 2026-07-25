@@ -546,14 +546,15 @@ class PipelineRunner:
                     f"expected sha256 {expected_hash}, found {source_hash}"
                 )
 
-            destination = workspace / spec.relative_path
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            self._materialize_input(source, destination, spec.materialization_mode)
-            if _sha256(destination) != source_hash:
-                raise RuntimeError(
-                    f"stage {stage_name!r} input copy verification failed for "
-                    f"{spec.relative_path!r}"
-                )
+            if spec.materialization_mode != "reference_only":
+                destination = workspace / spec.relative_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                self._materialize_input(source, destination, spec.materialization_mode)
+                if _sha256(destination) != source_hash:
+                    raise RuntimeError(
+                        f"stage {stage_name!r} input copy verification failed for "
+                        f"{spec.relative_path!r}"
+                    )
             materialized.append(
                 {
                     "relative_path": spec.relative_path,
@@ -621,6 +622,8 @@ class PipelineRunner:
 
     @staticmethod
     def _materialize_input(source: Path, destination: Path, mode: str) -> None:
+        if mode == "reference_only":
+            return
         if mode == "copy":
             shutil.copy2(source, destination)
             return

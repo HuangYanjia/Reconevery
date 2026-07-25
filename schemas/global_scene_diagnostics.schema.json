@@ -1,0 +1,314 @@
+{
+  "$defs": {
+    "GlobalSceneChunkDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_id": {
+          "minLength": 1,
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "dropped": {
+          "default": false,
+          "title": "Dropped",
+          "type": "boolean"
+        },
+        "point_count": {
+          "minimum": 0,
+          "title": "Point Count",
+          "type": "integer"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "selected_view_count": {
+          "minimum": 0,
+          "title": "Selected View Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chunk_id",
+        "point_count",
+        "selected_view_count"
+      ],
+      "title": "GlobalSceneChunkDiagnostic",
+      "type": "object"
+    },
+    "GlobalSceneMeshStatistics": {
+      "additionalProperties": false,
+      "properties": {
+        "bounding_box_extent": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounding Box Extent",
+          "type": "array"
+        },
+        "bounding_box_max": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounding Box Max",
+          "type": "array"
+        },
+        "bounding_box_min": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounding Box Min",
+          "type": "array"
+        },
+        "degenerate_faces": {
+          "minimum": 0,
+          "title": "Degenerate Faces",
+          "type": "integer"
+        },
+        "disconnected_components": {
+          "minimum": 1,
+          "title": "Disconnected Components",
+          "type": "integer"
+        },
+        "face_count": {
+          "exclusiveMinimum": 0,
+          "title": "Face Count",
+          "type": "integer"
+        },
+        "finite_coordinates": {
+          "const": true,
+          "default": true,
+          "title": "Finite Coordinates",
+          "type": "boolean"
+        },
+        "glb_parse_status": {
+          "const": "valid",
+          "title": "Glb Parse Status",
+          "type": "string"
+        },
+        "material_count": {
+          "minimum": 0,
+          "title": "Material Count",
+          "type": "integer"
+        },
+        "non_manifold_edge_count": {
+          "minimum": 0,
+          "title": "Non Manifold Edge Count",
+          "type": "integer"
+        },
+        "texture_count": {
+          "minimum": 0,
+          "title": "Texture Count",
+          "type": "integer"
+        },
+        "vertex_count": {
+          "exclusiveMinimum": 0,
+          "title": "Vertex Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "vertex_count",
+        "face_count",
+        "disconnected_components",
+        "degenerate_faces",
+        "non_manifold_edge_count",
+        "bounding_box_min",
+        "bounding_box_max",
+        "bounding_box_extent",
+        "material_count",
+        "texture_count",
+        "glb_parse_status"
+      ],
+      "title": "GlobalSceneMeshStatistics",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "chosen_parameters": {
+      "additionalProperties": true,
+      "title": "Chosen Parameters",
+      "type": "object"
+    },
+    "chunks": {
+      "items": {
+        "$ref": "#/$defs/GlobalSceneChunkDiagnostic"
+      },
+      "title": "Chunks",
+      "type": "array"
+    },
+    "chunks_after_filtering": {
+      "exclusiveMinimum": 0,
+      "title": "Chunks After Filtering",
+      "type": "integer"
+    },
+    "chunks_before_filtering": {
+      "minimum": 0,
+      "title": "Chunks Before Filtering",
+      "type": "integer"
+    },
+    "cleaned_sparse_points": {
+      "minimum": 0,
+      "title": "Cleaned Sparse Points",
+      "type": "integer"
+    },
+    "eligible_frame_count": {
+      "minimum": 0,
+      "title": "Eligible Frame Count",
+      "type": "integer"
+    },
+    "initial_sparse_points": {
+      "minimum": 0,
+      "title": "Initial Sparse Points",
+      "type": "integer"
+    },
+    "mesh": {
+      "$ref": "#/$defs/GlobalSceneMeshStatistics"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "point_retention_ratio": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Point Retention Ratio",
+      "type": "number"
+    },
+    "registered_coverage": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Registered Coverage",
+      "type": "number"
+    },
+    "robust_bounds_max": {
+      "maxItems": 3,
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "title": "Robust Bounds Max",
+      "type": "array"
+    },
+    "robust_bounds_min": {
+      "maxItems": 3,
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "title": "Robust Bounds Min",
+      "type": "array"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "scene_diagonal_arbitrary_units": {
+      "exclusiveMinimum": 0,
+      "title": "Scene Diagonal Arbitrary Units",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_view_count": {
+      "minimum": 0,
+      "title": "Selected View Count",
+      "type": "integer"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "eligible_frame_count",
+    "selected_view_count",
+    "registered_coverage",
+    "initial_sparse_points",
+    "cleaned_sparse_points",
+    "point_retention_ratio",
+    "robust_bounds_min",
+    "robust_bounds_max",
+    "scene_diagonal_arbitrary_units",
+    "chunks_before_filtering",
+    "chunks_after_filtering",
+    "chunks",
+    "mesh",
+    "chosen_parameters",
+    "runtime_seconds"
+  ],
+  "title": "GlobalSceneDiagnostics",
+  "type": "object"
+}

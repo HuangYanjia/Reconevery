@@ -1,9 +1,10 @@
 # Recon2Sim
 
-Recon2Sim Phase 2 is a typed observation pipeline with real video/image ingest, frame QA,
-out-of-process COLMAP sparse camera recovery, and prompt-driven SAM 3.1 segmentation/tracking.
-Heavy tools and model runtimes remain isolated from the lightweight core package. Global/object
-3D reconstruction, compilation, validation, and export remain deterministic mocks.
+Recon2Sim Phase 3 is a typed observation pipeline with real video/image ingest, frame QA,
+out-of-process COLMAP sparse camera recovery, prompt-driven SAM 3.1 tracking, and isolated
+official GenRecon global visual reconstruction. Heavy model runtimes remain outside the
+lightweight core. Object-level 2D/3D fusion, physical reconstruction, and simulator export are
+not implemented.
 
 ## Quickstart
 
@@ -59,6 +60,23 @@ uv run recon2sim segmentation export-coco \
 `facebook/sam3.1` checkpoint and stop after segmentation. Accept Meta's terms and provide
 `HF_TOKEN`, an authorized cache, or a mounted local official checkpoint. See
 [`docs/phase_2_sam3.md`](docs/phase_2_sam3.md).
+
+Run the complete CPU-only fake Phase 3 protocol:
+
+```bash
+uv run recon2sim run \
+  --input examples/tabletop \
+  --config configs/phase3_e2e_fake.yaml \
+  --run-dir runs/phase3_e2e_fake
+uv run recon2sim reconstruction inspect-global runs/phase3_e2e_fake
+uv run recon2sim reconstruction render-global-preview runs/phase3_e2e_fake
+uv run recon2sim validation verify-phase3-e2e runs/phase3_e2e_fake
+```
+
+`configs/genrecon_only.yaml` runs real ingest, COLMAP, and GenRecon without making GenRecon
+depend on SAM. `configs/phase3_e2e.yaml` adds real SAM and the cross-stage consistency validator.
+Replace its `/absolute/path/...` placeholders locally. See
+[`docs/phase_3_genrecon.md`](docs/phase_3_genrecon.md).
 
 Resume without changing successful status:
 
@@ -127,6 +145,27 @@ assign stable semantic IDs such as `cup_0001`, and write one grayscale `0/255` P
 object/frame. Frames without a COLMAP pose remain valid 2D observations and carry
 `camera_pose_available=false`.
 
+## GenRecon global visual reconstruction
+
+`genrecon_camera_package` serializes only the selected COLMAP model to deterministic
+`cameras.txt`, `images.txt`, and `points3D.txt`. It preserves manifest order, remaps image and
+camera IDs consistently, and references only registered normalized frames. It does not copy the
+COLMAP database, logs, or rejected models.
+
+`genrecon_global_reconstruction` invokes official GenRecon commit
+`eaf1468118d20469d17079a4a19737297d2ef87b` in an isolated Python 3.10/CUDA worker. The three
+official checkpoints come only from `https://kaldir.vc.cit.tum.de/genrecon/` and are identified
+by SHA-256. The official pipeline also requires separately accepted access to gated
+`facebook/dinov3-vitl16-pretrain-lvd1689m`; its resolved revision is recorded without storing
+Hugging Face credentials. Required decoder assets from `microsoft/TRELLIS-image-large` and
+`microsoft/TRELLIS.2-4B` are likewise cached and identified by exact resolved revisions. A
+reversible PCA working transform may stabilize chunking, but it is not gravity alignment.
+Canonical `scene.glb` and `mesh.ply` are returned to the original COLMAP arbitrary frame.
+
+SAM and GenRecon are parallel evidence branches. Prompt changes rerun SAM and the consistency
+validator, not GenRecon. The validator checks ordered frame hashes, registration sets, camera
+hashes, coordinate semantics, selective materialization, and the explicit capability boundary.
+
 ## Coordinate convention
 
 Raw Phase 1 COLMAP output is explicitly `world_frame="colmap_arbitrary"`,
@@ -148,8 +187,8 @@ uv run ruff format --check .
 uv run mypy src
 ```
 
-Scene IR, prompt, request, and segmentation schemas under `schemas/` are checked against their
-Pydantic models in tests. Regenerate them with:
+Scene IR, prompt, SAM, GenRecon, global reconstruction, and consistency schemas under `schemas/`
+are checked against their Pydantic models in tests. Regenerate them with:
 
 ```bash
 uv run python scripts/generate_schema.py
@@ -157,6 +196,7 @@ uv run python scripts/generate_schema.py
 
 ## Adapter boundary
 
-Core code imports only lightweight dependencies. Official SAM code, PyTorch, CUDA packages, and
-checkpoints exist only in `workers/sam3` or `docker/sam3`. GenRecon, SceneSmith, Blender,
-simulators, MVS, NeRF, and automatic VLM prompt inventory remain outside Phase 2.
+Core code imports only lightweight dependencies. Official SAM and GenRecon code, PyTorch, CUDA
+packages, and checkpoints exist only in their isolated workers or Docker images. SceneSmith,
+physics, simulators, object reconstruction, MVS, NeRF, and automatic VLM prompt inventory remain
+outside Phase 3.

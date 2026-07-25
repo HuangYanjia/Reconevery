@@ -26,6 +26,7 @@ from recon2sim.artifacts import (
 )
 from recon2sim.frame_qa import measure_frame, normalized_signature_difference
 from recon2sim.ir import ConfidenceRecord, GeometrySourceType, ProvenanceRecord, StrictModel
+from recon2sim.lineage import frame_sequence_digest
 from recon2sim.storage import atomic_write_json
 
 VIDEO_EXTENSIONS = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"}
@@ -432,6 +433,7 @@ class FFmpegIngestAdapter:
             dropped_frames=len(candidates) - len(manifest_frames),
             output_hashes=output_hashes,
             frame_qa_path="inputs/frame_qa.json",
+            frame_sequence_digest=frame_sequence_digest(manifest_frames),
             provenance=provenance,
         )
         atomic_write_json(context.path("inputs", "manifest.json"), manifest)

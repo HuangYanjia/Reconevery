@@ -241,6 +241,7 @@ def _infer(request_path: Path, output_dir: Path) -> int:
             "peak_gpu_memory_bytes": None,
             "prompt_manifest_hash": request["prompt_manifest_sha256"],
             "frame_manifest_hash": request["frame_manifest_sha256"],
+            "frame_sequence_digest": request.get("frame_sequence_digest"),
             "strategy": request["strategy"],
             "model_mode": config["model_mode"],
             "image_identifier": None,

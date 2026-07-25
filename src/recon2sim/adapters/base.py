@@ -10,7 +10,7 @@ from recon2sim.config import StageConfig
 from recon2sim.ir import StrictModel
 
 OutputValidation = Literal["exists", "json", "png", "obj", "scene_ir"]
-InputMaterialization = Literal["reflink_or_copy", "copy"]
+InputMaterialization = Literal["reflink_or_copy", "copy", "reference_only"]
 
 
 class ArtifactRecord(StrictModel):

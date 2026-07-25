@@ -1,6 +1,13 @@
 from pathlib import Path
 
 from recon2sim.artifacts import (
+    EndToEndConsistencyReport,
+    GenReconCameraPackageManifest,
+    GenReconCheckpointManifest,
+    GenReconInferenceRequest,
+    GenReconWorkerManifest,
+    GlobalSceneDiagnostics,
+    GlobalSceneReconstructionArtifact,
     Sam3InferenceRequest,
     SegmentationPromptManifest,
     SegmentationTrackingArtifact,
@@ -21,3 +28,13 @@ atomic_write_json(
     Path("schemas/segmentation_tracking.schema.json"),
     SegmentationTrackingArtifact.model_json_schema(),
 )
+for filename, model in {
+    "genrecon_camera_package.schema.json": GenReconCameraPackageManifest,
+    "genrecon_checkpoints.schema.json": GenReconCheckpointManifest,
+    "genrecon_inference_request.schema.json": GenReconInferenceRequest,
+    "genrecon_worker_manifest.schema.json": GenReconWorkerManifest,
+    "global_scene_reconstruction.schema.json": GlobalSceneReconstructionArtifact,
+    "global_scene_diagnostics.schema.json": GlobalSceneDiagnostics,
+    "phase3_e2e_consistency.schema.json": EndToEndConsistencyReport,
+}.items():
+    atomic_write_json(Path("schemas") / filename, model.model_json_schema())

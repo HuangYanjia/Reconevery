@@ -1,0 +1,92 @@
+{
+  "$defs": {
+    "GenReconCheckpointRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "access_mode": {
+          "enum": [
+            "downloaded",
+            "local_cache",
+            "fake"
+          ],
+          "title": "Access Mode",
+          "type": "string"
+        },
+        "checkpoint_id": {
+          "enum": [
+            "sparse_structure",
+            "shape_slat",
+            "texture_slat"
+          ],
+          "title": "Checkpoint Id",
+          "type": "string"
+        },
+        "local_filename": {
+          "minLength": 1,
+          "title": "Local Filename",
+          "type": "string"
+        },
+        "resolved_at": {
+          "minLength": 1,
+          "title": "Resolved At",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "exclusiveMinimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "source_url": {
+          "minLength": 1,
+          "title": "Source Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "checkpoint_id",
+        "source_url",
+        "local_filename",
+        "size_bytes",
+        "sha256",
+        "resolved_at",
+        "access_mode"
+      ],
+      "title": "GenReconCheckpointRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "checkpoints": {
+      "items": {
+        "$ref": "#/$defs/GenReconCheckpointRecord"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Checkpoints",
+      "type": "array"
+    },
+    "official_host": {
+      "const": "https://kaldir.vc.cit.tum.de/genrecon/",
+      "title": "Official Host",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "official_host",
+    "checkpoints"
+  ],
+  "title": "GenReconCheckpointManifest",
+  "type": "object"
+}

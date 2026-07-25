@@ -375,6 +375,19 @@
       "title": "Frame Count",
       "type": "integer"
     },
+    "frame_sequence_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Frame Sequence Digest"
+    },
     "prompt_manifest_path": {
       "minLength": 1,
       "title": "Prompt Manifest Path",

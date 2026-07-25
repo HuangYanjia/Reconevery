@@ -1,0 +1,360 @@
+{
+  "$defs": {
+    "GenReconCheckpointRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "access_mode": {
+          "enum": [
+            "downloaded",
+            "local_cache",
+            "fake"
+          ],
+          "title": "Access Mode",
+          "type": "string"
+        },
+        "checkpoint_id": {
+          "enum": [
+            "sparse_structure",
+            "shape_slat",
+            "texture_slat"
+          ],
+          "title": "Checkpoint Id",
+          "type": "string"
+        },
+        "local_filename": {
+          "minLength": 1,
+          "title": "Local Filename",
+          "type": "string"
+        },
+        "resolved_at": {
+          "minLength": 1,
+          "title": "Resolved At",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "size_bytes": {
+          "exclusiveMinimum": 0,
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "source_url": {
+          "minLength": 1,
+          "title": "Source Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "checkpoint_id",
+        "source_url",
+        "local_filename",
+        "size_bytes",
+        "sha256",
+        "resolved_at",
+        "access_mode"
+      ],
+      "title": "GenReconCheckpointRecord",
+      "type": "object"
+    },
+    "GenReconWorkingTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "determinant": {
+          "title": "Determinant",
+          "type": "number"
+        },
+        "matrix_colmap_to_working": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Matrix Colmap To Working",
+          "type": "array"
+        },
+        "matrix_working_to_colmap": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Matrix Working To Colmap",
+          "type": "array"
+        },
+        "roundtrip_max_error": {
+          "minimum": 0,
+          "title": "Roundtrip Max Error",
+          "type": "number"
+        },
+        "semantic_status": {
+          "const": "internal_unoriented_preprocessing",
+          "default": "internal_unoriented_preprocessing",
+          "title": "Semantic Status",
+          "type": "string"
+        },
+        "strategy": {
+          "enum": [
+            "identity",
+            "pca_scene_axes"
+          ],
+          "title": "Strategy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy",
+        "matrix_colmap_to_working",
+        "matrix_working_to_colmap",
+        "determinant",
+        "roundtrip_max_error"
+      ],
+      "title": "GenReconWorkingTransform",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_package_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Sha256",
+      "type": "string"
+    },
+    "checkpoint_records": {
+      "items": {
+        "$ref": "#/$defs/GenReconCheckpointRecord"
+      },
+      "title": "Checkpoint Records",
+      "type": "array"
+    },
+    "cuda_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cuda Version"
+    },
+    "device": {
+      "minLength": 1,
+      "title": "Device",
+      "type": "string"
+    },
+    "device_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Device Name"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "glb_conversion_return_code": {
+      "title": "Glb Conversion Return Code",
+      "type": "integer"
+    },
+    "image_identifier": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Image Identifier"
+    },
+    "official_code_commit": {
+      "pattern": "^[0-9a-f]{40}$",
+      "title": "Official Code Commit",
+      "type": "string"
+    },
+    "official_license": {
+      "minLength": 1,
+      "title": "Official License",
+      "type": "string"
+    },
+    "official_repository": {
+      "const": "https://github.com/kasothaphie/GenRecon",
+      "title": "Official Repository",
+      "type": "string"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "precision": {
+      "minLength": 1,
+      "title": "Precision",
+      "type": "string"
+    },
+    "python_version": {
+      "minLength": 1,
+      "title": "Python Version",
+      "type": "string"
+    },
+    "raw_output_paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Raw Output Paths",
+      "type": "array"
+    },
+    "reconstruct_return_code": {
+      "title": "Reconstruct Return Code",
+      "type": "integer"
+    },
+    "registered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Registered Frame Ids",
+      "type": "array"
+    },
+    "request_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Request Sha256",
+      "type": "string"
+    },
+    "runtime_model_repository": {
+      "const": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+      "title": "Runtime Model Repository",
+      "type": "string"
+    },
+    "runtime_model_revision": {
+      "pattern": "^[0-9a-f]{40}$",
+      "title": "Runtime Model Revision",
+      "type": "string"
+    },
+    "runtime_repository_revisions": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{40}$",
+        "type": "string"
+      },
+      "title": "Runtime Repository Revisions",
+      "type": "object"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "selected_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Selected Frame Ids",
+      "type": "array"
+    },
+    "submodule_commits": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{40}$",
+        "type": "string"
+      },
+      "title": "Submodule Commits",
+      "type": "object"
+    },
+    "torch_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Torch Version"
+    },
+    "torchvision_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Torchvision Version"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "worker_version": {
+      "minLength": 1,
+      "title": "Worker Version",
+      "type": "string"
+    },
+    "working_transform": {
+      "$ref": "#/$defs/GenReconWorkingTransform"
+    }
+  },
+  "required": [
+    "official_repository",
+    "official_code_commit",
+    "submodule_commits",
+    "official_license",
+    "checkpoint_records",
+    "runtime_model_repository",
+    "runtime_model_revision",
+    "runtime_repository_revisions",
+    "worker_version",
+    "python_version",
+    "device",
+    "precision",
+    "seed",
+    "request_sha256",
+    "frame_sequence_digest",
+    "camera_package_sha256",
+    "registered_frame_ids",
+    "selected_frame_ids",
+    "working_transform",
+    "reconstruct_return_code",
+    "glb_conversion_return_code",
+    "runtime_seconds",
+    "raw_output_paths"
+  ],
+  "title": "GenReconWorkerManifest",
+  "type": "object"
+}

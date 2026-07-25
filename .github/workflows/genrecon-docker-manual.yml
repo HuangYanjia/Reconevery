@@ -1,0 +1,22 @@
+name: GenRecon Docker Manual
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned GenRecon image
+        run: docker build -f docker/genrecon/Dockerfile -t reconevery/genrecon:phase3 .
+      - name: Verify image identity
+        run: |
+          test "$(
+            docker run --rm --entrypoint git reconevery/genrecon:phase3 \
+              -C /opt/GenRecon rev-parse HEAD
+          )" = "eaf1468118d20469d17079a4a19737297d2ef87b"
+      - name: Verify official package and CUDA extension imports
+        run: |
+          docker run --rm --entrypoint python3.10 reconevery/genrecon:phase3 -c \
+            "import genrecon, flash_attn, cumesh, flex_gemm, o_voxel, nvdiffrast.torch, nvdiffrec_render"

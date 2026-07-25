@@ -283,6 +283,8 @@ class GeometryAsset(StrictModel):
     uri: str
     format: Literal["obj", "glb", "ply"]
     source: GeometrySourceType
+    coordinate_convention: CoordinateConvention | None = None
+    scale_status: ScaleStatus | None = None
     provenance: ProvenanceRecord
 
     @field_validator("uri")

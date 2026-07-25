@@ -66,6 +66,7 @@ class IngestManifest(StrictModel):
         default_factory=dict
     )
     frame_qa_path: str | None = None
+    frame_sequence_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     provenance: ProvenanceRecord
 
     @model_validator(mode="after")
@@ -144,6 +145,7 @@ class CameraReconstruction(StrictModel):
     confidence: ConfidenceRecord
     coordinate_convention: CoordinateConvention
     scale_status: ScaleStatus = ScaleStatus.METRIC_SCALE_KNOWN
+    frame_sequence_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     provenance: ProvenanceRecord
 
     @model_validator(mode="after")
@@ -335,6 +337,7 @@ class Sam3InferenceRequest(StrictModel):
     run_id: Annotated[str, Field(min_length=1)]
     frame_manifest_path: Annotated[str, Field(min_length=1)]
     frame_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     frame_order: Annotated[list[str], Field(min_length=1)]
     frame_paths: Annotated[list[str], Field(min_length=1)]
     frame_dimensions: dict[str, tuple[int, int]]
@@ -434,6 +437,7 @@ class Sam3WorkerManifest(StrictModel):
     peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
     prompt_manifest_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     frame_manifest_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     strategy: Annotated[str, Field(min_length=1)]
     model_mode: Annotated[str, Field(min_length=1)]
     image_identifier: str | None = None
@@ -546,6 +550,7 @@ class SegmentationTrackingArtifact(StrictModel):
     worker_manifest_path: Annotated[str, Field(min_length=1)]
     diagnostics_path: Annotated[str, Field(min_length=1)]
     canonicalization_version: Literal["0.1.0"] = "0.1.0"
+    frame_sequence_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     provenance: ProvenanceRecord
 
     @field_validator(
@@ -562,6 +567,382 @@ class SegmentationTrackingArtifact(StrictModel):
         object_ids = [track.object_id for track in self.tracks]
         if len(object_ids) != len(set(object_ids)):
             raise ValueError("canonical segmentation object IDs must be unique")
+        return self
+
+
+class ObservationLineage(StrictModel):
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_ids: list[str]
+    frame_paths: list[str]
+    frame_sha256_by_id: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    registered_frame_ids: list[str]
+    unregistered_frame_ids: list[str]
+    segmentation_input_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    genrecon_input_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("frame_paths")
+    @classmethod
+    def validate_lineage_paths(cls, values: list[str]) -> list[str]:
+        return [_relative_artifact_path(value) for value in values]
+
+    @model_validator(mode="after")
+    def consistent_lineage(self) -> Self:
+        if len(self.frame_ids) != len(set(self.frame_ids)):
+            raise ValueError("lineage frame IDs must be unique")
+        if len(self.frame_paths) != len(self.frame_ids):
+            raise ValueError("lineage must contain one path per frame ID")
+        if set(self.frame_sha256_by_id) != set(self.frame_ids):
+            raise ValueError("lineage hashes must exactly cover frame IDs")
+        if set(self.registered_frame_ids) | set(self.unregistered_frame_ids) != set(self.frame_ids):
+            raise ValueError("lineage registration sets must cover all frame IDs")
+        if set(self.registered_frame_ids) & set(self.unregistered_frame_ids):
+            raise ValueError("lineage registration sets must not overlap")
+        return self
+
+
+class GenReconRegisteredFrame(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    source_relative_path: Annotated[str, Field(min_length=1)]
+    package_image_name: Annotated[str, Field(min_length=1)]
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    original_colmap_image_id: int = Field(gt=0)
+    package_image_id: int = Field(gt=0)
+    original_colmap_camera_id: int = Field(gt=0)
+    package_camera_id: int = Field(gt=0)
+
+    @field_validator("source_relative_path", "package_image_name")
+    @classmethod
+    def validate_registered_paths(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class GenReconCameraPackageManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    source_manifest_path: Literal["inputs/manifest.json"] = "inputs/manifest.json"
+    source_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_path: Literal["camera/reconstruction.json"] = "camera/reconstruction.json"
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    selected_model_id: Annotated[str, Field(min_length=1)]
+    source_model_paths: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    master_frame_ids: list[str]
+    registered_frame_ids: list[str]
+    unregistered_frame_ids: list[str]
+    eligible_frame_ids: list[str]
+    registered_frames: list[GenReconRegisteredFrame]
+    cameras_path: Literal["camera/genrecon_package/cameras.txt"] = (
+        "camera/genrecon_package/cameras.txt"
+    )
+    images_path: Literal["camera/genrecon_package/images.txt"] = (
+        "camera/genrecon_package/images.txt"
+    )
+    points3d_path: Literal["camera/genrecon_package/points3D.txt"] = (
+        "camera/genrecon_package/points3D.txt"
+    )
+    package_content_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    coordinate_convention: CoordinateConvention
+
+    @model_validator(mode="after")
+    def consistent_package_frames(self) -> Self:
+        master = set(self.master_frame_ids)
+        if len(self.master_frame_ids) != len(master):
+            raise ValueError("camera package master frame IDs must be unique")
+        if set(self.registered_frame_ids) | set(self.unregistered_frame_ids) != master:
+            raise ValueError("camera package registration sets must cover the master frames")
+        if set(self.registered_frame_ids) & set(self.unregistered_frame_ids):
+            raise ValueError("camera package registration sets must not overlap")
+        expected_eligible = [
+            frame_id for frame_id in self.master_frame_ids if frame_id in self.registered_frame_ids
+        ]
+        if self.eligible_frame_ids != expected_eligible:
+            raise ValueError("eligible GenRecon frames must be registered frames in master order")
+        if [frame.frame_id for frame in self.registered_frames] != self.eligible_frame_ids:
+            raise ValueError("registered frame records must follow eligible frame order")
+        if set(self.source_model_paths) != {"cameras.bin", "images.bin", "points3D.bin"}:
+            raise ValueError("camera package must identify exactly one complete COLMAP model")
+        return self
+
+
+class GenReconCheckpointRecord(StrictModel):
+    checkpoint_id: Literal["sparse_structure", "shape_slat", "texture_slat"]
+    source_url: Annotated[str, Field(min_length=1)]
+    local_filename: Annotated[str, Field(min_length=1)]
+    size_bytes: int = Field(gt=0)
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    resolved_at: Annotated[str, Field(min_length=1)]
+    access_mode: Literal["downloaded", "local_cache", "fake"]
+
+
+class GenReconCheckpointManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    official_host: Literal["https://kaldir.vc.cit.tum.de/genrecon/"]
+    checkpoints: Annotated[list[GenReconCheckpointRecord], Field(min_length=3, max_length=3)]
+
+    @model_validator(mode="after")
+    def complete_checkpoint_set(self) -> Self:
+        identifiers = [checkpoint.checkpoint_id for checkpoint in self.checkpoints]
+        if set(identifiers) != {"sparse_structure", "shape_slat", "texture_slat"}:
+            raise ValueError("checkpoint manifest must contain the three official checkpoints")
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("checkpoint manifest checkpoint IDs must be unique")
+        return self
+
+
+class GenReconWorkingTransform(StrictModel):
+    strategy: Literal["identity", "pca_scene_axes"]
+    matrix_colmap_to_working: list[list[float]]
+    matrix_working_to_colmap: list[list[float]]
+    determinant: float
+    roundtrip_max_error: float = Field(ge=0)
+    semantic_status: Literal["internal_unoriented_preprocessing"] = (
+        "internal_unoriented_preprocessing"
+    )
+
+    @field_validator("matrix_colmap_to_working", "matrix_working_to_colmap")
+    @classmethod
+    def matrix_is_finite_4x4(cls, value: list[list[float]]) -> list[list[float]]:
+        import math
+
+        if len(value) != 4 or any(len(row) != 4 for row in value):
+            raise ValueError("working transforms must be 4x4 matrices")
+        if any(not math.isfinite(component) for row in value for component in row):
+            raise ValueError("working transforms must contain only finite values")
+        return value
+
+
+class GenReconInferenceRequest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    run_id: Annotated[str, Field(min_length=1)]
+    official_repository: Literal["https://github.com/kasothaphie/GenRecon"]
+    official_code_commit: Literal["eaf1468118d20469d17079a4a19737297d2ef87b"]
+    official_checkout_path: Annotated[str, Field(min_length=1)]
+    checkpoint_paths: dict[str, str]
+    checkpoint_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    checkpoint_manifest_path: Annotated[str, Field(min_length=1)]
+    manifest_path: Literal["inputs/manifest.json"] = "inputs/manifest.json"
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_path: Literal["camera/reconstruction.json"] = "camera/reconstruction.json"
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_package_manifest_path: Literal["camera/genrecon_package/package_manifest.json"] = (
+        "camera/genrecon_package/package_manifest.json"
+    )
+    camera_package_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    master_frame_order: list[str]
+    normalized_frame_paths: dict[str, str]
+    normalized_frame_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    registered_frame_ids: list[str]
+    unregistered_frame_ids: list[str]
+    eligible_frame_ids: list[str]
+    requested_max_views: int = Field(gt=0)
+    coordinate_convention: CoordinateConvention
+    working_transform_strategy: Literal["identity", "pca_scene_axes"]
+    pipeline_config: str
+    reconstruction_parameters: dict[str, object]
+    output_directory: Literal["reconstruction/global/raw"] = "reconstruction/global/raw"
+    seed: int
+
+    @field_validator(
+        "checkpoint_manifest_path",
+        "normalized_frame_paths",
+        "pipeline_config",
+    )
+    @classmethod
+    def validate_genrecon_request_paths(cls, value: str | dict[str, str]) -> str | dict[str, str]:
+        if isinstance(value, str):
+            return _relative_artifact_path(value)
+        return {frame_id: _relative_artifact_path(path) for frame_id, path in value.items()}
+
+    @model_validator(mode="after")
+    def consistent_request_frames(self) -> Self:
+        master = set(self.master_frame_order)
+        if len(master) != len(self.master_frame_order):
+            raise ValueError("GenRecon master frame order must be unique")
+        if (
+            set(self.normalized_frame_paths) != master
+            or set(self.normalized_frame_hashes) != master
+        ):
+            raise ValueError("GenRecon frame paths and hashes must exactly cover master order")
+        if set(self.registered_frame_ids) | set(self.unregistered_frame_ids) != master:
+            raise ValueError("GenRecon registration sets must cover master frames")
+        if self.eligible_frame_ids != [
+            frame_id
+            for frame_id in self.master_frame_order
+            if frame_id in self.registered_frame_ids
+        ]:
+            raise ValueError("GenRecon eligible frames must be registered frames in master order")
+        expected_checkpoints = {"sparse_structure", "shape_slat", "texture_slat"}
+        if set(self.checkpoint_paths) != expected_checkpoints:
+            raise ValueError("GenRecon requires all three checkpoint paths")
+        if set(self.checkpoint_hashes) != expected_checkpoints:
+            raise ValueError("GenRecon requires all three checkpoint hashes")
+        return self
+
+
+class GenReconWorkerManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    official_repository: Literal["https://github.com/kasothaphie/GenRecon"]
+    official_code_commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    submodule_commits: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]]
+    official_license: Annotated[str, Field(min_length=1)]
+    checkpoint_records: list[GenReconCheckpointRecord]
+    runtime_model_repository: Literal["facebook/dinov3-vitl16-pretrain-lvd1689m"]
+    runtime_model_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    runtime_repository_revisions: dict[
+        str,
+        Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    ]
+    worker_version: Annotated[str, Field(min_length=1)]
+    python_version: Annotated[str, Field(min_length=1)]
+    torch_version: str | None = None
+    torchvision_version: str | None = None
+    cuda_version: str | None = None
+    device_name: str | None = None
+    device: Annotated[str, Field(min_length=1)]
+    precision: Annotated[str, Field(min_length=1)]
+    seed: int
+    request_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_package_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    registered_frame_ids: list[str]
+    selected_frame_ids: list[str]
+    working_transform: GenReconWorkingTransform
+    reconstruct_return_code: int
+    glb_conversion_return_code: int
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    raw_output_paths: list[str]
+    image_identifier: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+    @field_validator("raw_output_paths")
+    @classmethod
+    def validate_raw_output_paths(cls, values: list[str]) -> list[str]:
+        return [_relative_artifact_path(value) for value in values]
+
+
+class GlobalSceneMeshStatistics(StrictModel):
+    vertex_count: int = Field(gt=0)
+    face_count: int = Field(gt=0)
+    disconnected_components: int = Field(ge=1)
+    degenerate_faces: int = Field(ge=0)
+    non_manifold_edge_count: int = Field(ge=0)
+    finite_coordinates: Literal[True] = True
+    bounding_box_min: tuple[float, float, float]
+    bounding_box_max: tuple[float, float, float]
+    bounding_box_extent: tuple[float, float, float]
+    material_count: int = Field(ge=0)
+    texture_count: int = Field(ge=0)
+    glb_parse_status: Literal["valid"]
+
+
+class GlobalSceneChunkDiagnostic(StrictModel):
+    chunk_id: Annotated[str, Field(min_length=1)]
+    point_count: int = Field(ge=0)
+    selected_view_count: int = Field(ge=0)
+    dropped: bool = False
+    reason: str | None = None
+
+
+class GlobalSceneDiagnostics(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    eligible_frame_count: int = Field(ge=0)
+    selected_view_count: int = Field(ge=0)
+    registered_coverage: float = Field(ge=0, le=1)
+    initial_sparse_points: int = Field(ge=0)
+    cleaned_sparse_points: int = Field(ge=0)
+    point_retention_ratio: float = Field(ge=0, le=1)
+    robust_bounds_min: tuple[float, float, float]
+    robust_bounds_max: tuple[float, float, float]
+    scene_diagonal_arbitrary_units: float = Field(gt=0)
+    chunks_before_filtering: int = Field(ge=0)
+    chunks_after_filtering: int = Field(gt=0)
+    chunks: list[GlobalSceneChunkDiagnostic]
+    mesh: GlobalSceneMeshStatistics
+    chosen_parameters: dict[str, object]
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class GlobalScenePreviewManifest(StrictModel):
+    global_scene_preview_path: Literal["reconstruction/global/previews/global_scene_preview.png"]
+    camera_trajectory_path: Literal[
+        "reconstruction/global/previews/camera_trajectory_and_sparse_points.png"
+    ]
+    input_vs_geometry_path: Literal[
+        "reconstruction/global/previews/input_vs_geometry_contact_sheet.png"
+    ]
+    optional_turntable_path: str | None = None
+
+    @field_validator("optional_turntable_path")
+    @classmethod
+    def validate_optional_preview_path(cls, value: str | None) -> str | None:
+        return _relative_artifact_path(value) if value is not None else None
+
+
+class GlobalSceneReconstructionArtifact(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    scene_asset_path: Literal["reconstruction/global/scene.glb"]
+    mesh_asset_path: Literal["reconstruction/global/mesh.ply"]
+    scene_ir_path: Literal["scene_ir/scene.json"]
+    format: Literal["glb"] = "glb"
+    coordinate_convention: CoordinateConvention
+    scale_status: ScaleStatus
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_package_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    input_frame_count: int = Field(gt=0)
+    registered_frame_count: int = Field(gt=0)
+    unregistered_frame_count: int = Field(ge=0)
+    eligible_frame_ids: list[str]
+    actual_selected_frame_ids: list[str]
+    mesh: GlobalSceneMeshStatistics
+    chunk_count: int = Field(gt=0)
+    checkpoints: list[GenReconCheckpointRecord]
+    official_repository: Annotated[str, Field(min_length=1)]
+    official_code_commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    runtime_model_repository: Literal["facebook/dinov3-vitl16-pretrain-lvd1689m"]
+    runtime_model_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    runtime_repository_revisions: dict[
+        str,
+        Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    ]
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    seed: int
+    provenance: ProvenanceRecord
+
+
+class EndToEndConsistencyCheck(StrictModel):
+    check_id: Annotated[str, Field(min_length=1)]
+    passed: bool
+    message: Annotated[str, Field(min_length=1)]
+
+
+class EndToEndConsistencyReport(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    passed: bool
+    checks: list[EndToEndConsistencyCheck]
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    real_modules_share_consistent_inputs: bool
+    object_level_2d_3d_fusion_implemented: Literal[False] = False
+    sim_ready_scene_implemented: Literal[False] = False
+    metric_scale_known: Literal[False] = False
+    canonical_gravity_alignment_known: Literal[False] = False
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def summary_matches_checks(self) -> Self:
+        expected = all(check.passed for check in self.checks)
+        if self.passed != expected:
+            raise ValueError("end-to-end report passed must equal all individual checks")
+        if self.real_modules_share_consistent_inputs != expected:
+            raise ValueError("input consistency summary must equal all individual checks")
         return self
 
 

@@ -1,0 +1,288 @@
+{
+  "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_package_manifest_path": {
+      "const": "camera/genrecon_package/package_manifest.json",
+      "default": "camera/genrecon_package/package_manifest.json",
+      "title": "Camera Package Manifest Path",
+      "type": "string"
+    },
+    "camera_package_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Sha256",
+      "type": "string"
+    },
+    "camera_reconstruction_path": {
+      "const": "camera/reconstruction.json",
+      "default": "camera/reconstruction.json",
+      "title": "Camera Reconstruction Path",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "checkpoint_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Checkpoint Hashes",
+      "type": "object"
+    },
+    "checkpoint_manifest_path": {
+      "minLength": 1,
+      "title": "Checkpoint Manifest Path",
+      "type": "string"
+    },
+    "checkpoint_paths": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Checkpoint Paths",
+      "type": "object"
+    },
+    "coordinate_convention": {
+      "$ref": "#/$defs/CoordinateConvention"
+    },
+    "eligible_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Eligible Frame Ids",
+      "type": "array"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "manifest_path": {
+      "const": "inputs/manifest.json",
+      "default": "inputs/manifest.json",
+      "title": "Manifest Path",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "master_frame_order": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Master Frame Order",
+      "type": "array"
+    },
+    "normalized_frame_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Normalized Frame Hashes",
+      "type": "object"
+    },
+    "normalized_frame_paths": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Normalized Frame Paths",
+      "type": "object"
+    },
+    "official_checkout_path": {
+      "minLength": 1,
+      "title": "Official Checkout Path",
+      "type": "string"
+    },
+    "official_code_commit": {
+      "const": "eaf1468118d20469d17079a4a19737297d2ef87b",
+      "title": "Official Code Commit",
+      "type": "string"
+    },
+    "official_repository": {
+      "const": "https://github.com/kasothaphie/GenRecon",
+      "title": "Official Repository",
+      "type": "string"
+    },
+    "output_directory": {
+      "const": "reconstruction/global/raw",
+      "default": "reconstruction/global/raw",
+      "title": "Output Directory",
+      "type": "string"
+    },
+    "pipeline_config": {
+      "title": "Pipeline Config",
+      "type": "string"
+    },
+    "reconstruction_parameters": {
+      "additionalProperties": true,
+      "title": "Reconstruction Parameters",
+      "type": "object"
+    },
+    "registered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Registered Frame Ids",
+      "type": "array"
+    },
+    "requested_max_views": {
+      "exclusiveMinimum": 0,
+      "title": "Requested Max Views",
+      "type": "integer"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "unregistered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unregistered Frame Ids",
+      "type": "array"
+    },
+    "working_transform_strategy": {
+      "enum": [
+        "identity",
+        "pca_scene_axes"
+      ],
+      "title": "Working Transform Strategy",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "official_repository",
+    "official_code_commit",
+    "official_checkout_path",
+    "checkpoint_paths",
+    "checkpoint_hashes",
+    "checkpoint_manifest_path",
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "camera_package_sha256",
+    "master_frame_order",
+    "normalized_frame_paths",
+    "normalized_frame_hashes",
+    "registered_frame_ids",
+    "unregistered_frame_ids",
+    "eligible_frame_ids",
+    "requested_max_views",
+    "coordinate_convention",
+    "working_transform_strategy",
+    "pipeline_config",
+    "reconstruction_parameters",
+    "seed"
+  ],
+  "title": "GenReconInferenceRequest",
+  "type": "object"
+}

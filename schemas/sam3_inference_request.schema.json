@@ -387,6 +387,19 @@
       "title": "Frame Paths",
       "type": "array"
     },
+    "frame_sequence_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Frame Sequence Digest"
+    },
     "model_configuration": {
       "additionalProperties": true,
       "title": "Model Configuration",

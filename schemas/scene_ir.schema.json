@@ -351,6 +351,17 @@
         "asset_type": {
           "$ref": "#/$defs/AssetType"
         },
+        "coordinate_convention": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoordinateConvention"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "format": {
           "enum": [
             "obj",
@@ -362,6 +373,17 @@
         },
         "provenance": {
           "$ref": "#/$defs/ProvenanceRecord"
+        },
+        "scale_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ScaleStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "source": {
           "$ref": "#/$defs/GeometrySourceType"

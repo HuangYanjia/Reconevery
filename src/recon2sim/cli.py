@@ -13,7 +13,11 @@ from recon2sim.adapters.base import StageContext
 from recon2sim.artifacts import (
     CameraDiagnostics,
     CameraReconstruction,
+    EndToEndConsistencyReport,
     FrameQualityReport,
+    GenReconWorkerManifest,
+    GlobalSceneDiagnostics,
+    GlobalSceneReconstructionArtifact,
     IngestManifest,
     Sam3WorkerManifest,
     SegmentationDiagnostics,
@@ -21,6 +25,7 @@ from recon2sim.artifacts import (
     SegmentationTrackingArtifact,
 )
 from recon2sim.config import load_config
+from recon2sim.genrecon import read_colmap_text_points, render_global_previews
 from recon2sim.ir import SceneIR
 from recon2sim.pipeline import PipelineConfigurationError, PipelineRunner
 from recon2sim.segmentation import export_coco, render_previews
@@ -40,10 +45,20 @@ segmentation_app = typer.Typer(
     help="Inspect and export canonical segmentation tracks.",
     no_args_is_help=True,
 )
+reconstruction_app = typer.Typer(
+    help="Inspect and export global visual reconstruction artifacts.",
+    no_args_is_help=True,
+)
+validation_app = typer.Typer(
+    help="Inspect and verify cross-stage consistency reports.",
+    no_args_is_help=True,
+)
 app.add_typer(adapters_app, name="adapters")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(camera_app, name="camera")
 app.add_typer(segmentation_app, name="segmentation")
+app.add_typer(reconstruction_app, name="reconstruction")
+app.add_typer(validation_app, name="validation")
 
 
 @app.command()
@@ -513,3 +528,166 @@ def export_segmentation_coco(
         raise typer.BadParameter(f"COCO export failed: {exc}") from exc
     annotation_count = sum(len(track.observations) for track in artifact.tracks)
     typer.echo(f"wrote {annotation_count} annotations to {output}")
+
+
+@reconstruction_app.command("inspect-global")
+def inspect_global_reconstruction(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    metadata = _artifact_model(
+        run_dir,
+        "reconstruction/global/metadata.json",
+        GlobalSceneReconstructionArtifact,
+    )
+    diagnostics = _artifact_model(
+        run_dir,
+        "reconstruction/global/diagnostics.json",
+        GlobalSceneDiagnostics,
+    )
+    worker = _artifact_model(
+        run_dir,
+        "reconstruction/global/worker_manifest.json",
+        GenReconWorkerManifest,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "official_code_commit": worker.official_code_commit,
+                "runtime_model": (
+                    f"{worker.runtime_model_repository}@{worker.runtime_model_revision}"
+                ),
+                "runtime_repository_revisions": worker.runtime_repository_revisions,
+                "checkpoint_hashes": {
+                    record.checkpoint_id: record.sha256 for record in worker.checkpoint_records
+                },
+                "input_frames": metadata.input_frame_count,
+                "registered_frames": metadata.registered_frame_count,
+                "selected_genrecon_views": len(metadata.actual_selected_frame_ids),
+                "sparse_points": diagnostics.initial_sparse_points,
+                "cleaned_points": diagnostics.cleaned_sparse_points,
+                "chunks": metadata.chunk_count,
+                "vertices": metadata.mesh.vertex_count,
+                "faces": metadata.mesh.face_count,
+                "materials": metadata.mesh.material_count,
+                "bounding_box": {
+                    "min": metadata.mesh.bounding_box_min,
+                    "max": metadata.mesh.bounding_box_max,
+                },
+                "runtime_seconds": metadata.runtime_seconds,
+                "peak_gpu_memory_bytes": metadata.peak_gpu_memory_bytes,
+                "coordinate_convention": metadata.coordinate_convention.model_dump(mode="json"),
+                "warnings": diagnostics.warnings,
+            },
+            indent=2,
+            default=str,
+        )
+    )
+
+
+@reconstruction_app.command("render-global-preview")
+def render_global_reconstruction_preview(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    manifest = _artifact_model(run_dir, "inputs/manifest.json", IngestManifest)
+    camera = _artifact_model(
+        run_dir,
+        "camera/reconstruction.json",
+        CameraReconstruction,
+    )
+    try:
+        outputs = render_global_previews(
+            root=run_dir,
+            manifest=manifest,
+            camera=camera,
+            sparse_points=read_colmap_text_points(run_dir / "camera/genrecon_package/points3D.txt"),
+            mesh_path=run_dir / "reconstruction/global/mesh.ply",
+        )
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(f"global preview rendering failed: {exc}") from exc
+    typer.echo(f"wrote {len(outputs)} deterministic global previews")
+
+
+@reconstruction_app.command("export-global-mesh")
+def export_global_mesh(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", help="Output path for the canonical global PLY mesh."),
+    ],
+) -> None:
+    metadata = _artifact_model(
+        run_dir,
+        "reconstruction/global/metadata.json",
+        GlobalSceneReconstructionArtifact,
+    )
+    source = run_dir / metadata.mesh_asset_path
+    if not source.is_file():
+        raise typer.BadParameter(f"canonical global mesh does not exist: {source}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, output)
+    typer.echo(f"wrote global mesh to {output}")
+
+
+@validation_app.command("inspect-phase3-e2e")
+def inspect_phase3_e2e(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase3_e2e_consistency.json",
+        EndToEndConsistencyReport,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "passed": report.passed,
+                "checks": {
+                    check.check_id: {
+                        "passed": check.passed,
+                        "message": check.message,
+                    }
+                    for check in report.checks
+                },
+                "capability_boundary": {
+                    "object_level_2d_3d_fusion_implemented": (
+                        report.object_level_2d_3d_fusion_implemented
+                    ),
+                    "sim_ready_scene_implemented": report.sim_ready_scene_implemented,
+                    "metric_scale_known": report.metric_scale_known,
+                    "canonical_gravity_alignment_known": (report.canonical_gravity_alignment_known),
+                },
+                "warnings": report.warnings,
+            },
+            indent=2,
+        )
+    )
+
+
+@validation_app.command("verify-phase3-e2e")
+def verify_phase3_e2e(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase3_e2e_consistency.json",
+        EndToEndConsistencyReport,
+    )
+    if not report.passed:
+        failed = [check.check_id for check in report.checks if not check.passed]
+        raise typer.BadParameter(f"Phase 3 consistency verification failed: {failed}")
+    typer.echo(f"Phase 3 end-to-end consistency passed ({len(report.checks)} checks)")

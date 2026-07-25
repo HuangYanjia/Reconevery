@@ -108,6 +108,21 @@ boxes, invalid scores, short/low-coverage tracks, duplicate object/frame observa
 same-prompt or configured-synonym duplicates. Different semantic labels are never merged solely
 because their masks overlap. Valid no-object results produce `tracks: []`.
 
+## GenRecon global reconstruction
+
+`genrecon_camera_package` reads only the selected COLMAP binary triplet and emits deterministic
+text plus a typed manifest. `genrecon_global_reconstruction` supports `local_worker`, `docker`,
+and `fake_worker`. The core imports no GenRecon, PyTorch, NumPy, trimesh, Open3D, or CUDA package.
+
+The official worker verifies commit `eaf1468118d20469d17079a4a19737297d2ef87b`, the recursive
+Eigen submodule, three official TUM checkpoint hashes, Python/PyTorch/torchvision/CUDA versions,
+and required CUDA extensions. It invokes the official reconstruction and GLB scripts with
+argument arrays and validates files independently of return codes.
+
+Checkpoint `InputSpec` entries use `reference_only`: they contribute bytes and hashes to cache
+signatures but are not copied. The attempt contains only registered frames and the normalized
+camera package. See `docs/phase_3_genrecon.md` for commands and failure handling.
+
 ## Future real adapters
 
 A real adapter must document and test inputs, outputs, schema IDs, command template, environment
@@ -115,5 +130,5 @@ allowlist, timeout, retries, GPU metadata, healthcheck, provenance, coordinate c
 failure artifacts. It must emit the existing typed contract before any downstream stage accepts
 its work.
 
-Automatic VLM scene inventory, GenRecon, SceneSmith, Blender, and simulator integrations remain
-later, separate phases.
+Automatic VLM scene inventory, object-level reconstruction/fusion, SceneSmith, Blender, and
+simulator integrations remain later, separate phases.
