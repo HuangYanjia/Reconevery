@@ -69,6 +69,7 @@ class InferenceRequest(WorkerModel):
     run_id: str
     frame_manifest_path: str
     frame_manifest_sha256: str
+    frame_sequence_digest: str | None = None
     frame_order: list[str]
     frame_paths: list[str]
     frame_dimensions: dict[str, tuple[int, int]]

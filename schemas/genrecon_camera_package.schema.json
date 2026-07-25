@@ -1,0 +1,279 @@
+{
+  "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "GenReconRegisteredFrame": {
+      "additionalProperties": false,
+      "properties": {
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "original_colmap_camera_id": {
+          "exclusiveMinimum": 0,
+          "title": "Original Colmap Camera Id",
+          "type": "integer"
+        },
+        "original_colmap_image_id": {
+          "exclusiveMinimum": 0,
+          "title": "Original Colmap Image Id",
+          "type": "integer"
+        },
+        "package_camera_id": {
+          "exclusiveMinimum": 0,
+          "title": "Package Camera Id",
+          "type": "integer"
+        },
+        "package_image_id": {
+          "exclusiveMinimum": 0,
+          "title": "Package Image Id",
+          "type": "integer"
+        },
+        "package_image_name": {
+          "minLength": 1,
+          "title": "Package Image Name",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "source_relative_path": {
+          "minLength": 1,
+          "title": "Source Relative Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frame_id",
+        "source_relative_path",
+        "package_image_name",
+        "sha256",
+        "original_colmap_image_id",
+        "package_image_id",
+        "original_colmap_camera_id",
+        "package_camera_id"
+      ],
+      "title": "GenReconRegisteredFrame",
+      "type": "object"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_reconstruction_path": {
+      "const": "camera/reconstruction.json",
+      "default": "camera/reconstruction.json",
+      "title": "Camera Reconstruction Path",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "cameras_path": {
+      "const": "camera/genrecon_package/cameras.txt",
+      "default": "camera/genrecon_package/cameras.txt",
+      "title": "Cameras Path",
+      "type": "string"
+    },
+    "coordinate_convention": {
+      "$ref": "#/$defs/CoordinateConvention"
+    },
+    "eligible_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Eligible Frame Ids",
+      "type": "array"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "images_path": {
+      "const": "camera/genrecon_package/images.txt",
+      "default": "camera/genrecon_package/images.txt",
+      "title": "Images Path",
+      "type": "string"
+    },
+    "master_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Master Frame Ids",
+      "type": "array"
+    },
+    "package_content_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Package Content Sha256",
+      "type": "string"
+    },
+    "points3d_path": {
+      "const": "camera/genrecon_package/points3D.txt",
+      "default": "camera/genrecon_package/points3D.txt",
+      "title": "Points3D Path",
+      "type": "string"
+    },
+    "registered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Registered Frame Ids",
+      "type": "array"
+    },
+    "registered_frames": {
+      "items": {
+        "$ref": "#/$defs/GenReconRegisteredFrame"
+      },
+      "title": "Registered Frames",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_model_id": {
+      "minLength": 1,
+      "title": "Selected Model Id",
+      "type": "string"
+    },
+    "source_manifest_path": {
+      "const": "inputs/manifest.json",
+      "default": "inputs/manifest.json",
+      "title": "Source Manifest Path",
+      "type": "string"
+    },
+    "source_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Manifest Sha256",
+      "type": "string"
+    },
+    "source_model_paths": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Source Model Paths",
+      "type": "object"
+    },
+    "unregistered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unregistered Frame Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "source_manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "selected_model_id",
+    "source_model_paths",
+    "master_frame_ids",
+    "registered_frame_ids",
+    "unregistered_frame_ids",
+    "eligible_frame_ids",
+    "registered_frames",
+    "package_content_sha256",
+    "coordinate_convention"
+  ],
+  "title": "GenReconCameraPackageManifest",
+  "type": "object"
+}

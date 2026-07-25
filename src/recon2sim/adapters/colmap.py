@@ -647,6 +647,7 @@ class ColmapCameraRecoveryAdapter:
                 scale_status=ScaleStatus.SCALE_AMBIGUOUS,
             ),
             scale_status=ScaleStatus.SCALE_AMBIGUOUS,
+            frame_sequence_digest=manifest.frame_sequence_digest,
             provenance=provenance,
         )
 

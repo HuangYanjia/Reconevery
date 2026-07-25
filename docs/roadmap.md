@@ -36,9 +36,19 @@ translations as meters without an observable scale reference.
 - deterministic contact sheet, timeline, frame previews, and COCO export;
 - exact official code/checkpoint provenance and credential-safe healthchecks.
 
-A real official checkpoint smoke remains an external validation gate when no compatible GPU or
-authorized checkpoint is available. The PR should remain draft until that smoke succeeds or the
-external blocker is explicitly accepted.
+A real official SAM 3.1 checkpoint smoke has run on H100 and records the pinned code/checkpoint
+identity, valid canonical masks, previews, COCO output, and cache hit.
+
+## Phase 3 implementation
+
+- deterministic observation-lineage digest across COLMAP, SAM, and GenRecon;
+- minimal selected-model COLMAP text camera package;
+- isolated official GenRecon local/Docker worker and CPU fake protocol;
+- three official checkpoint hashes and exact Git/submodule identity;
+- reversible internal chunking transform with outputs returned to raw COLMAP coordinates;
+- typed global PBR scene, mesh diagnostics, Scene IR visual assets, and previews;
+- cross-stage consistency and selective-materialization validation;
+- real module-level and full COLMAP -> SAM -> GenRecon acceptance gates.
 
 ## Recommended Phase 2.5
 
@@ -48,8 +58,7 @@ claim exhaustive vocabulary or physical classification without validation.
 
 ## Later phases
 
-- Phase 3: GenRecon global reconstruction adapter.
-- Phase 4: rigid and articulated object reconstruction adapters.
+- Phase 4: SAM-to-global-scene object association and rigid/articulated object reconstruction.
 - Phase 5: SceneSmith or equivalent scene compiler adapter.
 - Phase 6: physics repair and explicit simulator exports.
 

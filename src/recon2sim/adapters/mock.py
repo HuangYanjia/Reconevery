@@ -58,6 +58,7 @@ from recon2sim.ir import (
     ValidationIssue,
     ValidationReport,
 )
+from recon2sim.lineage import frame_sequence_digest
 from recon2sim.storage import atomic_write_json, atomic_write_text
 
 
@@ -252,6 +253,7 @@ class MockIngestAdapter(MockAdapter):
         manifest = IngestManifest(
             source_type=source_type,
             frames=frame_entries,
+            frame_sequence_digest=frame_sequence_digest(frame_entries),
             provenance=provenance,
         )
         atomic_write_json(context.path(manifest_path), manifest)
@@ -314,6 +316,7 @@ class MockCameraRecoveryAdapter(MockAdapter):
             poses=poses,
             confidence=ConfidenceRecord(score=0.94, method="deterministic_mock"),
             coordinate_convention=CoordinateConvention(),
+            frame_sequence_digest=manifest.frame_sequence_digest,
             provenance=provenance,
         )
         atomic_write_json(context.path(output_path), reconstruction)

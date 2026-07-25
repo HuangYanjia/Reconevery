@@ -2,11 +2,11 @@
 
 ## Current scope
 
-Phase 2 provides real FFmpeg ingest, out-of-process COLMAP camera recovery, and an isolated
-official SAM 3.1 worker. Do not import COLMAP, SAM, torch, torchvision, CUDA runtimes, or checkpoint
-loaders into the core package. Do not add VLM scene inventory, GenRecon, SceneSmith, Blender,
-MVS/NeRF, Drake, MuJoCo, Isaac Sim, or model checkpoints. Heavy integrations belong behind
-filesystem adapters.
+Phase 3 provides real FFmpeg ingest, out-of-process COLMAP camera recovery, isolated official
+SAM 3.1 tracking, and isolated official GenRecon global visual reconstruction. Do not import
+COLMAP, SAM, GenRecon, torch, torchvision, CUDA runtimes, or checkpoint loaders into the core
+package. Do not add VLM scene inventory, object-level 2D/3D fusion, SceneSmith, physics,
+simulators, or model checkpoints. Heavy integrations belong behind filesystem adapters.
 
 ## Architecture map
 
@@ -16,9 +16,12 @@ filesystem adapters.
 - `src/recon2sim/colmap`: strict binary model parsing and coordinate conversion.
 - `src/recon2sim/frame_qa.py`: deterministic CPU frame-quality metrics.
 - `src/recon2sim/segmentation.py`: prompt validation, anchors, masks, IDs, QA, previews, and COCO.
+- `src/recon2sim/genrecon.py`: lineage, COLMAP text export, lightweight mesh checks, and previews.
 - `src/recon2sim/pipeline`: DAG validation, signatures, cache/resume, retries, and manifests.
 - `workers/sam3`: isolated pinned official SAM runtime; never imported by core.
 - `docker/sam3`: optional NVIDIA/CUDA worker image with no embedded checkpoint.
+- `workers/genrecon`: isolated pinned official GenRecon runtime; never imported by core.
+- `docker/genrecon`: optional CUDA 12.6/H100 worker image with no embedded checkpoint.
 - `src/recon2sim/images.py`: dependency-free test PNG generation and validation.
 - `src/recon2sim/storage`: atomic JSON, YAML, and text writes.
 - `configs`, `schemas`, `examples`, `tests`, `docs`: reproducible Phase 0.1 assets.
@@ -33,6 +36,7 @@ uv run recon2sim validate-ir runs/tabletop_demo/scene_ir/scene.json
 uv run recon2sim adapters healthcheck --config configs/colmap.yaml
 uv run recon2sim adapters healthcheck --config configs/sam3_fake.yaml
 uv run recon2sim run --input examples/tabletop --config configs/sam3_fake.yaml --run-dir runs/tabletop_sam3_fake
+uv run recon2sim run --input examples/tabletop --config configs/phase3_e2e_fake.yaml --run-dir runs/phase3_e2e_fake
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
@@ -67,6 +71,12 @@ uv run mypy src
   first-frame, centroid, area, and raw-ID-final-tiebreak ordering.
 - Credentials are environment-only and must never enter commands, requests, resolved config,
   provenance, diagnostics, or logs.
+- SAM and GenRecon are parallel consumers of one ordered frame lineage. Prompt changes must not
+  invalidate GenRecon when GenRecon consumes no SAM artifact.
+- GenRecon receives only the selected COLMAP text package and registered normalized frames.
+  Checkpoints are read-only references identified by SHA-256.
+- A GenRecon PCA working transform is internal, reversible preprocessing. Final visual geometry
+  must be returned to the original arbitrary, unoriented, scale-ambiguous COLMAP frame.
 
 ## Change discipline
 
@@ -74,6 +84,5 @@ Behavior changes require tests and documentation. Typed artifact changes require
 checked-in schemas. Adapter changes must document inputs, outputs, schema identifiers, environment
 allowlists, timeout, retry behavior, healthcheck, provenance, and tests.
 
-The recommended next task after a real official checkpoint smoke is a separate Phase 2.5
-prompt-inventory design. Do not mix it with global/object reconstruction, SceneSmith, physics
-simulation, or simulator export.
+The next task after real Phase 3 acceptance is object-level 2D/3D fusion design. Do not mix it
+with VLM inventory generation, SceneSmith, physical estimation, or simulator export.

@@ -308,6 +308,7 @@ def run_inference(request_path: Path, output_dir: Path) -> None:
             "peak_gpu_memory_bytes": torch.cuda.max_memory_allocated(),
             "prompt_manifest_hash": request.prompt_manifest_sha256,
             "frame_manifest_hash": request.frame_manifest_sha256,
+            "frame_sequence_digest": request.frame_sequence_digest,
             "strategy": request.strategy,
             "model_mode": config.model_mode,
             "image_identifier": None,

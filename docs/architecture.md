@@ -108,6 +108,16 @@ separate local worker, an NVIDIA Docker worker, or the deterministic fake worker
 credential-redacted before retention. The official checkpoint is never part of a request or
 image, and credentials are passed only through allowlisted environment names.
 
+GenRecon is a sibling branch, not a SAM dependent. `genrecon_camera_package` exports one selected
+COLMAP model as deterministic text. `genrecon_global_reconstruction` declares only that package,
+registered normalized frames, typed camera metadata, and read-only checkpoint references. The
+runner hashes `reference_only` external inputs for signatures without copying multi-gigabyte
+weights into attempts.
+
+The observation-lineage digest hashes ordered frame ID/path/content tuples. It is carried by
+ingest, camera, SAM, GenRecon, and consistency artifacts. The Phase 3 validator also audits
+attempt materialization lists and coordinate metadata.
+
 ## Coordinate convention
 
 COLMAP `qvec,tvec` world-to-camera transforms are inverted to produce world-from-camera, and
@@ -118,3 +128,7 @@ X-right/Y-down/Z-forward; arbitrary linear units; and ambiguous scale.
 The canonical robot frame is right-handed +X forward, +Y left, +Z up in meters. A later alignment
 stage must estimate gravity/orientation and external scale before changing the metadata and
 translations to that canonical contract.
+
+GenRecon may use a recorded invertible PCA working transform because its official chunker assumes
+axis-aligned bounds. This remains unoriented preprocessing. Canonical PLY/GLB outputs are
+transformed back into the original COLMAP world before promotion.

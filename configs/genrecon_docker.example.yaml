@@ -1,0 +1,57 @@
+seed: 42
+stages:
+  ingest:
+    adapter:
+      name: ffmpeg_ingest
+      timeout_s: 3600
+      env: [PATH, HOME, TMPDIR]
+      config:
+        input_mode: auto
+        target_fps: 3.0
+        max_frames: 32
+        resize_max_edge: 1920
+        blur_threshold: 0.0
+        duplicate_threshold: 0.0
+        min_brightness: 5.0
+        max_brightness: 250.0
+    depends_on: []
+
+  camera_recovery:
+    adapter:
+      name: colmap_camera_recovery
+      timeout_s: 14400
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: local
+        executable: colmap
+        matcher: sequential
+        camera_model: OPENCV
+        single_camera: true
+        use_gpu: true
+        min_registered_frames: 12
+        min_registration_ratio: 0.4
+    depends_on: [ingest]
+
+  genrecon_camera_package:
+    adapter:
+      name: genrecon_camera_package
+      config: {}
+    depends_on: [ingest, camera_recovery]
+
+  global_reconstruction:
+    adapter:
+      name: genrecon_global_reconstruction
+      timeout_s: 43200
+      env: [HF_HOME, HF_TOKEN, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: docker
+        docker_image: reconevery/genrecon:phase3
+        hf_cache_path: /absolute/path/to/huggingface-cache
+        sparse_structure_checkpoint: /absolute/path/to/sparse_structure.pt
+        shape_checkpoint: /absolute/path/to/shape_slat.pt
+        texture_checkpoint: /absolute/path/to/texture_slat.pt
+        device: cuda
+        precision: float16
+        requested_max_views: 32
+        working_transform_strategy: pca_scene_axes
+    depends_on: [ingest, camera_recovery, genrecon_camera_package]

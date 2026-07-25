@@ -494,6 +494,7 @@ class Sam3SegmentationTrackingAdapter:
             run_id=context.canonical_run_dir.name,
             frame_manifest_path="inputs/manifest.json",
             frame_manifest_sha256=sha256_file(frame_manifest_path),
+            frame_sequence_digest=frame_manifest.frame_sequence_digest,
             frame_order=[frame.frame_id for frame in frame_manifest.frames],
             frame_paths=[frame.relative_path for frame in frame_manifest.frames],
             frame_dimensions={
@@ -622,6 +623,7 @@ class Sam3SegmentationTrackingAdapter:
             prompt_manifest_path="observations/prompts.json",
             worker_manifest_path="observations/worker_manifest.json",
             diagnostics_path="observations/diagnostics.json",
+            frame_sequence_digest=frame_manifest.frame_sequence_digest,
             provenance=provenance,
         )
         seen_prompt_ids = {track.prompt_id for track in tracks}
@@ -977,6 +979,10 @@ class Sam3SegmentationTrackingAdapter:
             "frame_manifest_hash": (
                 manifest.frame_manifest_hash,
                 request.frame_manifest_sha256,
+            ),
+            "frame_sequence_digest": (
+                manifest.frame_sequence_digest,
+                request.frame_sequence_digest,
             ),
             "strategy": (manifest.strategy, config.strategy),
             "model_mode": (manifest.model_mode, config.model_mode),

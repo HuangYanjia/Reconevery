@@ -71,9 +71,13 @@ is propagated into the Scene IR metadata and camera record by the explicit mock-
 
 ## JSON Schema
 
-Pydantic v2 generates Scene IR plus segmentation prompt, request, and track schemas under
-`schemas/`, including nested `$defs`, enums, required fields, numeric constraints, and
-`additionalProperties: false` behavior.
+Phase 3 adds generated global visual `GeometryAsset` records for PBR GLB and inspection PLY.
+Each carries its own coordinate convention and scale status. No `CollisionAsset` is inferred from
+the GenRecon mesh, and no physical truth is attached to generated triangles.
+
+Pydantic v2 generates Scene IR plus segmentation, GenRecon, global reconstruction, and
+consistency schemas under `schemas/`, including nested `$defs`, enums, required fields, numeric
+constraints, and `additionalProperties: false` behavior.
 
 ```bash
 uv run python scripts/generate_schema.py
