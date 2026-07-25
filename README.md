@@ -1,9 +1,9 @@
 # Recon2Sim
 
-Recon2Sim Phase 1 is a typed observation-to-simulation pipeline with real video/image ingest,
-deterministic frame QA, and out-of-process COLMAP sparse camera recovery. The downstream
-segmentation, reconstruction, compilation, validation, and export stages remain deterministic
-mocks. COLMAP, FFmpeg, and Docker are optional system tools rather than Python dependencies.
+Recon2Sim Phase 2 is a typed observation pipeline with real video/image ingest, frame QA,
+out-of-process COLMAP sparse camera recovery, and prompt-driven SAM 3.1 segmentation/tracking.
+Heavy tools and model runtimes remain isolated from the lightweight core package. Global/object
+3D reconstruction, compilation, validation, and export remain deterministic mocks.
 
 ## Quickstart
 
@@ -40,6 +40,25 @@ followed by Phase 0.1 mocks. The optional pinned COLMAP 3.11.1 image is:
 ```bash
 docker build -t reconevery/colmap:phase1 docker/colmap
 ```
+
+Run the complete CPU-only fake SAM protocol, including canonical masks and previews:
+
+```bash
+uv run recon2sim adapters healthcheck --config configs/sam3_fake.yaml
+uv run recon2sim run \
+  --input examples/tabletop \
+  --config configs/sam3_fake.yaml \
+  --run-dir runs/tabletop_sam3_fake
+uv run recon2sim segmentation inspect runs/tabletop_sam3_fake
+uv run recon2sim segmentation render-preview runs/tabletop_sam3_fake
+uv run recon2sim segmentation export-coco \
+  runs/tabletop_sam3_fake --output runs/tabletop_sam3_fake/annotations.json
+```
+
+`configs/sam3.yaml` and `configs/sam3_docker.example.yaml` use the official gated
+`facebook/sam3.1` checkpoint and stop after segmentation. Accept Meta's terms and provide
+`HF_TOKEN`, an authorized cache, or a mounted local official checkpoint. See
+[`docs/phase_2_sam3.md`](docs/phase_2_sam3.md).
 
 Resume without changing successful status:
 
@@ -92,6 +111,22 @@ binary-model parsing, and deterministic sparse-model selection. It preserves `da
 every sparse model, commands, and logs under `camera/colmap/`. See
 [`docs/phase_1_colmap.md`](docs/phase_1_colmap.md) for setup and capture guidance.
 
+## SAM 3 segmentation and tracking
+
+`sam3_segmentation_tracking` consumes only the normalized manifest, frame QA, typed camera
+reconstruction, selected frames, and a validated prompt manifest. It never copies the raw COLMAP
+database, sparse models, or logs into the SAM attempt. Text, box, point, and mask prompt contracts
+are typed; the pinned official public video API supports text, box, and point requests. It does
+not expose mask-seed requests, so the real worker reports that limitation instead of using an
+undocumented internal method.
+
+The default real backend is official SAM 3.1 Object Multiplex at code commit
+`46957e47805eaa273f4aa7bbbd25a88bca9108ce` and checkpoint revision
+`daa63191845a41281374e725f4c9e51c7a824460`. Canonical tracks preserve raw model IDs separately,
+assign stable semantic IDs such as `cup_0001`, and write one grayscale `0/255` PNG per visible
+object/frame. Frames without a COLMAP pose remain valid 2D observations and carry
+`camera_pose_available=false`.
+
 ## Coordinate convention
 
 Raw Phase 1 COLMAP output is explicitly `world_frame="colmap_arbitrary"`,
@@ -113,8 +148,8 @@ uv run ruff format --check .
 uv run mypy src
 ```
 
-The generated schema at `schemas/scene_ir.schema.json` is checked against
-`SceneIR.model_json_schema()` in tests. Regenerate it with:
+Scene IR, prompt, request, and segmentation schemas under `schemas/` are checked against their
+Pydantic models in tests. Regenerate them with:
 
 ```bash
 uv run python scripts/generate_schema.py
@@ -122,6 +157,6 @@ uv run python scripts/generate_schema.py
 
 ## Adapter boundary
 
-Core code imports only lightweight dependencies. Heavyweight tools run behind an adapter boundary
-and exchange declared, typed, validated artifacts. SAM 3, GenRecon, SceneSmith, Blender,
-simulators, MVS, NeRF, and model checkpoints remain out of Phase 1.
+Core code imports only lightweight dependencies. Official SAM code, PyTorch, CUDA packages, and
+checkpoints exist only in `workers/sam3` or `docker/sam3`. GenRecon, SceneSmith, Blender,
+simulators, MVS, NeRF, and automatic VLM prompt inventory remain outside Phase 2.

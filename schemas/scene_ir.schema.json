@@ -43,6 +43,7 @@
     },
     "AssetType": {
       "enum": [
+        "unclassified",
         "static_structure",
         "rigid",
         "articulated",

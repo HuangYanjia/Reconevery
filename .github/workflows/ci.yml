@@ -53,6 +53,25 @@ jobs:
       - name: Validate generated Scene IR
         run: uv run recon2sim validate-ir runs/tabletop_demo/scene_ir/scene.json
 
+      - name: Run CPU-only fake SAM pipeline
+        run: >-
+          uv run recon2sim run
+          --input examples/tabletop
+          --config configs/sam3_fake.yaml
+          --run-dir runs/tabletop_sam3_fake
+
+      - name: Verify fake SAM resume cache hits
+        run: |
+          uv run recon2sim run \
+            --input examples/tabletop \
+            --config configs/sam3_fake.yaml \
+            --run-dir runs/tabletop_sam3_fake \
+            --resume
+          uv run python -c "import json; p=json.load(open('runs/tabletop_sam3_fake/manifest.json')); assert all(s['last_execution']=='cache_hit' for s in p['stages'].values())"
+
+      - name: Inspect fake SAM outputs
+        run: uv run recon2sim segmentation inspect runs/tabletop_sam3_fake
+
       - name: Upload mock run after failure
         if: failure()
         uses: actions/upload-artifact@v7

@@ -1,0 +1,71 @@
+seed: 7
+paths: {}
+stages:
+  ingest:
+    adapter:
+      name: ffmpeg_ingest
+      timeout_s: 1800
+      env:
+        - PATH
+        - HOME
+        - TMPDIR
+      config:
+        input_mode: auto
+        target_fps: 3.0
+        max_frames: 300
+        resize_max_edge: 1920
+        blur_threshold: 0.0
+        duplicate_threshold: 0.0
+        min_brightness: 5.0
+        max_brightness: 250.0
+        keep_rejected_frames: true
+    depends_on: []
+
+  camera_recovery:
+    adapter:
+      name: colmap_camera_recovery
+      timeout_s: 14400
+      env:
+        - PATH
+        - HOME
+        - TMPDIR
+      config:
+        execution_mode: local
+        executable: colmap
+        matcher: sequential
+        camera_model: OPENCV
+        single_camera: true
+        use_gpu: false
+        min_registered_frames: 8
+        min_registration_ratio: 0.4
+    depends_on:
+      - ingest
+
+  segmentation_tracking:
+    adapter:
+      name: sam3_segmentation_tracking
+      timeout_s: 14400
+      env:
+        - PATH
+        - HOME
+        - HF_TOKEN
+        - HF_HOME
+        - CUDA_VISIBLE_DEVICES
+      config:
+        execution_mode: docker
+        docker_image: reconevery/sam3:phase2
+        prompt_manifest: configs/prompts/tabletop.yaml
+        checkpoint_repository: facebook/sam3.1
+        checkpoint_revision: daa63191845a41281374e725f4c9e51c7a824460
+        model_cache_path: /absolute/path/to/authorized-huggingface-cache
+        model_mode: sam3.1
+        device: cuda
+        precision: bfloat16
+        offline: false
+        strategy: detect_then_track
+        anchor_strategy: best_quality_registered_frame
+        anchor_count: 1
+        tracking_direction: forward_backward
+    depends_on:
+      - ingest
+      - camera_recovery

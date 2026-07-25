@@ -2,9 +2,10 @@
 
 ## Current scope
 
-Phase 1 provides real FFmpeg ingest and out-of-process COLMAP camera recovery. Do not import
-COLMAP into Python or add SAM 3, GenRecon, SceneSmith, Blender, MVS/NeRF, Drake, MuJoCo, Isaac Sim,
-model checkpoints, or GPU runtimes to core dependencies. External integrations belong behind
+Phase 2 provides real FFmpeg ingest, out-of-process COLMAP camera recovery, and an isolated
+official SAM 3.1 worker. Do not import COLMAP, SAM, torch, torchvision, CUDA runtimes, or checkpoint
+loaders into the core package. Do not add VLM scene inventory, GenRecon, SceneSmith, Blender,
+MVS/NeRF, Drake, MuJoCo, Isaac Sim, or model checkpoints. Heavy integrations belong behind
 filesystem adapters.
 
 ## Architecture map
@@ -14,7 +15,10 @@ filesystem adapters.
 - `src/recon2sim/adapters`: deterministic mocks plus isolated FFmpeg and COLMAP adapters.
 - `src/recon2sim/colmap`: strict binary model parsing and coordinate conversion.
 - `src/recon2sim/frame_qa.py`: deterministic CPU frame-quality metrics.
+- `src/recon2sim/segmentation.py`: prompt validation, anchors, masks, IDs, QA, previews, and COCO.
 - `src/recon2sim/pipeline`: DAG validation, signatures, cache/resume, retries, and manifests.
+- `workers/sam3`: isolated pinned official SAM runtime; never imported by core.
+- `docker/sam3`: optional NVIDIA/CUDA worker image with no embedded checkpoint.
 - `src/recon2sim/images.py`: dependency-free test PNG generation and validation.
 - `src/recon2sim/storage`: atomic JSON, YAML, and text writes.
 - `configs`, `schemas`, `examples`, `tests`, `docs`: reproducible Phase 0.1 assets.
@@ -27,6 +31,8 @@ uv run recon2sim --help
 uv run recon2sim run --input examples/tabletop --config configs/mock.yaml --run-dir runs/tabletop_demo
 uv run recon2sim validate-ir runs/tabletop_demo/scene_ir/scene.json
 uv run recon2sim adapters healthcheck --config configs/colmap.yaml
+uv run recon2sim adapters healthcheck --config configs/sam3_fake.yaml
+uv run recon2sim run --input examples/tabletop --config configs/sam3_fake.yaml --run-dir runs/tabletop_sam3_fake
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
@@ -39,6 +45,8 @@ uv run mypy src
 - Use explicit imports and explicit `__all__`; wildcard imports are prohibited.
 - Every stage declares required outputs and validates them before success.
 - Every attempt writes to `work/<stage>/attempt_<N>`; only validated outputs are promoted.
+- Adapters may declare typed `InputSpec` inputs. Selective attempts materialize only those files,
+  verify their hashes before copying, and recheck canonical upstream hashes after execution.
 - Failed attempts retain their workspace and never replace previous canonical outputs.
 - Store run artifact paths relative to the run directory and record hashes and producer metadata.
 - Cache signatures include config, adapter name/version, seed, input bytes, upstream artifacts,
@@ -51,13 +59,21 @@ uv run mypy src
   `camera_axes=x_right_y_down_z_forward`, `linear_units=arbitrary_units`, quaternion `xyzw`,
   world-from-camera transforms, and `scale_status=scale_ambiguous`. Only a later alignment and
   scaling stage may emit canonical +X-forward, +Y-left, +Z-up metric coordinates.
+- SAM processes frames in ingest-manifest order. A missing camera pose does not invalidate a 2D
+  mask, but must set `camera_pose_available=false`.
+- Canonical masks are grayscale PNGs with exact values `0/255`, input-frame dimensions, nonzero
+  area, mask-derived boxes, and run-relative deterministic paths.
+- SAM raw IDs are diagnostic only. Canonical object IDs follow the documented semantic, prompt,
+  first-frame, centroid, area, and raw-ID-final-tiebreak ordering.
+- Credentials are environment-only and must never enter commands, requests, resolved config,
+  provenance, diagnostics, or logs.
 
 ## Change discipline
 
-Behavior changes require tests and documentation. Scene IR changes also require regenerating
-`schemas/scene_ir.schema.json`. Adapter changes must document inputs, outputs, schema identifiers,
-allowed environment variables, timeout, retry behavior, healthcheck, provenance, and tests.
+Behavior changes require tests and documentation. Typed artifact changes require regenerating the
+checked-in schemas. Adapter changes must document inputs, outputs, schema identifiers, environment
+allowlists, timeout, retry behavior, healthcheck, provenance, and tests.
 
-The recommended next task is a narrowly scoped Phase 2 SAM 3 segmentation/tracking adapter that
-consumes the stable ingest and camera contracts. Do not add global/object reconstruction,
-SceneSmith, physics simulation, or simulator export in the same change.
+The recommended next task after a real official checkpoint smoke is a separate Phase 2.5
+prompt-inventory design. Do not mix it with global/object reconstruction, SceneSmith, physics
+simulation, or simulator export.

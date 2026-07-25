@@ -1,0 +1,17 @@
+schema_version: "0.1.0"
+
+prompts:
+  - prompt_id: table
+    label: table
+    text: table
+    asset_type_hint: static_structure
+
+  - prompt_id: cup
+    label: cup
+    text: cup
+    asset_type_hint: rigid
+
+  - prompt_id: cabinet
+    label: cabinet
+    text: cabinet
+    asset_type_hint: articulated

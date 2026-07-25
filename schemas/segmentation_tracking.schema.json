@@ -1,0 +1,415 @@
+{
+  "$defs": {
+    "AssetType": {
+      "enum": [
+        "unclassified",
+        "static_structure",
+        "rigid",
+        "articulated",
+        "deformable",
+        "fluid_or_particle",
+        "ignore"
+      ],
+      "title": "AssetType",
+      "type": "string"
+    },
+    "ConfidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "minLength": 1,
+          "title": "Method",
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "score",
+        "method"
+      ],
+      "title": "ConfidenceRecord",
+      "type": "object"
+    },
+    "GeometrySourceType": {
+      "enum": [
+        "measured",
+        "radiance_field",
+        "generated",
+        "retrieved",
+        "fused",
+        "mock"
+      ],
+      "title": "GeometrySourceType",
+      "type": "string"
+    },
+    "ProvenanceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_name": {
+          "minLength": 1,
+          "title": "Adapter Name",
+          "type": "string"
+        },
+        "adapter_version": {
+          "minLength": 1,
+          "title": "Adapter Version",
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ConfidenceRecord"
+        },
+        "configuration": {
+          "additionalProperties": true,
+          "title": "Configuration",
+          "type": "object"
+        },
+        "input_artifact_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Artifact Paths",
+          "type": "array"
+        },
+        "output_artifact_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Artifact Paths",
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/$defs/GeometrySourceType"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter_name",
+        "adapter_version",
+        "confidence",
+        "source"
+      ],
+      "title": "ProvenanceRecord",
+      "type": "object"
+    },
+    "SegmentationObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "bbox_xywh": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Bbox Xywh",
+          "type": "array"
+        },
+        "camera_pose_available": {
+          "title": "Camera Pose Available",
+          "type": "boolean"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "frame_score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Frame Score",
+          "type": "number"
+        },
+        "mask_area_pixels": {
+          "exclusiveMinimum": 0,
+          "title": "Mask Area Pixels",
+          "type": "integer"
+        },
+        "mask_area_ratio": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Mask Area Ratio",
+          "type": "number"
+        },
+        "mask_path": {
+          "minLength": 1,
+          "title": "Mask Path",
+          "type": "string"
+        },
+        "model_box_xyxy": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Box Xyxy"
+        },
+        "occluded": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Occluded"
+        },
+        "prompt_id": {
+          "minLength": 1,
+          "title": "Prompt Id",
+          "type": "string"
+        },
+        "raw_model_object_id": {
+          "minLength": 1,
+          "title": "Raw Model Object Id",
+          "type": "string"
+        },
+        "visibility_status": {
+          "const": "visible",
+          "default": "visible",
+          "title": "Visibility Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frame_id",
+        "mask_path",
+        "bbox_xywh",
+        "frame_score",
+        "mask_area_pixels",
+        "mask_area_ratio",
+        "camera_pose_available",
+        "raw_model_object_id",
+        "prompt_id"
+      ],
+      "title": "SegmentationObservation",
+      "type": "object"
+    },
+    "SegmentationTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_type_hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssetType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "asset_type_hint_source": {
+          "anyOf": [
+            {
+              "const": "configured_semantic_hint",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Asset Type Hint Source"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ConfidenceRecord"
+        },
+        "coverage_ratio": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Coverage Ratio",
+          "type": "number"
+        },
+        "first_frame_id": {
+          "minLength": 1,
+          "title": "First Frame Id",
+          "type": "string"
+        },
+        "last_frame_id": {
+          "minLength": 1,
+          "title": "Last Frame Id",
+          "type": "string"
+        },
+        "mean_score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mean Score",
+          "type": "number"
+        },
+        "minimum_score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Minimum Score",
+          "type": "number"
+        },
+        "normalized_semantic_label": {
+          "minLength": 1,
+          "title": "Normalized Semantic Label",
+          "type": "string"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "observation_count": {
+          "exclusiveMinimum": 0,
+          "title": "Observation Count",
+          "type": "integer"
+        },
+        "observations": {
+          "items": {
+            "$ref": "#/$defs/SegmentationObservation"
+          },
+          "minItems": 1,
+          "title": "Observations",
+          "type": "array"
+        },
+        "prompt_id": {
+          "minLength": 1,
+          "title": "Prompt Id",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/ProvenanceRecord"
+        },
+        "raw_model_object_id": {
+          "minLength": 1,
+          "title": "Raw Model Object Id",
+          "type": "string"
+        },
+        "semantic_label": {
+          "minLength": 1,
+          "title": "Semantic Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "object_id",
+        "semantic_label",
+        "normalized_semantic_label",
+        "prompt_id",
+        "raw_model_object_id",
+        "first_frame_id",
+        "last_frame_id",
+        "observation_count",
+        "coverage_ratio",
+        "mean_score",
+        "minimum_score",
+        "observations",
+        "provenance",
+        "confidence"
+      ],
+      "title": "SegmentationTrack",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "canonicalization_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Canonicalization Version",
+      "type": "string"
+    },
+    "diagnostics_path": {
+      "minLength": 1,
+      "title": "Diagnostics Path",
+      "type": "string"
+    },
+    "frame_count": {
+      "exclusiveMinimum": 0,
+      "title": "Frame Count",
+      "type": "integer"
+    },
+    "prompt_manifest_path": {
+      "minLength": 1,
+      "title": "Prompt Manifest Path",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/ProvenanceRecord"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "tracks": {
+      "items": {
+        "$ref": "#/$defs/SegmentationTrack"
+      },
+      "title": "Tracks",
+      "type": "array"
+    },
+    "worker_manifest_path": {
+      "minLength": 1,
+      "title": "Worker Manifest Path",
+      "type": "string"
+    }
+  },
+  "required": [
+    "frame_count",
+    "tracks",
+    "prompt_manifest_path",
+    "worker_manifest_path",
+    "diagnostics_path",
+    "provenance"
+  ],
+  "title": "SegmentationTrackingArtifact",
+  "type": "object"
+}

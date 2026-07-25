@@ -33,6 +33,7 @@ class StrictModel(BaseModel):
 
 
 class AssetType(StrEnum):
+    UNCLASSIFIED = "unclassified"
     STATIC_STRUCTURE = "static_structure"
     RIGID = "rigid"
     ARTICULATED = "articulated"

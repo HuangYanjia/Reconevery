@@ -1,0 +1,480 @@
+{
+  "$defs": {
+    "AssetType": {
+      "enum": [
+        "unclassified",
+        "static_structure",
+        "rigid",
+        "articulated",
+        "deformable",
+        "fluid_or_particle",
+        "ignore"
+      ],
+      "title": "AssetType",
+      "type": "string"
+    },
+    "Sam3AnchorFrame": {
+      "additionalProperties": false,
+      "properties": {
+        "camera_pose_available": {
+          "title": "Camera Pose Available",
+          "type": "boolean"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "selection_reason": {
+          "minLength": 1,
+          "title": "Selection Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frame_id",
+        "score",
+        "camera_pose_available",
+        "selection_reason"
+      ],
+      "title": "Sam3AnchorFrame",
+      "type": "object"
+    },
+    "SegmentationPoint": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "enum": [
+            0,
+            1
+          ],
+          "title": "Label",
+          "type": "integer"
+        },
+        "x": {
+          "minimum": 0,
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "minimum": 0,
+          "title": "Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "label"
+      ],
+      "title": "SegmentationPoint",
+      "type": "object"
+    },
+    "SegmentationPrompt": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_type_hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssetType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "box_xyxy": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Box Xyxy"
+        },
+        "confidence_threshold": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence Threshold"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "frame_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Id"
+        },
+        "instance_limit": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instance Limit"
+        },
+        "label": {
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "mask_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mask Path"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "points": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/SegmentationPoint"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Points"
+        },
+        "positive": {
+          "default": true,
+          "title": "Positive",
+          "type": "boolean"
+        },
+        "prompt_id": {
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "title": "Prompt Id",
+          "type": "string"
+        },
+        "prompt_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SegmentationPromptType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "synonym_group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Synonym Group"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        }
+      },
+      "required": [
+        "prompt_id",
+        "label"
+      ],
+      "title": "SegmentationPrompt",
+      "type": "object"
+    },
+    "SegmentationPromptManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "input_hashes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Input Hashes",
+          "type": "object"
+        },
+        "prompts": {
+          "items": {
+            "$ref": "#/$defs/SegmentationPrompt"
+          },
+          "title": "Prompts",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "0.1.0",
+          "default": "0.1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Path"
+        },
+        "source_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Sha256"
+        }
+      },
+      "required": [
+        "prompts"
+      ],
+      "title": "SegmentationPromptManifest",
+      "type": "object"
+    },
+    "SegmentationPromptType": {
+      "enum": [
+        "text",
+        "box",
+        "point",
+        "mask"
+      ],
+      "title": "SegmentationPromptType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "anchor_frames": {
+      "items": {
+        "$ref": "#/$defs/Sam3AnchorFrame"
+      },
+      "minItems": 1,
+      "title": "Anchor Frames",
+      "type": "array"
+    },
+    "camera_reconstruction_path": {
+      "minLength": 1,
+      "title": "Camera Reconstruction Path",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "frame_dimensions": {
+      "additionalProperties": {
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "integer"
+          }
+        ],
+        "type": "array"
+      },
+      "title": "Frame Dimensions",
+      "type": "object"
+    },
+    "frame_manifest_path": {
+      "minLength": 1,
+      "title": "Frame Manifest Path",
+      "type": "string"
+    },
+    "frame_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Manifest Sha256",
+      "type": "string"
+    },
+    "frame_order": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Frame Order",
+      "type": "array"
+    },
+    "frame_paths": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Frame Paths",
+      "type": "array"
+    },
+    "model_configuration": {
+      "additionalProperties": true,
+      "title": "Model Configuration",
+      "type": "object"
+    },
+    "output_directory": {
+      "minLength": 1,
+      "title": "Output Directory",
+      "type": "string"
+    },
+    "postprocessing_configuration": {
+      "additionalProperties": true,
+      "title": "Postprocessing Configuration",
+      "type": "object"
+    },
+    "prompt_manifest": {
+      "$ref": "#/$defs/SegmentationPromptManifest"
+    },
+    "prompt_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Prompt Manifest Sha256",
+      "type": "string"
+    },
+    "registered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Registered Frame Ids",
+      "type": "array"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "strategy": {
+      "const": "detect_then_track",
+      "title": "Strategy",
+      "type": "string"
+    },
+    "tracking_direction": {
+      "enum": [
+        "forward",
+        "backward",
+        "forward_backward"
+      ],
+      "title": "Tracking Direction",
+      "type": "string"
+    },
+    "unregistered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unregistered Frame Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "frame_manifest_path",
+    "frame_manifest_sha256",
+    "frame_order",
+    "frame_paths",
+    "frame_dimensions",
+    "camera_reconstruction_path",
+    "camera_reconstruction_sha256",
+    "registered_frame_ids",
+    "unregistered_frame_ids",
+    "prompt_manifest",
+    "prompt_manifest_sha256",
+    "anchor_frames",
+    "strategy",
+    "tracking_direction",
+    "model_configuration",
+    "postprocessing_configuration",
+    "output_directory",
+    "seed"
+  ],
+  "title": "Sam3InferenceRequest",
+  "type": "object"
+}

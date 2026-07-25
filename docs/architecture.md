@@ -1,13 +1,14 @@
 # Architecture
 
 Recon2Sim separates orchestration and semantic contracts from heavyweight reconstruction or
-simulation software. Phase 1 runs FFmpeg and COLMAP out of process while retaining deterministic
-mocks downstream, so mandatory tests require no external executable or GPU.
+simulation software. Phase 2 runs FFmpeg, COLMAP, and SAM workers out of process while retaining
+deterministic mocks downstream, so mandatory tests require no external executable or GPU.
 
 ## Layers
 
 1. Strict Pydantic models define canonical Scene IR and typed intermediate artifacts.
-2. Adapters read declared upstream files and write declared outputs.
+2. Adapters read declared upstream files and write declared outputs. Heavy adapters may use an
+   optional typed `required_inputs()` declaration for selective materialization.
 3. The runner validates the DAG, computes signatures, executes retries, validates outputs, hashes
    artifacts, and commits manifest state atomically.
 4. The Typer CLI exposes run, resume, inspection, validation, cleanup, and adapter healthchecks.
@@ -18,10 +19,13 @@ video or image directory
   -> COLMAP features -> matching -> sparse mapping
   -> strict COLMAP binary parsing
   -> typed raw-gauge CameraReconstruction
+  -> explicit text/box/point/mask prompt manifest
+  -> isolated official SAM 3.1 worker
+  -> canonical binary masks + deterministic object tracks
 ```
 
-The production Phase 1 configs stop after camera recovery. The explicit
-`colmap_with_mock_downstream.yaml` integration demo continues through:
+Production Phase 1 configs stop after camera recovery, and Phase 2 configs stop after segmentation.
+Explicit `*_with_mock_downstream.yaml` integration demos continue through:
 
 ```text
 ingest -> camera_recovery -> segmentation_tracking -> object_reconstruction --+
@@ -45,6 +49,10 @@ second scene.
 Every manifest `ArtifactRecord` contains relative path, artifact type, media type, SHA-256, byte
 size, producer stage and adapter, source type, and schema identifier when applicable.
 
+SAM's canonical artifact is `observations/object_tracks.json`. Raw model IDs and worker output
+remain under `observations/raw/`; only validated `observations/masks/<object>/<frame>.png` masks
+and typed observations are downstream semantic inputs.
+
 ## Graph validation
 
 Before execution the runner rejects unknown dependencies, cycles with the cycle path, unknown
@@ -65,6 +73,7 @@ A stage signature includes:
 - recursive path, size, and SHA-256 snapshots for root input files;
 - current hashes of direct dependency artifacts;
 - upstream execution signatures.
+- hashes for approved external inputs declared by `InputSpec`, such as prompt YAML and seed masks.
 
 A cache hit requires the signature and every recorded output hash to match. It leaves the stage
 `succeeded` and sets `last_execution=cache_hit`. Execution signatures are derived from stage
@@ -74,11 +83,16 @@ reproduces identical bytes therefore does not invalidate downstream stages.
 ## Execution safety
 
 Retries are `retries + 1` total attempts. Each attempt writes only inside
-`work/<stage>/attempt_<N>`. Previously successful transitive-ancestor artifacts are copied into
-that workspace, the adapter runs there, and required outputs are validated before transactional
-promotion. Promotion backs up the complete stage-owned output set and rolls it back on any
-mid-promotion failure. Stale canonical files cannot satisfy validation. A failed or interrupted
-attempt keeps its workspace and cannot overwrite the previous successful output set.
+`work/<stage>/attempt_<N>`. Legacy adapters receive successful ancestor artifacts. Selective
+adapters receive only typed `InputSpec` files resolved from ancestors or approved external
+configuration. Paths and hashes are checked, reflink is preferred with copy fallback, writable
+symlinks are not used, and canonical upstream hashes are checked after execution. The attempt
+manifest records every materialized input.
+
+Required outputs are validated before transactional promotion. Promotion backs up the complete
+stage-owned output set and rolls it back on any mid-promotion failure. Stale canonical files
+cannot satisfy validation. A failed or interrupted attempt keeps its workspace and cannot
+overwrite the previous successful output set.
 
 JSON is validated with a Pydantic model (or a generic typed JSON-object contract for command
 adapters), PNGs and OBJs receive format checks, and no stage succeeds solely because a process
@@ -88,6 +102,11 @@ Command adapters receive only explicitly allowlisted environment variables. They
 stderr, return code, duration, and timeout state in per-attempt files. Timed-out or interrupted
 process groups receive TERM followed by KILL if the grace period expires. `KeyboardInterrupt` and
 `SystemExit` are marked interrupted and re-raised without retry.
+
+The SAM core adapter contains no model imports. It writes a typed request and launches either the
+separate local worker, an NVIDIA Docker worker, or the deterministic fake worker. Worker logs are
+credential-redacted before retention. The official checkpoint is never part of a request or
+image, and credentials are passed only through allowlisted environment names.
 
 ## Coordinate convention
 

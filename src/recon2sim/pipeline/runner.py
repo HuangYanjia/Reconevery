@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
 import shutil
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 from pydantic import TypeAdapter
 
-from recon2sim.adapters import REGISTRY, ArtifactRecord, OutputSpec
+from recon2sim.adapters import REGISTRY, ArtifactRecord, InputSpec, OutputSpec
 from recon2sim.adapters.base import Adapter, StageContext
 from recon2sim.config import PipelineConfig
 from recon2sim.images import validate_png
@@ -19,6 +22,15 @@ from recon2sim.storage import atomic_write_json, atomic_write_yaml
 
 Manifest = dict[str, Any]
 StageEntry = dict[str, Any]
+_FICLONE = 0x40049409
+
+
+@dataclass(frozen=True)
+class _InputSnapshot:
+    source: Path
+    sha256: str
+    relative_path: str
+    verify_after_execution: bool
 
 
 class PipelineConfigurationError(ValueError):
@@ -296,7 +308,6 @@ class PipelineRunner:
             attempt = self._next_attempt_number(stage_name)
             workspace = self.run_dir / "work" / stage_name / f"attempt_{attempt}"
             workspace.mkdir(parents=True, exist_ok=False)
-            self._populate_attempt_workspace(workspace, stage_name, manifest)
             attempt_entry: dict[str, Any] = {
                 "attempt": attempt,
                 "workspace": workspace.relative_to(self.run_dir).as_posix(),
@@ -316,9 +327,23 @@ class PipelineRunner:
                 attempt=attempt,
             )
             try:
+                materialized, snapshots = self._populate_attempt_workspace(
+                    workspace,
+                    stage_name,
+                    manifest,
+                    adapter,
+                    context,
+                )
+                attempt_entry["materialized_inputs"] = materialized
+                self.save_manifest(manifest)
                 adapter.prepare(context)
                 declared = adapter.expected_outputs(context)
-                result = adapter.run(context)
+                try:
+                    result = adapter.run(context)
+                except BaseException:
+                    self._verify_input_snapshots(stage_name, snapshots)
+                    raise
+                self._verify_input_snapshots(stage_name, snapshots)
                 records = self._validate_outputs(
                     stage_name,
                     adapter.name,
@@ -438,23 +463,188 @@ class PipelineRunner:
         workspace: Path,
         stage_name: str,
         manifest: Manifest,
-    ) -> None:
+        adapter: Adapter,
+        context: StageContext,
+    ) -> tuple[list[dict[str, Any]], list[_InputSnapshot]]:
         stages = self._stage_entries(manifest)
         ancestors = self._ancestor_stages(stage_name)
+        records: dict[str, ArtifactRecord] = {}
         for producer_stage, entry in stages.items():
             if producer_stage not in ancestors or entry.get("status") != "succeeded":
                 continue
             for raw_record in cast(list[dict[str, Any]], entry.get("artifacts", [])):
                 record = ArtifactRecord.model_validate(raw_record)
-                source = self.run_dir / record.relative_path
-                if not source.is_file() or _sha256(source) != record.sha256:
+                records[record.relative_path] = record
+
+        specs = self._adapter_input_specs(adapter, context)
+        if specs is None:
+            specs = [
+                InputSpec(
+                    relative_path=record.relative_path,
+                    artifact_type=record.artifact_type,
+                    expected_sha256=record.sha256,
+                )
+                for record in sorted(records.values(), key=lambda item: item.relative_path)
+            ]
+
+        materialized: list[dict[str, Any]] = []
+        snapshots: list[_InputSnapshot] = []
+        destinations: set[str] = set()
+        for spec in specs:
+            self._validate_input_spec(stage_name, spec)
+            if spec.relative_path in destinations:
+                raise PipelineConfigurationError(
+                    f"stage {stage_name!r} declared duplicate input destination "
+                    f"{spec.relative_path!r}"
+                )
+            destinations.add(spec.relative_path)
+
+            source_record: ArtifactRecord | None = None
+            if spec.source_path is not None:
+                source = spec.source_path.expanduser()
+                if not source.is_absolute():
+                    source = Path.cwd() / source
+                source = source.resolve()
+                source_kind = "external_configuration"
+            else:
+                source_artifact_path = spec.source_artifact_path or spec.relative_path
+                source_record = records.get(source_artifact_path)
+                if source_record is None:
+                    if not spec.required:
+                        continue
                     raise FileNotFoundError(
-                        f"stage {stage_name!r} requires stale or missing upstream artifact "
-                        f"{record.relative_path!r} from stage {producer_stage!r}"
+                        f"stage {stage_name!r} requires undeclared or missing upstream artifact "
+                        f"{source_artifact_path!r}"
                     )
-                destination = workspace / record.relative_path
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, destination)
+                if (
+                    spec.artifact_type != source_record.artifact_type
+                    and spec.artifact_type != "any"
+                ):
+                    raise PipelineConfigurationError(
+                        f"stage {stage_name!r} requested artifact "
+                        f"{source_artifact_path!r} as {spec.artifact_type!r}, but its type is "
+                        f"{source_record.artifact_type!r}"
+                    )
+                source = self.run_dir / source_record.relative_path
+                source_kind = "ancestor_artifact"
+
+            if not source.is_file():
+                if not spec.required:
+                    continue
+                raise FileNotFoundError(f"stage {stage_name!r} requires missing input {source}")
+            if source.is_symlink():
+                raise PipelineConfigurationError(
+                    f"stage {stage_name!r} input source must not be a symlink: {source}"
+                )
+            source_hash = _sha256(source)
+            expected_hash = spec.expected_sha256 or (
+                source_record.sha256 if source_record is not None else None
+            )
+            if expected_hash is not None and source_hash != expected_hash:
+                raise FileNotFoundError(
+                    f"stage {stage_name!r} requires stale input {source}; "
+                    f"expected sha256 {expected_hash}, found {source_hash}"
+                )
+
+            destination = workspace / spec.relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            self._materialize_input(source, destination, spec.materialization_mode)
+            if _sha256(destination) != source_hash:
+                raise RuntimeError(
+                    f"stage {stage_name!r} input copy verification failed for "
+                    f"{spec.relative_path!r}"
+                )
+            materialized.append(
+                {
+                    "relative_path": spec.relative_path,
+                    "source": (
+                        source_record.relative_path if source_record is not None else str(source)
+                    ),
+                    "source_kind": source_kind,
+                    "artifact_type": spec.artifact_type,
+                    "sha256": source_hash,
+                    "size_bytes": source.stat().st_size,
+                    "materialization_mode": spec.materialization_mode,
+                }
+            )
+            snapshots.append(
+                _InputSnapshot(
+                    source=source,
+                    sha256=source_hash,
+                    relative_path=spec.relative_path,
+                    verify_after_execution=source_record is not None,
+                )
+            )
+        return materialized, snapshots
+
+    @staticmethod
+    def _adapter_input_specs(
+        adapter: Adapter,
+        context: StageContext,
+    ) -> list[InputSpec] | None:
+        method = getattr(adapter, "required_inputs", None)
+        if method is None:
+            return None
+        provider = cast(Callable[[StageContext], list[InputSpec]], method)
+        return provider(context)
+
+    @staticmethod
+    def _validate_input_spec(stage_name: str, spec: InputSpec) -> None:
+        path = PurePosixPath(spec.relative_path)
+        if path.is_absolute() or ".." in path.parts or spec.relative_path in {"", "."}:
+            raise PipelineConfigurationError(
+                f"stage {stage_name!r} declared unsafe input path {spec.relative_path!r}"
+            )
+        if spec.source_artifact_path is not None:
+            source_path = PurePosixPath(spec.source_artifact_path)
+            if (
+                source_path.is_absolute()
+                or ".." in source_path.parts
+                or spec.source_artifact_path in {"", "."}
+            ):
+                raise PipelineConfigurationError(
+                    f"stage {stage_name!r} declared unsafe source artifact path "
+                    f"{spec.source_artifact_path!r}"
+                )
+        if spec.source_path is not None and spec.source_artifact_path is not None:
+            raise PipelineConfigurationError(
+                f"stage {stage_name!r} input {spec.relative_path!r} cannot declare both "
+                "source_path and source_artifact_path"
+            )
+        if spec.expected_sha256 is not None and (
+            len(spec.expected_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in spec.expected_sha256)
+        ):
+            raise PipelineConfigurationError(
+                f"stage {stage_name!r} input {spec.relative_path!r} has an invalid sha256"
+            )
+
+    @staticmethod
+    def _materialize_input(source: Path, destination: Path, mode: str) -> None:
+        if mode == "copy":
+            shutil.copy2(source, destination)
+            return
+        try:
+            with source.open("rb") as input_file, destination.open("wb") as output_file:
+                fcntl.ioctl(output_file.fileno(), _FICLONE, input_file.fileno())
+            shutil.copystat(source, destination)
+        except OSError:
+            destination.unlink(missing_ok=True)
+            shutil.copy2(source, destination)
+
+    @staticmethod
+    def _verify_input_snapshots(
+        stage_name: str,
+        snapshots: list[_InputSnapshot],
+    ) -> None:
+        for snapshot in snapshots:
+            if not snapshot.verify_after_execution:
+                continue
+            if not snapshot.source.is_file() or _sha256(snapshot.source) != snapshot.sha256:
+                raise RuntimeError(
+                    f"stage {stage_name!r} modified canonical upstream input "
+                    f"{snapshot.relative_path!r}; the attempt was rejected"
+                )
 
     def _promote_outputs(
         self,
@@ -609,6 +799,38 @@ class PipelineRunner:
             if not stage_config.depends_on
             else [],
         }
+        signature_context = StageContext(
+            stage_name=stage_name,
+            input_dir=self.input_dir,
+            run_dir=self.run_dir,
+            canonical_run_dir=self.run_dir,
+            config=stage_config,
+            seed=self.config.seed,
+            attempt=0,
+        )
+        declared_specs = self._adapter_input_specs(adapter, signature_context)
+        external_inputs: list[dict[str, str | int]] = []
+        for spec in declared_specs or []:
+            if spec.source_path is None:
+                continue
+            source = spec.source_path.expanduser()
+            if not source.is_absolute():
+                source = Path.cwd() / source
+            source = source.resolve()
+            if not source.is_file():
+                if not spec.required:
+                    continue
+                raise FileNotFoundError(
+                    f"stage {stage_name!r} requires missing external input {source}"
+                )
+            external_inputs.append(
+                {
+                    "relative_path": spec.relative_path,
+                    "sha256": _sha256(source),
+                    "size_bytes": source.stat().st_size,
+                }
+            )
+        signature_inputs["external_input_files"] = external_inputs
         return _stable_digest(signature_inputs), signature_inputs
 
     def _validate_execution_dependencies(self, manifest: Manifest, chosen: set[str]) -> None:

@@ -1,7 +1,7 @@
 # Adapters
 
-Adapters isolate implementation environments from the core package. Phase 1 adds dedicated
-FFmpeg ingest and COLMAP camera recovery adapters; neither external tool is imported as Python.
+Adapters isolate implementation environments from the core package. FFmpeg, COLMAP, and official
+SAM code remain out of process; SAM and PyTorch are not core dependencies.
 
 ## Contract
 
@@ -13,9 +13,13 @@ An adapter exposes:
 - `expected_outputs(context)` with path, artifact type, media type, source type, validation mode,
   schema identifier, and optional Pydantic model;
 - `run(context)` with additional dynamic outputs and metrics.
+- optional `required_inputs(context)` returning typed `InputSpec` records.
 
 The runner validates and hashes the union of declared and dynamic outputs. Missing files, malformed
 JSON, invalid Scene IR, invalid PNG/OBJ content, and conflicting declarations fail the attempt.
+`InputSpec` declares a safe attempt-relative destination, artifact type, required/optional status,
+expected hash, source artifact or approved external path, and copy/reflink mode. Older adapters
+temporarily retain full-ancestor materialization.
 
 ## Mock stage contracts
 
@@ -73,6 +77,37 @@ and `docker_user` can override it. The workspace manifest records the inspected 
 when available. Docker Phase 1 is CPU-only and rejects `use_gpu=true`. Raw databases, every sparse
 candidate, logs, commands, model diagnostics, and typed reconstruction remain under `camera/`.
 
+## SAM 3 segmentation and tracking
+
+`sam3_segmentation_tracking` reads only:
+
+- `inputs/manifest.json` and `inputs/frame_qa.json`;
+- selected `frames/*.png`;
+- `camera/reconstruction.json`;
+- the configured prompt YAML and optional seed masks.
+
+It does not materialize `camera/colmap/database.db`, sparse binaries, COLMAP logs, camera
+diagnostics, or unrelated downstream artifacts. The adapter validates prompts and anchors, writes
+`observations/sam3_request.json`, invokes `local_worker`, `docker`, or `fake_worker`, validates raw
+output, filters tracks, creates stable IDs, writes canonical binary masks, and renders previews.
+
+The real worker is pinned to official Meta code commit
+`46957e47805eaa273f4aa7bbbd25a88bca9108ce` and official `facebook/sam3.1` revision
+`daa63191845a41281374e725f4c9e51c7a824460`. Local health checks verify the configured Python,
+worker import, exact official commit, PyTorch/torchvision/CUDA versions, GPU, precision, and
+checkpoint access. Docker health checks also verify the daemon, configured image ID, NVIDIA GPU
+access, mounted cache/checkpoint, UID/GID execution, and the in-container worker health command.
+
+The pinned official public video predictor supports text and box prompts, point initialization or
+refinement, Object Multiplex joint instances, and forward/backward propagation. Its public request
+API does not expose mask seeds. Reconevery validates the mask-seed contract but the real worker
+returns an explicit unsupported-backend error rather than importing private SAM internals.
+
+Canonicalization filters invalid dimensions, empty/non-binary masks, invalid or inconsistent
+boxes, invalid scores, short/low-coverage tracks, duplicate object/frame observations, and
+same-prompt or configured-synonym duplicates. Different semantic labels are never merged solely
+because their masks overlap. Valid no-object results produce `tracks: []`.
+
 ## Future real adapters
 
 A real adapter must document and test inputs, outputs, schema IDs, command template, environment
@@ -80,5 +115,5 @@ allowlist, timeout, retries, GPU metadata, healthcheck, provenance, coordinate c
 failure artifacts. It must emit the existing typed contract before any downstream stage accepts
 its work.
 
-The next adapter should be SAM 3 segmentation/tracking only. GenRecon, SceneSmith, Blender, and
-simulator integrations remain later phases.
+Automatic VLM scene inventory, GenRecon, SceneSmith, Blender, and simulator integrations remain
+later, separate phases.
