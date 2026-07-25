@@ -537,6 +537,18 @@ def test_genrecon_worker_package_declares_import_package() -> None:
     assert "from datetime import UTC" not in checkpoint_loader
 
 
+def test_genrecon_worker_distinguishes_pending_gated_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "workers" / "genrecon"))
+    runtime_assets = importlib.import_module("genrecon_worker.runtime_assets")
+    error = runtime_assets.gated_access_error(
+        RuntimeError("Your request to access this model is awaiting a review from the repo authors")
+    )
+    assert "pending review" in str(error)
+    assert "repository authors" in str(error)
+
+
 def test_local_worker_accepts_isolated_venv_python_symlink(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

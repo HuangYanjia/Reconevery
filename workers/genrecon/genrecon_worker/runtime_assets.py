@@ -5,6 +5,19 @@ from pathlib import Path
 DINOV3_REPOSITORY = "facebook/dinov3-vitl16-pretrain-lvd1689m"
 
 
+def gated_access_error(error: Exception) -> RuntimeError:
+    if "awaiting a review" in str(error).lower():
+        return RuntimeError(
+            "official GenRecon runtime model access request is pending review for "
+            f"{DINOV3_REPOSITORY}; wait for the repository authors to approve the "
+            "authenticated Hugging Face account"
+        )
+    return RuntimeError(
+        "official GenRecon requires accepted access to gated runtime model "
+        f"{DINOV3_REPOSITORY}; accept its official Hugging Face terms and authenticate"
+    )
+
+
 def resolve_dinov3_revision() -> str:
     from huggingface_hub import HfApi, hf_hub_download
     from huggingface_hub.errors import GatedRepoError, HfHubHTTPError
@@ -12,10 +25,7 @@ def resolve_dinov3_revision() -> str:
     try:
         info = HfApi().model_info(DINOV3_REPOSITORY)
     except GatedRepoError as exc:
-        raise RuntimeError(
-            "official GenRecon requires accepted access to gated runtime model "
-            f"{DINOV3_REPOSITORY}; accept its official Hugging Face terms and authenticate"
-        ) from exc
+        raise gated_access_error(exc) from exc
     except HfHubHTTPError as exc:
         raise RuntimeError(
             f"could not verify official GenRecon runtime model {DINOV3_REPOSITORY}: {exc}"
@@ -32,10 +42,7 @@ def resolve_dinov3_revision() -> str:
             revision=revision,
         )
     except GatedRepoError as exc:
-        raise RuntimeError(
-            "official GenRecon runtime model metadata is public, but gated files are not "
-            f"authorized for {DINOV3_REPOSITORY}; accept its terms and authenticate"
-        ) from exc
+        raise gated_access_error(exc) from exc
     except HfHubHTTPError as exc:
         raise RuntimeError(
             f"could not read official GenRecon runtime model file at {revision}: {exc}"
@@ -55,10 +62,7 @@ def prepare_dinov3_runtime_asset(expected_revision: str) -> str:
             )
         ).resolve()
     except GatedRepoError as exc:
-        raise RuntimeError(
-            "official GenRecon requires accepted access to gated runtime model "
-            f"{DINOV3_REPOSITORY}; accept its official Hugging Face terms and authenticate"
-        ) from exc
+        raise gated_access_error(exc) from exc
     except HfHubHTTPError as exc:
         raise RuntimeError(
             f"could not cache official GenRecon runtime model {DINOV3_REPOSITORY}: {exc}"
