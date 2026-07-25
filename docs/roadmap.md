@@ -7,25 +7,25 @@
   stages, valid PNG/OBJ outputs, DAG validation, byte-sensitive caching, retries, command isolation,
   output validation, expanded artifact records, real Typer CLI, CI, tests, and documentation.
 
-## Recommended Phase 1: COLMAP camera recovery
+## Completed Phase 1
 
-Keep the task narrow:
+- real video and image-directory ingest with normalized PNGs;
+- FFmpeg/FFprobe subprocess execution and health checks;
+- deterministic frame QA and typed reports;
+- local/Docker COLMAP feature extraction, matching, and sparse mapping;
+- strict binary parsing, pose inversion, camera mapping, and scale ambiguity;
+- deterministic multi-model selection and typed diagnostics;
+- attempt workspaces that reject stale output and protect previous results;
+- fake-executable tests that keep mandatory CI independent of system tools.
 
-1. Add an out-of-process COLMAP command/container adapter; do not import COLMAP into core Python.
-2. Consume the existing `inputs/manifest.json` and copied PNG frames.
-3. Convert COLMAP intrinsics and poses into the existing `CameraReconstruction` contract and the
-   documented right-handed, meters, `xyzw`, world-from-camera convention.
-4. Record COLMAP version, command/config, input hashes, confidence method, logs, timing, and
-   provenance.
-5. Add small fixture-based tests for conversion, missing images, command failure, invalid output,
-   and cache invalidation. Keep the default CI path CPU-only and mock-only.
+## Recommended Phase 2
 
-This task should stop at `camera/reconstruction.json`; it should not add segmentation,
-reconstruction models, scene compilation, Blender, or simulators.
+Add a SAM 3 segmentation and tracking adapter that consumes selected frames and registered camera
+poses, emits typed masks/tracks, and preserves model provenance. Do not combine it with global
+reconstruction, object reconstruction, SceneSmith, or simulators.
 
 ## Later phases
 
-- Phase 2: SAM 3 segmentation and tracking adapter.
 - Phase 3: GenRecon global reconstruction adapter.
 - Phase 4: rigid and articulated object reconstruction adapters.
 - Phase 5: SceneSmith or equivalent scene compiler adapter.

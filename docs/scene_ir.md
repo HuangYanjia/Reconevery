@@ -7,7 +7,7 @@ future simulator files are referenced or derived artifacts; none replaces the IR
 
 - `schema_version`: current literal version `0.1.0`.
 - `metadata`: scene identity, source, coordinate convention, and provenance.
-- `cameras`: intrinsics and per-frame `transform_world_from_camera` poses.
+- `cameras`: intrinsics, per-frame `transform_world_from_camera` poses, and scale status.
 - `frames`: frame paths, timestamps, camera references, bounding boxes, mask paths, and confidence.
 - `objects`: static, rigid, or articulated instances with physics and asset references.
 - `geometry_assets`, `material_assets`, `collision_assets`: typed referenced assets.
@@ -46,6 +46,10 @@ The mock cabinet is one top-level `ObjectInstance` with `asset_type="articulated
 - camera transforms are world-from-camera.
 
 The same `CoordinateConvention` appears in camera reconstruction output and Scene IR metadata.
+Camera `scale_status` is one of `metric_scale_known`, `scale_ambiguous`, or `externally_scaled`.
+Monocular COLMAP uses `scale_ambiguous`; its translations are consistent arbitrary reconstruction
+units until external scaling is applied. The `translation_m` name remains for schema compatibility
+and must be interpreted together with scale status.
 
 ## JSON Schema
 

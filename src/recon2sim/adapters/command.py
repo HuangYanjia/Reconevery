@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import subprocess
 import time
@@ -22,7 +23,7 @@ class CommandAdapter:
     name = "command"
     version = "0.1.0"
 
-    def healthcheck(self) -> HealthcheckResult:
+    def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult:
         return HealthcheckResult(True, "subprocess execution is available")
 
     def prepare(self, context: StageContext) -> None:
@@ -81,6 +82,7 @@ class CommandAdapter:
         allowed_environment = {
             name: os.environ[name] for name in context.config.adapter.env if name in os.environ
         }
+        allowed_environment["RECON2SIM_ATTEMPT"] = str(context.attempt)
 
         start = time.monotonic()
         process = subprocess.Popen(
@@ -141,8 +143,22 @@ class CommandAdapter:
 class DockerCommandAdapter(CommandAdapter):
     name = "docker_command"
 
-    def healthcheck(self) -> HealthcheckResult:
-        return HealthcheckResult(
-            True,
-            "Docker command adapter is configured; Docker is not invoked by the healthcheck",
-        )
+    def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult:
+        executable = shutil.which("docker")
+        if executable is None:
+            return HealthcheckResult(False, "Docker executable was not found; install Docker")
+        try:
+            result = subprocess.run(
+                [executable, "version"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return HealthcheckResult(False, f"docker version failed: {exc}")
+        if result.returncode != 0:
+            return HealthcheckResult(False, f"docker version failed: {result.stderr.strip()}")
+        first_line = (result.stdout or result.stderr).splitlines()
+        version = first_line[0] if first_line else "version available"
+        return HealthcheckResult(True, f"docker={executable} ({version})")

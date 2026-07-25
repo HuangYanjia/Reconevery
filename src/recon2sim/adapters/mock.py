@@ -154,7 +154,7 @@ class MockAdapter:
     name = "mock"
     version = "0.1.0"
 
-    def healthcheck(self) -> HealthcheckResult:
+    def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult:
         return HealthcheckResult(True, "deterministic mock adapter ready")
 
     def prepare(self, context: StageContext) -> None:
@@ -307,9 +307,9 @@ class MockSegmentationTrackingAdapter(MockAdapter):
         camera = _read_model(context.path("camera", "reconstruction.json"), CameraReconstruction)
         frame_ids = {frame.frame_id for frame in manifest.frames}
         pose_ids = {pose.frame_id for pose in camera.poses}
-        if pose_ids != frame_ids:
+        if not pose_ids or not pose_ids <= frame_ids:
             raise ValueError(
-                "camera reconstruction poses must exactly match the ingest manifest frames"
+                "camera reconstruction poses must be a non-empty subset of ingest manifest frames"
             )
 
         track_specs = [
@@ -609,6 +609,7 @@ class MockSceneIRAssemblyAdapter(MockAdapter):
             model=camera_data.model,
             intrinsics=camera_data.intrinsics,
             poses=camera_data.poses,
+            scale_status=camera_data.scale_status,
             provenance=camera_data.provenance,
         )
         observations_by_frame: dict[str, list[ObjectObservation]] = {

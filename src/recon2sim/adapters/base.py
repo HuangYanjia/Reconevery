@@ -60,6 +60,7 @@ class StageContext:
     stage_name: str
     input_dir: Path
     run_dir: Path
+    canonical_run_dir: Path
     config: StageConfig
     seed: int
     attempt: int = 1
@@ -67,12 +68,15 @@ class StageContext:
     def path(self, *parts: str) -> Path:
         return self.run_dir.joinpath(*parts)
 
+    def canonical_path(self, *parts: str) -> Path:
+        return self.canonical_run_dir.joinpath(*parts)
+
 
 class Adapter(Protocol):
     name: str
     version: str
 
-    def healthcheck(self) -> HealthcheckResult: ...
+    def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult: ...
 
     def prepare(self, context: StageContext) -> None: ...
 

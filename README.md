@@ -1,9 +1,9 @@
 # Recon2Sim
 
-Recon2Sim Phase 0.1 is a typed, CPU-only observation-to-simulation foundation. Its mock
-pipeline exercises the same filesystem contracts, validation, DAG, caching, retries, and
-provenance that future real adapters must satisfy. It does not install or run COLMAP, SAM 3,
-GenRecon, SceneSmith, Blender, simulator SDKs, model checkpoints, or GPU code.
+Recon2Sim Phase 1 is a typed observation-to-simulation pipeline with real video/image ingest,
+deterministic frame QA, and out-of-process COLMAP sparse camera recovery. The downstream
+segmentation, reconstruction, compilation, validation, and export stages remain deterministic
+mocks. COLMAP, FFmpeg, and Docker are optional system tools rather than Python dependencies.
 
 ## Quickstart
 
@@ -17,6 +17,26 @@ uv run recon2sim run \
   --config configs/mock.yaml \
   --run-dir runs/tabletop_demo
 uv run recon2sim validate-ir runs/tabletop_demo/scene_ir/scene.json
+```
+
+For a directory containing one video, or an `images/` directory of JPEG/PNG files:
+
+```bash
+uv run recon2sim adapters healthcheck
+uv run recon2sim run \
+  --input examples/real_video \
+  --config configs/colmap.yaml \
+  --run-dir runs/real_video_colmap
+uv run recon2sim ingest inspect runs/real_video_colmap
+uv run recon2sim camera inspect runs/real_video_colmap
+uv run recon2sim camera export-trajectory \
+  runs/real_video_colmap --output trajectory.json
+```
+
+Use `configs/colmap_cpu.yaml` without CUDA. The optional pinned COLMAP 3.11.1 image is:
+
+```bash
+docker build -t reconevery/colmap:phase1 docker/colmap
 ```
 
 Resume without changing successful status:
@@ -57,6 +77,19 @@ output, and its package explicitly contains no simulator outputs. These are sepa
 The cabinet is one top-level articulated object. Its body and drawer are articulation links;
 the drawer is not duplicated as an independent `ObjectInstance`.
 
+## Real ingest and camera recovery
+
+`ffmpeg_ingest` accepts a video file, a directory containing one video, or a deterministic
+JPEG/PNG image collection. Video decoding uses FFmpeg and FFprobe as subprocesses. Frame QA
+records Laplacian-variance sharpness, mean grayscale brightness, intensity variance, and a
+downsampled-pixel duplicate score in `inputs/frame_qa.json`. Defaults are conservative and
+require dataset-specific tuning.
+
+`colmap_camera_recovery` runs feature extraction, sequential or exhaustive matching, mapping,
+binary-model parsing, and deterministic sparse-model selection. It preserves `database.db`,
+every sparse model, commands, and logs under `camera/colmap/`. See
+[`docs/phase_1_colmap.md`](docs/phase_1_colmap.md) for setup and capture guidance.
+
 ## Coordinate convention
 
 - right-handed world frame;
@@ -66,6 +99,8 @@ the drawer is not duplicated as an independent `ObjectInstance`.
 - camera poses are `transform_world_from_camera`.
 
 The convention is stored in typed camera and Scene IR metadata rather than left implicit.
+Monocular COLMAP translation is only defined up to a global scale. Phase 1 records
+`scale_status="scale_ambiguous"` instead of claiming arbitrary COLMAP units are metric.
 
 ## Quality gate
 
@@ -85,6 +120,6 @@ uv run python scripts/generate_schema.py
 
 ## Adapter boundary
 
-Core code imports only lightweight dependencies. Future heavyweight tools must run behind an
-adapter boundary and exchange declared, typed, validated artifacts. See `docs/adapters.md` and
-`docs/roadmap.md`; Phase 1 begins with camera recovery only.
+Core code imports only lightweight dependencies. Heavyweight tools run behind an adapter boundary
+and exchange declared, typed, validated artifacts. SAM 3, GenRecon, SceneSmith, Blender,
+simulators, MVS, NeRF, and model checkpoints remain out of Phase 1.

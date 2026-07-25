@@ -62,6 +62,12 @@ class RelationType(StrEnum):
     REACHABLE_BY = "reachable_by"
 
 
+class ScaleStatus(StrEnum):
+    METRIC_SCALE_KNOWN = "metric_scale_known"
+    SCALE_AMBIGUOUS = "scale_ambiguous"
+    EXTERNALLY_SCALED = "externally_scaled"
+
+
 class CoordinateConvention(StrictModel):
     world_axes: Literal["x_forward_y_left_z_up"] = "x_forward_y_left_z_up"
     handedness: Literal["right"] = "right"
@@ -144,6 +150,7 @@ class Camera(StrictModel):
     model: Annotated[str, Field(min_length=1)]
     intrinsics: CameraIntrinsics
     poses: list[CameraPose] = Field(default_factory=list)
+    scale_status: ScaleStatus = ScaleStatus.METRIC_SCALE_KNOWN
     provenance: ProvenanceRecord
 
     @model_validator(mode="after")

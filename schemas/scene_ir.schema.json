@@ -70,6 +70,10 @@
         },
         "provenance": {
           "$ref": "#/$defs/ProvenanceRecord"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
         }
       },
       "required": [
@@ -818,6 +822,15 @@
         "reachable_by"
       ],
       "title": "RelationType",
+      "type": "string"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
       "type": "string"
     },
     "SceneMetadata": {

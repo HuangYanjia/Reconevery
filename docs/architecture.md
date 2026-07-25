@@ -1,8 +1,8 @@
 # Architecture
 
 Recon2Sim separates orchestration and semantic contracts from heavyweight reconstruction or
-simulation software. Phase 0.1 uses deterministic mocks so every boundary can be exercised on a
-CPU-only machine without network downloads.
+simulation software. Phase 1 runs FFmpeg and COLMAP out of process while retaining deterministic
+mocks downstream, so mandatory tests require no external executable or GPU.
 
 ## Layers
 
@@ -11,6 +11,15 @@ CPU-only machine without network downloads.
 3. The runner validates the DAG, computes signatures, executes retries, validates outputs, hashes
    artifacts, and commits manifest state atomically.
 4. The Typer CLI exposes run, resume, inspection, validation, cleanup, and adapter healthchecks.
+
+```text
+video or image directory
+  -> FFmpeg/Pillow normalization + frame QA
+  -> COLMAP features -> matching -> sparse mapping
+  -> strict COLMAP binary parsing
+  -> typed CameraReconstruction
+  -> existing downstream mock stages
+```
 
 The configured DAG is:
 
@@ -64,9 +73,15 @@ bytes are restored.
 
 ## Execution safety
 
-Retries are `retries + 1` total attempts. Required outputs are checked after each attempt. JSON is
-validated with a Pydantic model (or a generic typed JSON-object contract for command adapters),
-PNGs and OBJs receive format checks, and no stage succeeds solely because a process returned zero.
+Retries are `retries + 1` total attempts. Each attempt writes only inside
+`work/<stage>/attempt_<N>`. Previously successful transitive-ancestor artifacts are copied into
+that workspace, the adapter runs there, and required outputs are validated before file-by-file
+atomic promotion. Stale canonical files cannot satisfy validation. A failed or interrupted
+attempt keeps its workspace and cannot overwrite the previous successful output set.
+
+JSON is validated with a Pydantic model (or a generic typed JSON-object contract for command
+adapters), PNGs and OBJs receive format checks, and no stage succeeds solely because a process
+returned zero.
 
 Command adapters receive only explicitly allowlisted environment variables. They capture stdout,
 stderr, return code, duration, and timeout state in per-attempt files. Timed-out process groups are
@@ -74,6 +89,9 @@ terminated and failed attempt files remain available for debugging.
 
 ## Coordinate convention
 
-The world frame is right-handed with +X forward, +Y left, and +Z up. Distances are meters,
-quaternions use `xyzw`, and `transform_world_from_camera` maps camera coordinates into world
-coordinates.
+The world frame is right-handed with +X forward, +Y left, and +Z up. Metric or externally scaled
+distances use meters, quaternions use `xyzw`, and `transform_world_from_camera` maps camera
+coordinates into world coordinates.
+COLMAP `qvec,tvec` world-to-camera transforms are inverted to produce world-from-camera, and
+`wxyz` is normalized and reordered to `xyzw`. Monocular COLMAP world scale has gauge freedom, so
+Phase 1 marks it `scale_ambiguous`.

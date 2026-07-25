@@ -6,12 +6,19 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from recon2sim.adapters import REGISTRY
+from recon2sim.artifacts import (
+    CameraDiagnostics,
+    CameraReconstruction,
+    FrameQualityReport,
+    IngestManifest,
+)
 from recon2sim.config import load_config
 from recon2sim.ir import SceneIR
 from recon2sim.pipeline import PipelineConfigurationError, PipelineRunner
+from recon2sim.storage import atomic_write_json
 
 app = typer.Typer(
     help="Recon2Sim typed observation-to-simulation pipeline.",
@@ -21,7 +28,11 @@ adapters_app = typer.Typer(
     help="Inspect configured adapter implementations.",
     no_args_is_help=True,
 )
+ingest_app = typer.Typer(help="Inspect normalized ingest artifacts.", no_args_is_help=True)
+camera_app = typer.Typer(help="Inspect and export camera recovery artifacts.", no_args_is_help=True)
 app.add_typer(adapters_app, name="adapters")
+app.add_typer(ingest_app, name="ingest")
+app.add_typer(camera_app, name="camera")
 
 
 @app.command()
@@ -38,9 +49,9 @@ def run(
         Path,
         typer.Option(
             "--input",
-            help="Input observation directory.",
+            help="Input video or observation directory.",
             exists=True,
-            file_okay=False,
+            file_okay=True,
             dir_okay=True,
             readable=True,
         ),
@@ -76,7 +87,13 @@ def run(
             from_stage=from_stage,
             until_stage=until_stage,
         )
-    except (FileNotFoundError, PipelineConfigurationError, ValidationError, ValueError) as exc:
+    except (
+        FileNotFoundError,
+        PipelineConfigurationError,
+        RuntimeError,
+        ValidationError,
+        ValueError,
+    ) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(
         json.dumps(
@@ -188,3 +205,148 @@ def healthcheck() -> None:
     for name, adapter_class in sorted(REGISTRY.items()):
         result = adapter_class().healthcheck()
         typer.echo(f"{name}: {'ok' if result.ok else 'fail'} - {result.message}")
+
+
+def _artifact_model[ModelT: BaseModel](
+    run_dir: Path,
+    relative_path: str,
+    model: type[ModelT],
+) -> ModelT:
+    path = run_dir / relative_path
+    if not path.is_file():
+        raise typer.BadParameter(f"required artifact does not exist: {path}")
+    try:
+        return model.model_validate_json(path.read_text(encoding="utf-8"))
+    except ValidationError as exc:
+        raise typer.BadParameter(f"invalid artifact {path}: {exc}") from exc
+
+
+@ingest_app.command("inspect")
+def inspect_ingest(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    manifest = _artifact_model(run_dir, "inputs/manifest.json", IngestManifest)
+    report_path = run_dir / "inputs" / "frame_qa.json"
+    report = (
+        FrameQualityReport.model_validate_json(report_path.read_text(encoding="utf-8"))
+        if report_path.is_file()
+        else None
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "source_type": manifest.source_type,
+                "source_input": manifest.source_input_path,
+                "decoded_frames": manifest.total_decoded_frames,
+                "selected_frames": len(manifest.frames),
+                "rejected_frames": sum(entry.status.value == "rejected" for entry in report.entries)
+                if report is not None
+                else 0,
+                "frame_size": (
+                    [manifest.frames[0].width, manifest.frames[0].height]
+                    if manifest.frames
+                    else None
+                ),
+            },
+            indent=2,
+            default=str,
+        )
+    )
+
+
+@camera_app.command("inspect")
+def inspect_camera(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    reconstruction = _artifact_model(
+        run_dir,
+        "camera/reconstruction.json",
+        CameraReconstruction,
+    )
+    diagnostics_path = run_dir / "camera" / "diagnostics.json"
+    diagnostics = (
+        CameraDiagnostics.model_validate_json(diagnostics_path.read_text(encoding="utf-8"))
+        if diagnostics_path.is_file()
+        else None
+    )
+    selected = (
+        next((model for model in diagnostics.models if model.selected), None)
+        if diagnostics is not None
+        else None
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "input_frames": (
+                    diagnostics.input_frame_count
+                    if diagnostics is not None
+                    else len(reconstruction.poses)
+                ),
+                "selected_frames": (
+                    diagnostics.selected_frame_count
+                    if diagnostics is not None
+                    else len(reconstruction.poses)
+                ),
+                "registered_frames": len(reconstruction.registered_frame_ids),
+                "registration_ratio": selected.registration_ratio if selected else None,
+                "camera_model": reconstruction.model,
+                "intrinsics": reconstruction.intrinsics.model_dump(mode="json"),
+                "sparse_points": reconstruction.sparse_point_count,
+                "scale_status": reconstruction.scale_status,
+                "warnings": diagnostics.warnings if diagnostics is not None else [],
+            },
+            indent=2,
+            default=str,
+        )
+    )
+
+
+@camera_app.command("export-trajectory")
+def export_camera_trajectory(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    output: Annotated[Path, typer.Option("--output", help="Trajectory JSON output path.")],
+) -> None:
+    reconstruction = _artifact_model(
+        run_dir,
+        "camera/reconstruction.json",
+        CameraReconstruction,
+    )
+    atomic_write_json(
+        output,
+        {
+            "camera_id": reconstruction.camera_id,
+            "coordinate_convention": reconstruction.coordinate_convention.model_dump(mode="json"),
+            "scale_status": reconstruction.scale_status,
+            "poses": [pose.model_dump(mode="json") for pose in reconstruction.poses],
+        },
+    )
+    typer.echo(f"wrote {len(reconstruction.poses)} poses to {output}")
+
+
+@camera_app.command("colmap-stats")
+def colmap_stats(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    diagnostics = _artifact_model(run_dir, "camera/diagnostics.json", CameraDiagnostics)
+    typer.echo(
+        json.dumps(
+            {
+                "selected_model": diagnostics.selected_model,
+                "models": [model.model_dump(mode="json") for model in diagnostics.models],
+                "warnings": diagnostics.warnings,
+            },
+            indent=2,
+        )
+    )

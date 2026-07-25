@@ -38,11 +38,10 @@ def test_command_adapter_retries_and_records_execution(tmp_path: Path) -> None:
     input_dir = tmp_path / "input"
     input_dir.mkdir()
     script = """
+import os
 from pathlib import Path
 import sys
-counter = Path("counter.txt")
-attempt = int(counter.read_text()) + 1 if counter.exists() else 1
-counter.write_text(str(attempt))
+attempt = int(os.environ["RECON2SIM_ATTEMPT"])
 if attempt < 3:
     sys.exit(7)
 Path("result.json").write_text('{"ok": true}')
@@ -67,6 +66,7 @@ Path("result.json").write_text('{"ok": true}')
     ]
     assert (tmp_path / "run" / "logs" / "command_stage.attempt_1.stderr.log").exists()
     assert entry["metrics"]["return_code"] == 0
+    assert entry["attempts"][0]["workspace"] == "work/command_stage/attempt_1"
 
 
 def test_zero_exit_with_missing_output_fails_stage(tmp_path: Path) -> None:
@@ -95,6 +95,61 @@ def test_invalid_adapter_json_fails_validation(tmp_path: Path) -> None:
         PipelineRunner(config, input_dir, tmp_path / "run").run()
 
 
+def test_stale_canonical_output_cannot_satisfy_new_attempt(tmp_path: Path) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    run_dir = tmp_path / "run"
+    output = OutputConfig(path="result.json", validation="json")
+    first = _command_config(
+        [
+            sys.executable,
+            "-c",
+            "from pathlib import Path; Path('result.json').write_text('{\"run\": 1}')",
+        ],
+        expected_output=output,
+    )
+    PipelineRunner(first, input_dir, run_dir).run()
+
+    stale = _command_config([sys.executable, "-c", "pass"], expected_output=output)
+    with pytest.raises(OutputValidationError, match="did not produce required output"):
+        PipelineRunner(stale, input_dir, run_dir).run()
+
+    assert json.loads((run_dir / "result.json").read_text(encoding="utf-8")) == {"run": 1}
+    assert not (run_dir / "work" / "command_stage" / "attempt_2" / "result.json").exists()
+
+
+def test_failed_attempt_preserves_previous_successful_output(tmp_path: Path) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    run_dir = tmp_path / "run"
+    output = OutputConfig(path="result.json", validation="json")
+    good = _command_config(
+        [
+            sys.executable,
+            "-c",
+            "from pathlib import Path; Path('result.json').write_text('{\"stable\": true}')",
+        ],
+        expected_output=output,
+    )
+    PipelineRunner(good, input_dir, run_dir).run()
+    previous = (run_dir / "result.json").read_bytes()
+
+    invalid = _command_config(
+        [
+            sys.executable,
+            "-c",
+            "from pathlib import Path; Path('result.json').write_text('{invalid')",
+        ],
+        expected_output=output,
+    )
+    with pytest.raises(OutputValidationError, match="produced invalid output"):
+        PipelineRunner(invalid, input_dir, run_dir).run()
+
+    assert (run_dir / "result.json").read_bytes() == previous
+    failed = run_dir / "work" / "command_stage" / "attempt_2" / "result.json"
+    assert failed.read_text(encoding="utf-8") == "{invalid"
+
+
 def test_subprocess_timeout_terminates_and_preserves_logs(tmp_path: Path) -> None:
     input_dir = tmp_path / "input"
     input_dir.mkdir()
@@ -113,7 +168,13 @@ def test_subprocess_timeout_terminates_and_preserves_logs(tmp_path: Path) -> Non
 
 def test_cli_help_uses_real_typer() -> None:
     runner = CliRunner()
-    for arguments in (["--help"], ["run", "--help"], ["adapters", "--help"]):
+    for arguments in (
+        ["--help"],
+        ["run", "--help"],
+        ["adapters", "--help"],
+        ["ingest", "--help"],
+        ["camera", "--help"],
+    ):
         result = runner.invoke(app, arguments)
         assert result.exit_code == 0, result.output
         assert "Usage:" in result.output
@@ -173,3 +234,31 @@ def test_cli_clean_end_to_end(tmp_path: Path) -> None:
     validation = runner.invoke(app, ["validate-ir", str(run_dir / "scene_ir" / "scene.json")])
     assert validation.exit_code == 0, validation.output
     assert "valid Scene IR: tabletop_demo" in validation.output
+
+
+def test_ingest_and_camera_inspection_and_trajectory_export(completed_run: Path) -> None:
+    runner = CliRunner()
+    ingest = runner.invoke(app, ["ingest", "inspect", str(completed_run)])
+    assert ingest.exit_code == 0, ingest.output
+    assert '"selected_frames": 3' in ingest.output
+
+    camera = runner.invoke(app, ["camera", "inspect", str(completed_run)])
+    assert camera.exit_code == 0, camera.output
+    assert '"registered_frames": 3' in camera.output
+    assert '"camera_model": "pinhole"' in camera.output
+
+    output = completed_run / "trajectory.json"
+    exported = runner.invoke(
+        app,
+        [
+            "camera",
+            "export-trajectory",
+            str(completed_run),
+            "--output",
+            str(output),
+        ],
+    )
+    assert exported.exit_code == 0, exported.output
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert len(payload["poses"]) == 3
+    assert payload["scale_status"] == "metric_scale_known"
