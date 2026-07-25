@@ -10,6 +10,7 @@ from PIL import Image
 
 from recon2sim.adapters.base import StageContext
 from recon2sim.adapters.colmap import (
+    ColmapAdapterConfig,
     ColmapCameraRecoveryAdapter,
     SparseModelCandidate,
     rank_sparse_models,
@@ -21,7 +22,14 @@ from recon2sim.artifacts import (
 )
 from recon2sim.colmap.model import ColmapModel
 from recon2sim.config import AdapterConfig, PipelineConfig, StageConfig, load_config
-from recon2sim.ir import ScaleStatus, SceneIR
+from recon2sim.ir import (
+    AlignmentStatus,
+    CameraAxes,
+    LinearUnits,
+    ScaleStatus,
+    SceneIR,
+    WorldFrame,
+)
 from recon2sim.pipeline import PipelineRunner
 
 
@@ -188,6 +196,12 @@ def test_fake_colmap_full_adapter_workflow_and_multiple_model_selection(
     ]
     assert reconstruction.unregistered_frame_ids == []
     assert reconstruction.scale_status is ScaleStatus.SCALE_AMBIGUOUS
+    assert reconstruction.coordinate_convention.world_frame is WorldFrame.COLMAP_ARBITRARY
+    assert reconstruction.coordinate_convention.alignment_status is AlignmentStatus.UNORIENTED
+    assert reconstruction.coordinate_convention.camera_axes is CameraAxes.X_RIGHT_Y_DOWN_Z_FORWARD
+    assert reconstruction.coordinate_convention.linear_units is LinearUnits.ARBITRARY_UNITS
+    assert reconstruction.coordinate_convention.scale_status is ScaleStatus.SCALE_AMBIGUOUS
+    assert "translation_m" not in reconstruction.poses[0].model_dump()
     assert reconstruction.intrinsics.distortion == []
     assert (run_dir / "camera" / "colmap" / "database.db").is_file()
     assert (run_dir / "camera" / "colmap" / "sparse" / "0" / "points3D.bin").is_file()
@@ -206,7 +220,7 @@ def test_real_ingest_and_colmap_artifacts_feed_complete_mock_downstream(
     input_dir = tmp_path / "input"
     _input_images(input_dir)
     fake = _write_fake_colmap(tmp_path / "fake_colmap")
-    config = load_config(Path("configs/colmap_cpu.yaml"))
+    config = load_config(Path("configs/colmap_with_mock_downstream.yaml"))
     config.stages["ingest"].adapter.config.update(
         {
             "input_mode": "image_directory",
@@ -235,6 +249,22 @@ def test_real_ingest_and_colmap_artifacts_feed_complete_mock_downstream(
         "frame_000002",
     ]
     assert scene.cameras[0].scale_status is ScaleStatus.SCALE_AMBIGUOUS
+    assert scene.metadata.coordinate_convention.world_frame is WorldFrame.COLMAP_ARBITRARY
+    assert scene.cameras[0].coordinate_convention.world_frame is WorldFrame.COLMAP_ARBITRARY
+
+
+def test_production_colmap_configs_stop_after_camera_recovery() -> None:
+    for path in (
+        Path("configs/colmap.yaml"),
+        Path("configs/colmap_cpu.yaml"),
+        Path("configs/colmap_docker.example.yaml"),
+    ):
+        assert list(load_config(path).stages) == ["ingest", "camera_recovery"]
+
+    assert (
+        "segmentation_tracking"
+        in load_config(Path("configs/colmap_with_mock_downstream.yaml")).stages
+    )
 
 
 def test_rank_sparse_models_uses_documented_deterministic_order(tmp_path: Path) -> None:
@@ -352,8 +382,28 @@ def test_docker_healthcheck_checks_daemon_and_configured_image(tmp_path: Path) -
     assert result.ok is True
     assert json.loads(calls_path.read_text(encoding="utf-8")) == [
         ["version"],
-        ["image", "inspect", "reconevery/colmap:test"],
+        [
+            "image",
+            "inspect",
+            "reconevery/colmap:test",
+            "--format",
+            "{{.Id}}",
+        ],
+        [
+            "run",
+            "--rm",
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
+            "reconevery/colmap:test",
+            "colmap",
+            "-h",
+        ],
     ]
+
+
+def test_docker_execution_requires_cpu_mode() -> None:
+    with pytest.raises(ValueError, match="requires use_gpu=false"):
+        ColmapAdapterConfig(execution_mode="docker", use_gpu=True)
 
 
 def test_command_environment_is_allowlisted(

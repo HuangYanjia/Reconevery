@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import math
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from recon2sim.adapters.base import HealthcheckResult, OutputSpec, StageContext, StageResult
 from recon2sim.adapters.ingest import (
@@ -27,13 +28,17 @@ from recon2sim.artifacts import (
 from recon2sim.colmap import camera_intrinsics, colmap_pose_to_world_from_camera, read_model
 from recon2sim.colmap.model import ColmapModel, ColmapModelError
 from recon2sim.ir import (
+    AlignmentStatus,
+    CameraAxes,
     CameraPose,
     ConfidenceRecord,
     CoordinateConvention,
     GeometrySourceType,
+    LinearUnits,
     ProvenanceRecord,
     ScaleStatus,
     StrictModel,
+    WorldFrame,
 )
 from recon2sim.storage import atomic_write_json
 
@@ -52,6 +57,7 @@ class ColmapAdapterConfig(StrictModel):
     executable: str = "colmap"
     docker_executable: str = "docker"
     docker_image: str = "reconevery/colmap:phase1"
+    docker_user: str | None = None
     matcher: Literal["sequential", "exhaustive"] = "sequential"
     camera_model: str = "OPENCV"
     single_camera: bool = True
@@ -60,6 +66,12 @@ class ColmapAdapterConfig(StrictModel):
     min_registration_ratio: float = Field(default=0.4, gt=0, le=1)
     mapper: MapperConfig = Field(default_factory=MapperConfig)
     sequential_matcher: SequentialMatcherConfig = Field(default_factory=SequentialMatcherConfig)
+
+    @model_validator(mode="after")
+    def docker_is_cpu_only(self) -> Self:
+        if self.execution_mode == "docker" and self.use_gpu:
+            raise ValueError("Docker COLMAP execution currently requires use_gpu=false")
+        return self
 
 
 class ColmapExecutionError(RuntimeError):
@@ -178,7 +190,7 @@ def camera_confidence(
 
 class ColmapCameraRecoveryAdapter:
     name = "colmap_camera_recovery"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult:
         config = (
@@ -193,33 +205,73 @@ class ColmapCameraRecoveryAdapter:
                     False,
                     f"Docker executable {config.docker_executable!r} was not found; install Docker",
                 )
-            docker_version = subprocess.run(
-                [docker, "version"],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
+            try:
+                docker_version = subprocess.run(
+                    [docker, "version"],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return HealthcheckResult(False, f"docker version failed: {exc}")
             if docker_version.returncode != 0:
                 return HealthcheckResult(
                     False,
                     f"docker version failed: {docker_version.stderr.strip()}",
                 )
-            inspect = subprocess.run(
-                [docker, "image", "inspect", config.docker_image],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
+            try:
+                inspect = subprocess.run(
+                    [
+                        docker,
+                        "image",
+                        "inspect",
+                        config.docker_image,
+                        "--format",
+                        "{{.Id}}",
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return HealthcheckResult(False, f"docker image inspect failed: {exc}")
             if inspect.returncode != 0:
                 return HealthcheckResult(
                     False,
                     f"Docker image {config.docker_image!r} is unavailable; build or pull it",
                 )
+            image_identifier = inspect.stdout.strip() or "identifier unavailable"
+            try:
+                in_container = subprocess.run(
+                    [
+                        docker,
+                        "run",
+                        "--rm",
+                        *self._docker_user_arguments(config),
+                        config.docker_image,
+                        "colmap",
+                        "-h",
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                return HealthcheckResult(False, f"in-container colmap -h failed: {exc}")
+            if in_container.returncode != 0:
+                return HealthcheckResult(
+                    False,
+                    "in-container colmap -h failed: "
+                    f"{(in_container.stderr or in_container.stdout).strip()}",
+                )
+            first_line = (in_container.stdout or in_container.stderr).splitlines()
+            version = first_line[0] if first_line else "COLMAP help available"
             return HealthcheckResult(
                 True,
-                f"docker={docker}; image={config.docker_image}",
+                f"docker={docker}; image={config.docker_image}; id={image_identifier}; {version}",
             )
 
         executable = resolve_executable(config.executable)
@@ -246,7 +298,7 @@ class ColmapCameraRecoveryAdapter:
                 "application/json",
                 "colmap",
                 validation="json",
-                schema_identifier="recon2sim/camera-reconstruction/0.2.0",
+                schema_identifier="recon2sim/camera-reconstruction/0.3.0",
                 model=CameraReconstruction,
             ),
             OutputSpec(
@@ -264,7 +316,7 @@ class ColmapCameraRecoveryAdapter:
                 "application/json",
                 "colmap",
                 validation="json",
-                schema_identifier="recon2sim/colmap-workspace-manifest/0.1.0",
+                schema_identifier="recon2sim/colmap-workspace-manifest/0.2.0",
                 model=ColmapWorkspaceManifest,
             ),
         ]
@@ -276,11 +328,12 @@ class ColmapCameraRecoveryAdapter:
         )
         self._validate_frames(context, manifest)
         commands: list[ColmapCommandRecord] = []
-        executable_or_image, tool_version = self._tool_identity(config)
+        executable_or_image, tool_version, image_identifier = self._tool_identity(config)
         workspace_manifest = ColmapWorkspaceManifest(
             execution_mode=config.execution_mode,
             executable_or_image=executable_or_image,
             tool_version=tool_version,
+            image_identifier=image_identifier,
             database_path="camera/colmap/database.db",
             image_path="frames",
             sparse_path="camera/colmap/sparse",
@@ -435,6 +488,7 @@ class ColmapCameraRecoveryAdapter:
             docker,
             "run",
             "--rm",
+            *self._docker_user_arguments(config),
             "--mount",
             f"type=bind,src={context.run_dir.resolve()},dst=/workspace",
             "--workdir",
@@ -443,6 +497,13 @@ class ColmapCameraRecoveryAdapter:
             "colmap",
             *arguments,
         ]
+
+    @staticmethod
+    def _docker_user_arguments(config: ColmapAdapterConfig) -> list[str]:
+        user = config.docker_user
+        if user is None and hasattr(os, "getuid") and hasattr(os, "getgid"):
+            user = f"{os.getuid()}:{os.getgid()}"
+        return ["--user", user] if user else []
 
     def _select_model(
         self,
@@ -578,7 +639,13 @@ class ColmapCameraRecoveryAdapter:
             sparse_point_count=selected.sparse_points,
             average_reprojection_error=selected.average_reprojection_error,
             confidence=confidence,
-            coordinate_convention=CoordinateConvention(),
+            coordinate_convention=CoordinateConvention(
+                world_frame=WorldFrame.COLMAP_ARBITRARY,
+                alignment_status=AlignmentStatus.UNORIENTED,
+                camera_axes=CameraAxes.X_RIGHT_Y_DOWN_Z_FORWARD,
+                linear_units=LinearUnits.ARBITRARY_UNITS,
+                scale_status=ScaleStatus.SCALE_AMBIGUOUS,
+            ),
             scale_status=ScaleStatus.SCALE_AMBIGUOUS,
             provenance=provenance,
         )
@@ -594,14 +661,34 @@ class ColmapCameraRecoveryAdapter:
                 )
 
     @staticmethod
-    def _tool_identity(config: ColmapAdapterConfig) -> tuple[str, str | None]:
+    def _tool_identity(
+        config: ColmapAdapterConfig,
+    ) -> tuple[str, str | None, str | None]:
         if config.execution_mode == "docker":
-            return config.docker_image, None
+            docker = resolve_executable(config.docker_executable)
+            if docker is None:
+                return config.docker_image, None, None
+            inspect = subprocess.run(
+                [
+                    docker,
+                    "image",
+                    "inspect",
+                    config.docker_image,
+                    "--format",
+                    "{{.Id}}",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            identifier = inspect.stdout.strip() if inspect.returncode == 0 else None
+            return config.docker_image, None, identifier or None
         executable = resolve_executable(config.executable)
         if executable is None:
-            return config.executable, None
+            return config.executable, None, None
         _, version = executable_version(executable, "-h")
-        return executable, version
+        return executable, version, None
 
     @staticmethod
     def _command_record(

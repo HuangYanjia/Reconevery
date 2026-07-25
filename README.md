@@ -22,7 +22,7 @@ uv run recon2sim validate-ir runs/tabletop_demo/scene_ir/scene.json
 For a directory containing one video, or an `images/` directory of JPEG/PNG files:
 
 ```bash
-uv run recon2sim adapters healthcheck
+uv run recon2sim adapters healthcheck --config configs/colmap.yaml
 uv run recon2sim run \
   --input examples/real_video \
   --config configs/colmap.yaml \
@@ -33,7 +33,9 @@ uv run recon2sim camera export-trajectory \
   runs/real_video_colmap --output trajectory.json
 ```
 
-Use `configs/colmap_cpu.yaml` without CUDA. The optional pinned COLMAP 3.11.1 image is:
+`configs/colmap.yaml` and `configs/colmap_cpu.yaml` intentionally stop after camera recovery.
+`configs/colmap_with_mock_downstream.yaml` is the explicit integration demo for real ingest/COLMAP
+followed by Phase 0.1 mocks. The optional pinned COLMAP 3.11.1 image is:
 
 ```bash
 docker build -t reconevery/colmap:phase1 docker/colmap
@@ -92,15 +94,15 @@ every sparse model, commands, and logs under `camera/colmap/`. See
 
 ## Coordinate convention
 
-- right-handed world frame;
-- +X forward, +Y left, +Z up;
-- meters;
-- quaternions ordered `(x, y, z, w)`;
-- camera poses are `transform_world_from_camera`.
+Raw Phase 1 COLMAP output is explicitly `world_frame="colmap_arbitrary"`,
+`alignment_status="unoriented"`, `camera_axes="x_right_y_down_z_forward"`,
+`linear_units="arbitrary_units"`, and `scale_status="scale_ambiguous"`. Poses are
+`transform_world_from_camera`, quaternions are `xyzw`, and the unit-neutral `translation` values
+remain in COLMAP's arbitrary gauge.
 
-The convention is stored in typed camera and Scene IR metadata rather than left implicit.
-Monocular COLMAP translation is only defined up to a global scale. Phase 1 records
-`scale_status="scale_ambiguous"` instead of claiming arbitrary COLMAP units are metric.
+The canonical robot scene frame is a separate, later contract: right-handed +X forward, +Y left,
++Z up, with meters after external alignment and scale recovery. Phase 1 does not perform or imply
+that conversion.
 
 ## Quality gate
 

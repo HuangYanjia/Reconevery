@@ -138,6 +138,42 @@ def test_image_ingest_normalizes_resizes_and_rejects_duplicates(tmp_path: Path) 
     assert command_payload == {"commands": []}
 
 
+@pytest.mark.parametrize(
+    ("orientation", "top_color"),
+    [(6, "red"), (8, "blue")],
+)
+def test_image_ingest_applies_exif_orientation(
+    tmp_path: Path,
+    orientation: int,
+    top_color: str,
+) -> None:
+    input_dir = tmp_path / "input"
+    source = input_dir / "images" / "oriented.jpg"
+    source.parent.mkdir(parents=True)
+    image = Image.new("RGB", (40, 20), "red")
+    for x in range(20, 40):
+        for y in range(20):
+            image.putpixel((x, y), (0, 0, 255))
+    exif = Image.Exif()
+    exif[274] = orientation
+    image.save(source, exif=exif, quality=100, subsampling=0)
+
+    run_dir = tmp_path / "run"
+    PipelineRunner(
+        _ingest_config(resize_max_edge=None),
+        input_dir,
+        run_dir,
+    ).run()
+    normalized = Image.open(run_dir / "frames" / "frame_000000.png")
+
+    assert normalized.size == (20, 40)
+    top = normalized.getpixel((10, 5))
+    if top_color == "red":
+        assert top[0] > top[2]
+    else:
+        assert top[2] > top[0]
+
+
 def test_image_ingest_rejects_unreadable_image_actionably(tmp_path: Path) -> None:
     input_dir = tmp_path / "input"
     input_dir.mkdir()

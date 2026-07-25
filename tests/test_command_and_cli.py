@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import signal
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
+from recon2sim.adapters.process import terminate_process_group
 from recon2sim.cli import app
 from recon2sim.config import AdapterConfig, OutputConfig, PipelineConfig, StageConfig
 from recon2sim.pipeline import OutputValidationError, PipelineRunner
@@ -166,6 +169,31 @@ def test_subprocess_timeout_terminates_and_preserves_logs(tmp_path: Path) -> Non
     assert (tmp_path / "run" / result["stderr_path"]).exists()
 
 
+def test_process_group_termination_escalates_to_kill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Process:
+        pid = 4321
+        calls = 0
+
+        def communicate(self, timeout: float | None = None) -> tuple[str, str]:
+            self.calls += 1
+            if self.calls == 1:
+                raise subprocess.TimeoutExpired(["fake"], timeout)
+            return ("stdout", "stderr")
+
+    signals: list[signal.Signals] = []
+    monkeypatch.setattr(
+        "recon2sim.adapters.process.os.killpg",
+        lambda pid, sent_signal: signals.append(sent_signal),
+    )
+
+    stdout, stderr = terminate_process_group(Process())  # type: ignore[arg-type]
+
+    assert (stdout, stderr) == ("stdout", "stderr")
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+
+
 def test_cli_help_uses_real_typer() -> None:
     runner = CliRunner()
     for arguments in (
@@ -178,6 +206,43 @@ def test_cli_help_uses_real_typer() -> None:
         result = runner.invoke(app, arguments)
         assert result.exit_code == 0, result.output
         assert "Usage:" in result.output
+
+
+def test_cli_healthcheck_uses_configured_executable(tmp_path: Path) -> None:
+    executable = tmp_path / "configured_colmap"
+    executable.write_text(
+        f"#!{sys.executable}\nprint('COLMAP configured fake')\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    config = tmp_path / "health.yaml"
+    config.write_text(
+        f"""
+stages:
+  ingest:
+    adapter:
+      name: ffmpeg_ingest
+      config:
+        input_mode: image_directory
+  camera_recovery:
+    adapter:
+      name: colmap_camera_recovery
+      config:
+        executable: {executable}
+        use_gpu: false
+    depends_on: [ingest]
+""",
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["adapters", "healthcheck", "--config", str(config)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "ingest (ffmpeg_ingest): ok" in result.output
+    assert f"colmap={executable}" in result.output
 
 
 def test_cli_reports_invalid_paths_and_stages(tmp_path: Path) -> None:
@@ -262,3 +327,7 @@ def test_ingest_and_camera_inspection_and_trajectory_export(completed_run: Path)
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert len(payload["poses"]) == 3
     assert payload["scale_status"] == "metric_scale_known"
+    assert payload["coordinate_convention"]["world_frame"] == ("canonical_x_forward_y_left_z_up")
+    assert payload["coordinate_convention"]["linear_units"] == "meters"
+    assert "translation" in payload["poses"][0]["transform_world_from_camera"]
+    assert "translation_m" not in payload["poses"][0]["transform_world_from_camera"]

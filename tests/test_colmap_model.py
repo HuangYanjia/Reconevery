@@ -106,14 +106,14 @@ def test_missing_and_malformed_colmap_binary_files_are_actionable(tmp_path: Path
 
 def test_identity_and_translation_pose_inversion() -> None:
     identity = colmap_pose_to_world_from_camera((1.0, 0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
-    assert identity.translation_m == (0.0, 0.0, 0.0)
+    assert identity.translation == (0.0, 0.0, 0.0)
     assert identity.rotation_xyzw == (0.0, 0.0, 0.0, 1.0)
 
     translated = colmap_pose_to_world_from_camera(
         (1.0, 0.0, 0.0, 0.0),
         (1.0, 2.0, 3.0),
     )
-    assert translated.translation_m == (-1.0, -2.0, -3.0)
+    assert translated.translation == (-1.0, -2.0, -3.0)
 
 
 def test_known_ninety_degree_rotation_is_inverted() -> None:

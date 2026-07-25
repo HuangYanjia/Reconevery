@@ -5,7 +5,7 @@ future simulator files are referenced or derived artifacts; none replaces the IR
 
 ## Top-level contract
 
-- `schema_version`: current literal version `0.1.0`.
+- `schema_version`: current value `0.1.1`; legacy `0.1.0` payloads remain readable.
 - `metadata`: scene identity, source, coordinate convention, and provenance.
 - `cameras`: intrinsics, per-frame `transform_world_from_camera` poses, and scale status.
 - `frames`: frame paths, timestamps, camera references, bounding boxes, mask paths, and confidence.
@@ -39,17 +39,22 @@ The mock cabinet is one top-level `ObjectInstance` with `asset_type="articulated
 
 ## Coordinates
 
-- right-handed;
-- +X forward, +Y left, +Z up;
-- meters;
-- quaternion fields ordered `(x, y, z, w)`;
-- camera transforms are world-from-camera.
+`CoordinateConvention` explicitly records `world_frame`, `alignment_status`, `camera_axes`,
+`linear_units`, `scale_status`, handedness, quaternion order, and transform direction. Transform
+translations use the unit-neutral field `translation`. Legacy payloads containing `world_axes`,
+`units`, `camera_transform_direction`, or `translation_m` remain readable but serialize in the
+new form.
 
-The same `CoordinateConvention` appears in camera reconstruction output and Scene IR metadata.
-Camera `scale_status` is one of `metric_scale_known`, `scale_ambiguous`, or `externally_scaled`.
-Monocular COLMAP uses `scale_ambiguous`; its translations are consistent arbitrary reconstruction
-units until external scaling is applied. The `translation_m` name remains for schema compatibility
-and must be interpreted together with scale status.
+Raw monocular COLMAP output uses:
+
+- `world_frame="colmap_arbitrary"` and `alignment_status="unoriented"`;
+- `camera_axes="x_right_y_down_z_forward"` and right handedness;
+- `linear_units="arbitrary_units"` and `scale_status="scale_ambiguous"`;
+- quaternion order `xyzw` and transform direction `world_from_camera`.
+
+The canonical robot frame is a distinct aligned contract: right-handed +X forward, +Y left, +Z up
+with meters. Raw COLMAP poses must not be labeled canonical or metric. The same coordinate metadata
+is propagated into the Scene IR metadata and camera record by the explicit mock-downstream demo.
 
 ## JSON Schema
 

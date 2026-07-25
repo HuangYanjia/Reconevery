@@ -18,3 +18,8 @@ filesystem contracts and existing DAG runner.
    example configurations, a COLMAP Dockerfile, and Phase 1 documentation.
 7. Run Ruff, formatting, mypy, pytest, schema validation, the mock pipeline twice with resume,
    stale-output and failed-promotion checks, and real-tool smoke tests only when tools are present.
+
+Phase 1.1 corrects the raw COLMAP gauge metadata, applies EXIF orientation, makes interruption
+non-retriable, removes audit counts from cache identity, adds transactional promotion rollback,
+checks configured local/Docker tools, and makes production COLMAP configs stop after camera
+recovery.

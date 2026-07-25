@@ -4,7 +4,6 @@ import hashlib
 import json
 import os
 import shutil
-import signal
 import subprocess
 import time
 from dataclasses import dataclass
@@ -12,10 +11,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
-from PIL import ExifTags, Image, UnidentifiedImageError
+from PIL import ExifTags, Image, ImageOps, UnidentifiedImageError
 from pydantic import Field, model_validator
 
 from recon2sim.adapters.base import HealthcheckResult, OutputSpec, StageContext, StageResult
+from recon2sim.adapters.process import terminate_process_group
 from recon2sim.artifacts import (
     FrameManifestEntry,
     FrameQualityEntry,
@@ -195,20 +195,15 @@ def run_process(
         start_new_session=True,
     )
     timed_out = False
+    interruption: KeyboardInterrupt | SystemExit | None = None
     try:
         stdout, stderr = process.communicate(timeout=context.config.adapter.timeout_s)
     except subprocess.TimeoutExpired:
         timed_out = True
-        os.killpg(process.pid, signal.SIGTERM)
-        try:
-            stdout, stderr = process.communicate(timeout=2)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            stdout, stderr = process.communicate()
-    except KeyboardInterrupt:
-        os.killpg(process.pid, signal.SIGTERM)
-        process.communicate()
-        raise
+        stdout, stderr = terminate_process_group(process)
+    except (KeyboardInterrupt, SystemExit) as exc:
+        interruption = exc
+        stdout, stderr = terminate_process_group(process)
     duration = time.monotonic() - start
     log_root = context.path(log_directory)
     log_root.mkdir(parents=True, exist_ok=True)
@@ -217,6 +212,8 @@ def run_process(
     stdout_path.write_text(stdout, encoding="utf-8")
     stderr_path.write_text(stderr, encoding="utf-8")
     result = ProcessResult(command, process.returncode, duration, timed_out, stdout, stderr)
+    if interruption is not None:
+        raise interruption
     if timed_out:
         raise ProcessExecutionError(
             (
@@ -240,12 +237,13 @@ def _normalize_image(source: Path, destination: Path, resize_max_edge: int | Non
     try:
         with Image.open(source) as image:
             image.load()
-            normalized = image.convert("RGB")
+            normalized = ImageOps.exif_transpose(image)
             if resize_max_edge is not None and max(normalized.size) > resize_max_edge:
                 normalized.thumbnail(
                     (resize_max_edge, resize_max_edge),
                     Image.Resampling.LANCZOS,
                 )
+            normalized = normalized.convert("RGB")
             destination.parent.mkdir(parents=True, exist_ok=True)
             normalized.save(destination, format="PNG", compress_level=6, optimize=False)
     except (OSError, UnidentifiedImageError) as exc:
@@ -285,7 +283,7 @@ def _provenance(
 
 class FFmpegIngestAdapter:
     name = "ffmpeg_ingest"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult:
         config = (
@@ -293,10 +291,7 @@ class FFmpegIngestAdapter:
             if context is not None
             else FFmpegIngestConfig()
         )
-        detected = (
-            detect_input(context.input_dir, config.input_mode) if context is not None else None
-        )
-        if detected is not None and detected.source_type is InputSourceType.IMAGE_DIRECTORY:
+        if config.input_mode == "image_directory":
             return HealthcheckResult(True, "Pillow image ingest is available")
         ffmpeg = resolve_executable(config.executable)
         ffprobe = resolve_executable(config.ffprobe_executable)

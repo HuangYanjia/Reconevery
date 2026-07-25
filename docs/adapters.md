@@ -49,8 +49,8 @@ code with missing or invalid output is a failed attempt.
 
 `ffmpeg_ingest` detects `video` or `image_directory` input. Video mode checks FFmpeg and FFprobe,
 records versions and exact arguments, extracts `frame_%06d.png`, and retains logs. Image mode uses
-Pillow to validate JPEG/PNG input, normalize RGB PNG bytes, resize without changing aspect ratio,
-preserve path order, and use EXIF timestamps when present.
+Pillow to validate JPEG/PNG input, apply `ImageOps.exif_transpose`, resize without changing aspect
+ratio, normalize RGB PNG bytes, preserve path order, and use EXIF timestamps when present.
 
 Both modes emit `inputs/manifest.json` and `inputs/frame_qa.json`. QA uses Laplacian variance,
 brightness mean, grayscale variance, and normalized 32x32 grayscale difference. Defaults are
@@ -66,9 +66,12 @@ The internal binary parser supports `SIMPLE_PINHOLE`, `PINHOLE`, `SIMPLE_RADIAL`
 `OPENCV`, retains distortion, and rejects multi-camera or unsupported results. Models rank by
 registered frames, sparse points, reprojection error, then deterministic ID.
 
-Local health checks run `colmap -h`. Docker mode runs `docker version` and
-`docker image inspect <image>`. Raw databases, every sparse candidate, logs, commands, model
-diagnostics, and typed reconstruction remain under `camera/`.
+Local health checks run the configured `colmap -h`. Docker mode runs `docker version`,
+`docker image inspect <image>`, and an in-container `colmap -h`; use `--config` on the CLI to
+check the selected executable or image. Linux containers run with the host UID:GID by default,
+and `docker_user` can override it. The workspace manifest records the inspected image identifier
+when available. Docker Phase 1 is CPU-only and rejects `use_gpu=true`. Raw databases, every sparse
+candidate, logs, commands, model diagnostics, and typed reconstruction remain under `camera/`.
 
 ## Future real adapters
 

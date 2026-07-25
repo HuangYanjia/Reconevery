@@ -233,6 +233,16 @@ class PipelineRunner:
             self.logger.info("stage started", extra={"stage": stage_name})
             try:
                 records, metrics = self._execute_with_retries(adapter, stage_name, entry, manifest)
+            except (KeyboardInterrupt, SystemExit) as exc:
+                entry.update(
+                    status="interrupted",
+                    last_execution="interrupted",
+                    end_time=_now(),
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                self.save_manifest(manifest)
+                self.logger.warning("stage interrupted", extra={"stage": stage_name})
+                raise
             except BaseException as exc:
                 entry.update(
                     status="failed",
@@ -255,7 +265,6 @@ class PipelineRunner:
                 {
                     "signature": signature,
                     "output_signature": output_signature,
-                    "execution_count": execution_count,
                 }
             )
             entry.update(
@@ -324,6 +333,18 @@ class PipelineRunner:
                 attempt_entry.update(status="succeeded", end_time=_now(), error=None)
                 self.save_manifest(manifest)
                 return records, result.metrics
+            except (KeyboardInterrupt, SystemExit) as exc:
+                details = getattr(exc, "details", None)
+                attempt_entry.update(
+                    status="interrupted",
+                    end_time=_now(),
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                if isinstance(details, dict):
+                    attempt_entry["details"] = details
+                self._preserve_attempt_logs(workspace)
+                self.save_manifest(manifest)
+                raise
             except BaseException as exc:
                 last_error = exc
                 details = getattr(exc, "details", None)
@@ -444,25 +465,60 @@ class PipelineRunner:
         promotion_root = self.run_dir / ".promotion" / workspace.parent.name / workspace.name
         if promotion_root.exists():
             shutil.rmtree(promotion_root)
+        staged_root = promotion_root / "staged"
+        backup_root = promotion_root / "backup"
         for record in records:
             source = workspace / record.relative_path
-            staged = promotion_root / record.relative_path
+            staged = staged_root / record.relative_path
             staged.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, staged)
 
-        for record in records:
-            staged = promotion_root / record.relative_path
-            destination = self.run_dir / record.relative_path
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(staged, destination)
         current_paths = {record.relative_path for record in records}
-        for previous in previous_records:
-            if previous.relative_path in current_paths:
+        previous_paths = {record.relative_path for record in previous_records}
+        affected_paths = sorted(current_paths | previous_paths)
+        previously_present: set[str] = set()
+        for relative_path in affected_paths:
+            canonical = self.run_dir / relative_path
+            if not canonical.is_file():
                 continue
-            obsolete = self.run_dir / previous.relative_path
-            if obsolete.is_file():
-                obsolete.unlink()
-        shutil.rmtree(promotion_root, ignore_errors=True)
+            previously_present.add(relative_path)
+            backup = backup_root / relative_path
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(canonical, backup)
+
+        try:
+            for record in records:
+                staged = staged_root / record.relative_path
+                destination = self.run_dir / record.relative_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                self._replace_promoted_output(staged, destination)
+            for relative_path in previous_paths - current_paths:
+                obsolete = self.run_dir / relative_path
+                if obsolete.is_file():
+                    obsolete.unlink()
+        except BaseException as promotion_error:
+            try:
+                for relative_path in affected_paths:
+                    destination = self.run_dir / relative_path
+                    if relative_path in previously_present:
+                        backup = backup_root / relative_path
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        rollback_copy = destination.with_name(f".{destination.name}.rollback")
+                        shutil.copy2(backup, rollback_copy)
+                        os.replace(rollback_copy, destination)
+                    elif destination.is_file():
+                        destination.unlink()
+            except BaseException as rollback_error:
+                raise RuntimeError(
+                    f"output promotion failed and rollback was incomplete: {rollback_error}"
+                ) from promotion_error
+            raise
+        finally:
+            shutil.rmtree(promotion_root, ignore_errors=True)
+
+    @staticmethod
+    def _replace_promoted_output(source: Path, destination: Path) -> None:
+        os.replace(source, destination)
 
     def _ancestor_stages(self, stage_name: str) -> set[str]:
         ancestors: set[str] = set()

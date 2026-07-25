@@ -18,9 +18,11 @@ from recon2sim.images import png_dimensions
 from recon2sim.ir import (
     AssetType,
     ConfidenceRecord,
+    CoordinateConvention,
     GeometrySourceType,
     PhysicsProperties,
     SceneIR,
+    Transform,
 )
 
 
@@ -31,6 +33,24 @@ def test_real_pydantic_constraints() -> None:
         PhysicsProperties(mass_kg=-0.01)
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         ConfidenceRecord.model_validate({"score": 0.5, "method": "test", "unexpected": 1})
+
+
+def test_legacy_coordinate_and_transform_fields_remain_readable() -> None:
+    convention = CoordinateConvention.model_validate(
+        {
+            "world_axes": "x_forward_y_left_z_up",
+            "handedness": "right",
+            "units": "meters",
+            "quaternion_order": "xyzw",
+            "camera_transform_direction": "world_from_camera",
+        }
+    )
+    transform = Transform.model_validate({"translation_m": [1, 2, 3]})
+
+    assert convention.linear_units.value == "meters"
+    assert "units" not in convention.model_dump()
+    assert transform.translation == (1.0, 2.0, 3.0)
+    assert "translation_m" not in transform.model_dump()
 
 
 def test_malformed_enum_is_rejected(scene_payload: dict[str, Any]) -> None:

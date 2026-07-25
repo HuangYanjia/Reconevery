@@ -1,7 +1,9 @@
 from recon2sim.ir.models import (
+    AlignmentStatus,
     Articulation,
     AssetType,
     Camera,
+    CameraAxes,
     CameraIntrinsics,
     CameraPose,
     CollisionAsset,
@@ -11,6 +13,7 @@ from recon2sim.ir.models import (
     GeometryAsset,
     GeometrySourceType,
     Joint,
+    LinearUnits,
     Link,
     MaterialAsset,
     ObjectInstance,
@@ -24,14 +27,18 @@ from recon2sim.ir.models import (
     SceneRelation,
     StrictModel,
     Transform,
+    TransformDirection,
     ValidationIssue,
     ValidationReport,
+    WorldFrame,
 )
 
 __all__ = [
+    "AlignmentStatus",
     "Articulation",
     "AssetType",
     "Camera",
+    "CameraAxes",
     "CameraIntrinsics",
     "CameraPose",
     "CollisionAsset",
@@ -41,6 +48,7 @@ __all__ = [
     "GeometryAsset",
     "GeometrySourceType",
     "Joint",
+    "LinearUnits",
     "Link",
     "MaterialAsset",
     "ObjectInstance",
@@ -54,6 +62,8 @@ __all__ = [
     "SceneRelation",
     "StrictModel",
     "Transform",
+    "TransformDirection",
     "ValidationIssue",
     "ValidationReport",
+    "WorldFrame",
 ]

@@ -9,6 +9,7 @@ import typer
 from pydantic import BaseModel, ValidationError
 
 from recon2sim.adapters import REGISTRY
+from recon2sim.adapters.base import StageContext
 from recon2sim.artifacts import (
     CameraDiagnostics,
     CameraReconstruction,
@@ -201,10 +202,44 @@ def list_adapters() -> None:
 
 
 @adapters_app.command("healthcheck")
-def healthcheck() -> None:
-    for name, adapter_class in sorted(REGISTRY.items()):
-        result = adapter_class().healthcheck()
-        typer.echo(f"{name}: {'ok' if result.ok else 'fail'} - {result.message}")
+def healthcheck(
+    config_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--config",
+            help="Check the adapter settings in a pipeline YAML config.",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+        ),
+    ] = None,
+) -> None:
+    if config_path is None:
+        for name, adapter_class in sorted(REGISTRY.items()):
+            result = adapter_class().healthcheck()
+            typer.echo(f"{name}: {'ok' if result.ok else 'fail'} - {result.message}")
+        return
+
+    config = load_config(config_path)
+    for stage_name, stage in config.stages.items():
+        configured_adapter_class = REGISTRY.get(stage.adapter.name)
+        if configured_adapter_class is None:
+            typer.echo(f"{stage_name} ({stage.adapter.name}): fail - adapter is not registered")
+            continue
+        context = StageContext(
+            stage_name=stage_name,
+            input_dir=Path("."),
+            run_dir=Path("."),
+            canonical_run_dir=Path("."),
+            config=stage,
+            seed=config.seed,
+        )
+        result = configured_adapter_class().healthcheck(context)
+        typer.echo(
+            f"{stage_name} ({stage.adapter.name}): "
+            f"{'ok' if result.ok else 'fail'} - {result.message}"
+        )
 
 
 def _artifact_model[ModelT: BaseModel](
@@ -298,6 +333,10 @@ def inspect_camera(
                 "camera_model": reconstruction.model,
                 "intrinsics": reconstruction.intrinsics.model_dump(mode="json"),
                 "sparse_points": reconstruction.sparse_point_count,
+                "world_frame": reconstruction.coordinate_convention.world_frame,
+                "alignment_status": reconstruction.coordinate_convention.alignment_status,
+                "camera_axes": reconstruction.coordinate_convention.camera_axes,
+                "linear_units": reconstruction.coordinate_convention.linear_units,
                 "scale_status": reconstruction.scale_status,
                 "warnings": diagnostics.warnings if diagnostics is not None else [],
             },

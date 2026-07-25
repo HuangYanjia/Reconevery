@@ -37,3 +37,24 @@ stages:
           overlap: 10
           loop_detection: false
     depends_on: [ingest]
+  segmentation_tracking:
+    adapter: {name: mock_segmentation_tracking, config: {source: mock}}
+    depends_on: [ingest, camera_recovery]
+  global_reconstruction:
+    adapter: {name: mock_global_reconstruction, config: {source: mock}}
+    depends_on: [camera_recovery]
+  object_reconstruction:
+    adapter: {name: mock_object_reconstruction, config: {source: mock}}
+    depends_on: [segmentation_tracking]
+  scene_ir_assembly:
+    adapter: {name: mock_scene_ir_assembly, config: {source: mock}}
+    depends_on: [global_reconstruction, object_reconstruction]
+  scene_compilation:
+    adapter: {name: mock_scene_compiler, config: {source: mock}}
+    depends_on: [scene_ir_assembly]
+  validation:
+    adapter: {name: mock_physics_validator, config: {source: mock}}
+    depends_on: [scene_compilation]
+  export:
+    adapter: {name: mock_export, config: {source: mock}}
+    depends_on: [validation]

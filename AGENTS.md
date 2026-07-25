@@ -26,7 +26,7 @@ uv sync --all-groups
 uv run recon2sim --help
 uv run recon2sim run --input examples/tabletop --config configs/mock.yaml --run-dir runs/tabletop_demo
 uv run recon2sim validate-ir runs/tabletop_demo/scene_ir/scene.json
-uv run recon2sim adapters healthcheck
+uv run recon2sim adapters healthcheck --config configs/colmap.yaml
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
@@ -42,13 +42,15 @@ uv run mypy src
 - Failed attempts retain their workspace and never replace previous canonical outputs.
 - Store run artifact paths relative to the run directory and record hashes and producer metadata.
 - Cache signatures include config, adapter name/version, seed, input bytes, upstream artifacts,
-  and upstream execution signatures. Cache hits keep `status=succeeded`.
+  and content-derived upstream execution signatures. `execution_count` is audit metadata only.
+  Cache hits keep `status=succeeded`.
 - Scene IR is canonical. Exported mesh files and simulator/compiler outputs are derived artifacts.
 - The articulated cabinet is one object with `cabinet_body` and `cabinet_drawer` links. Do not add
   a second top-level drawer without designing and validating an explicit cross-reference model.
-- World coordinates are right-handed, +X forward, +Y left, +Z up, quaternion `xyzw`, and poses
-  transform camera coordinates into world coordinates. Monocular COLMAP output must remain
-  explicitly `scale_ambiguous`.
+- Raw COLMAP coordinates use `world_frame=colmap_arbitrary`, `alignment_status=unoriented`,
+  `camera_axes=x_right_y_down_z_forward`, `linear_units=arbitrary_units`, quaternion `xyzw`,
+  world-from-camera transforms, and `scale_status=scale_ambiguous`. Only a later alignment and
+  scaling stage may emit canonical +X-forward, +Y-left, +Z-up metric coordinates.
 
 ## Change discipline
 

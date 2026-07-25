@@ -117,7 +117,7 @@ def colmap_pose_to_world_from_camera(
         -rotated_translation[2],
     )
     return Transform(
-        translation_m=camera_center,
+        translation=camera_center,
         rotation_xyzw=rotation_matrix_to_quaternion_xyzw(rotation_camera_to_world),
     )
 

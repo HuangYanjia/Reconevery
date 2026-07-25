@@ -201,6 +201,7 @@ class ColmapWorkspaceManifest(StrictModel):
     execution_mode: Literal["local", "docker"]
     executable_or_image: Annotated[str, Field(min_length=1)]
     tool_version: str | None = None
+    image_identifier: str | None = None
     database_path: Annotated[str, Field(min_length=1)]
     image_path: Annotated[str, Field(min_length=1)]
     sparse_path: Annotated[str, Field(min_length=1)]

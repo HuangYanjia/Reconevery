@@ -24,7 +24,7 @@ Capture recommendations:
 Install FFmpeg/FFprobe and COLMAP on `PATH`, then check them:
 
 ```bash
-uv run recon2sim adapters healthcheck
+uv run recon2sim adapters healthcheck --config configs/colmap.yaml
 ffmpeg -version
 ffprobe -version
 colmap -h
@@ -48,14 +48,17 @@ uv run recon2sim run \
   --run-dir runs/real_video_colmap_cpu
 ```
 
+Both local configs stop after `camera_recovery`. Use
+`configs/colmap_with_mock_downstream.yaml` only when intentionally exercising the real camera
+artifact through the Phase 0.1 mock stages.
+
 ## Docker execution
 
 The Dockerfile builds COLMAP 3.11.1 without CUDA and includes FFmpeg:
 
 ```bash
 docker build -t reconevery/colmap:phase1 docker/colmap
-docker version
-docker image inspect reconevery/colmap:phase1
+uv run recon2sim adapters healthcheck --config configs/colmap_docker.example.yaml
 uv run recon2sim run \
   --input examples/real_video \
   --config configs/colmap_docker.example.yaml \
@@ -63,14 +66,17 @@ uv run recon2sim run \
 ```
 
 Docker mode mounts only the attempt workspace at `/workspace`; it embeds no user data or model
-checkpoints. Health fails unless both Docker daemon access and image inspection succeed.
+checkpoints. On Linux it maps the current host UID:GID unless `docker_user` is configured.
+Health fails unless daemon access, image inspection, and an in-container `colmap -h` succeed.
+The inspected image identifier is saved in `workspace_manifest.json`. Docker Phase 1 is CPU-only,
+so Docker configuration must set `use_gpu=false`.
 
 ## Extraction and frame QA
 
 Video mode runs FFprobe for stream metadata, hashes the original video, then uses an FFmpeg `fps`
 filter, optional aspect-preserving max-edge resize, a frame limit, and six-digit names. Image mode
-decodes JPEG/PNG with Pillow, writes deterministic RGB PNG, uses path order, and reads EXIF capture
-time when present.
+decodes JPEG/PNG with Pillow, applies EXIF orientation before resize and RGB conversion, writes
+deterministic PNG, uses path order, and reads EXIF capture time when present.
 
 Each candidate receives:
 
@@ -116,10 +122,15 @@ qvec(wxyz), tvec
   -> quaternion xyzw
 ```
 
-Recon2Sim declares a right-handed `+X forward, +Y left, +Z up` convention and world-from-camera
-transforms. Sparse monocular reconstruction still has arbitrary global gauge and scale. Phase 1
-writes `scale_status="scale_ambiguous"` and never claims raw translations are metric. External
-scale calibration should later change the status to `externally_scaled`.
+Pose inversion preserves COLMAP's world gauge; it is not an axis or gravity alignment. Phase 1
+writes `world_frame="colmap_arbitrary"`, `alignment_status="unoriented"`,
+`camera_axes="x_right_y_down_z_forward"`, `linear_units="arbitrary_units"`, and
+`scale_status="scale_ambiguous"`. `translation` therefore contains arbitrary COLMAP units, not
+meters.
+
+A later alignment and scale-recovery stage must transform this raw reconstruction into the
+right-handed canonical robot world (+X forward, +Y left, +Z up) and may declare meters only after
+an external scale reference is applied.
 
 ## Selection, confidence, and diagnostics
 
@@ -149,17 +160,20 @@ uv run recon2sim camera export-trajectory \
 ## Failure recovery
 
 Every attempt writes to `work/<stage>/attempt_<N>`. The runner validates temporary outputs before
-atomic file promotion. Stale files cannot satisfy a new attempt, and a failed attempt cannot
-replace the previous successful result. Partial databases, sparse outputs, exact commands, stdout,
-stderr, diagnostics, and the failed subcommand remain in the attempt workspace.
+transactional promotion with backup and rollback. Stale files cannot satisfy a new attempt, and a
+failed promotion restores the complete previous output set. Partial databases, sparse outputs,
+exact commands, stdout, stderr, diagnostics, and the failed subcommand remain in the attempt
+workspace.
 
 Troubleshooting order:
 
-1. Run `recon2sim adapters healthcheck` for missing tools or Docker image.
+1. Run `recon2sim adapters healthcheck --config <config>` for the selected tools or Docker image.
 2. Inspect `inputs/frame_qa.json` for all-frame rejection.
 3. Inspect `camera/colmap/logs/` or the failed attempt workspace.
 4. Inspect `camera/diagnostics.json` for thresholds and model selection.
 5. Reduce frame rate/image size for resource limits, or improve capture overlap for registration.
 
-Timeouts terminate the process group. Rerun after changing configuration; `--resume` reuses only
-successful stages whose signature and output hashes remain current.
+Timeouts terminate the process group. Keyboard interrupts and system exits are never retried:
+the process group receives TERM then KILL after a grace period, and the stage is marked
+`interrupted`. Rerun after changing configuration; `--resume` reuses only successful stages whose
+content signature and output hashes remain current.

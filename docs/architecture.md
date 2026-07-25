@@ -17,11 +17,11 @@ video or image directory
   -> FFmpeg/Pillow normalization + frame QA
   -> COLMAP features -> matching -> sparse mapping
   -> strict COLMAP binary parsing
-  -> typed CameraReconstruction
-  -> existing downstream mock stages
+  -> typed raw-gauge CameraReconstruction
 ```
 
-The configured DAG is:
+The production Phase 1 configs stop after camera recovery. The explicit
+`colmap_with_mock_downstream.yaml` integration demo continues through:
 
 ```text
 ingest -> camera_recovery -> segmentation_tracking -> object_reconstruction --+
@@ -67,16 +67,17 @@ A stage signature includes:
 - upstream execution signatures.
 
 A cache hit requires the signature and every recorded output hash to match. It leaves the stage
-`succeeded` and sets `last_execution=cache_hit`. If an output was edited, the producer reruns and
-receives a new execution signature, which invalidates all dependents even if deterministic output
-bytes are restored.
+`succeeded` and sets `last_execution=cache_hit`. Execution signatures are derived from stage
+inputs and output bytes; `execution_count` is audit metadata. A forced deterministic rerun that
+reproduces identical bytes therefore does not invalidate downstream stages.
 
 ## Execution safety
 
 Retries are `retries + 1` total attempts. Each attempt writes only inside
 `work/<stage>/attempt_<N>`. Previously successful transitive-ancestor artifacts are copied into
-that workspace, the adapter runs there, and required outputs are validated before file-by-file
-atomic promotion. Stale canonical files cannot satisfy validation. A failed or interrupted
+that workspace, the adapter runs there, and required outputs are validated before transactional
+promotion. Promotion backs up the complete stage-owned output set and rolls it back on any
+mid-promotion failure. Stale canonical files cannot satisfy validation. A failed or interrupted
 attempt keeps its workspace and cannot overwrite the previous successful output set.
 
 JSON is validated with a Pydantic model (or a generic typed JSON-object contract for command
@@ -84,14 +85,17 @@ adapters), PNGs and OBJs receive format checks, and no stage succeeds solely bec
 returned zero.
 
 Command adapters receive only explicitly allowlisted environment variables. They capture stdout,
-stderr, return code, duration, and timeout state in per-attempt files. Timed-out process groups are
-terminated and failed attempt files remain available for debugging.
+stderr, return code, duration, and timeout state in per-attempt files. Timed-out or interrupted
+process groups receive TERM followed by KILL if the grace period expires. `KeyboardInterrupt` and
+`SystemExit` are marked interrupted and re-raised without retry.
 
 ## Coordinate convention
 
-The world frame is right-handed with +X forward, +Y left, and +Z up. Metric or externally scaled
-distances use meters, quaternions use `xyzw`, and `transform_world_from_camera` maps camera
-coordinates into world coordinates.
 COLMAP `qvec,tvec` world-to-camera transforms are inverted to produce world-from-camera, and
-`wxyz` is normalized and reordered to `xyzw`. Monocular COLMAP world scale has gauge freedom, so
-Phase 1 marks it `scale_ambiguous`.
+`wxyz` is normalized and reordered to `xyzw`. That inversion does not align or scale the world.
+Phase 1 metadata declares an arbitrary, unoriented COLMAP world; OpenCV camera axes
+X-right/Y-down/Z-forward; arbitrary linear units; and ambiguous scale.
+
+The canonical robot frame is right-handed +X forward, +Y left, +Z up in meters. A later alignment
+stage must estimate gravity/orientation and external scale before changing the metadata and
+translations to that canonical contract.

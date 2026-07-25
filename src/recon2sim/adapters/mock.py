@@ -152,7 +152,7 @@ def _png_spec(path: str, artifact_type: str) -> OutputSpec:
 
 class MockAdapter:
     name = "mock"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult:
         return HealthcheckResult(True, "deterministic mock adapter ready")
@@ -264,7 +264,7 @@ class MockCameraRecoveryAdapter(MockAdapter):
         poses = [
             CameraPose(
                 frame_id=frame.frame_id,
-                transform_world_from_camera=Transform(translation_m=(index * 0.05, -1.5, 1.0)),
+                transform_world_from_camera=Transform(translation=(index * 0.05, -1.5, 1.0)),
                 confidence=ConfidenceRecord(score=0.94, method="deterministic_mock"),
             )
             for index, frame in enumerate(manifest.frames)
@@ -609,6 +609,7 @@ class MockSceneIRAssemblyAdapter(MockAdapter):
             model=camera_data.model,
             intrinsics=camera_data.intrinsics,
             poses=camera_data.poses,
+            coordinate_convention=camera_data.coordinate_convention,
             scale_status=camera_data.scale_status,
             provenance=camera_data.provenance,
         )
