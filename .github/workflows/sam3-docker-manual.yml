@@ -1,0 +1,82 @@
+name: SAM 3 Docker manual validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_real_gpu_healthcheck:
+        description: Run the gated checkpoint healthcheck on an authorized self-hosted GPU runner
+        required: false
+        type: boolean
+        default: false
+      model_cache_path:
+        description: Authorized Hugging Face cache path on the self-hosted runner
+        required: false
+        type: string
+        default: /opt/huggingface
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-importcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build pinned SAM 3 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/sam3/Dockerfile
+          load: true
+          tags: reconevery/sam3:phase2
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Verify image and installed worker imports
+        run: |
+          docker image inspect reconevery/sam3:phase2
+          docker run --rm --entrypoint python reconevery/sam3:phase2 \
+            -m sam3_worker importcheck
+      - name: Verify bundled FFmpeg
+        run: |
+          docker run --rm --entrypoint ffmpeg reconevery/sam3:phase2 -version
+
+  configured-gpu-health:
+    if: ${{ inputs.run_real_gpu_healthcheck }}
+    runs-on: [self-hosted, linux, x64, gpu]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned SAM 3 image
+        run: docker build -f docker/sam3/Dockerfile -t reconevery/sam3:phase2 .
+      - name: Write credential-free worker health configuration
+        run: |
+          cat > worker_config.json <<'JSON'
+          {
+            "official_repository": "https://github.com/facebookresearch/sam3",
+            "official_code_commit": "46957e47805eaa273f4aa7bbbd25a88bca9108ce",
+            "checkpoint_repository": "facebook/sam3.1",
+            "checkpoint_revision": "daa63191845a41281374e725f4c9e51c7a824460",
+            "checkpoint_access_mode": "authenticated_remote",
+            "local_checkpoint_path": null,
+            "model_cache_path": "/model-cache",
+            "offline": false,
+            "model_mode": "sam3.1",
+            "device": "cuda",
+            "precision": "bfloat16",
+            "seed": 7,
+            "fake_mode": "disabled"
+          }
+          JSON
+      - name: Run real in-container GPU and checkpoint healthcheck
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          docker run --rm --gpus all \
+            --user "$(id -u):$(id -g)" \
+            -e HF_TOKEN \
+            -v "$PWD/worker_config.json:/workspace/worker_config.json:ro" \
+            -v "${{ inputs.model_cache_path }}:/model-cache:rw" \
+            --entrypoint python \
+            reconevery/sam3:phase2 \
+            -m sam3_worker healthcheck --config /workspace/worker_config.json

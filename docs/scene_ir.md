@@ -9,7 +9,8 @@ future simulator files are referenced or derived artifacts; none replaces the IR
 - `metadata`: scene identity, source, coordinate convention, and provenance.
 - `cameras`: intrinsics, per-frame `transform_world_from_camera` poses, and scale status.
 - `frames`: frame paths, timestamps, camera references, bounding boxes, mask paths, and confidence.
-- `objects`: static, rigid, or articulated instances with physics and asset references.
+- `objects`: unclassified, static, rigid, articulated, deformable, fluid/particle, or ignored
+  instances with physics and asset references.
 - `geometry_assets`, `material_assets`, `collision_assets`: typed referenced assets.
 - `relations`: validated object-to-object semantic or physical relations.
 - `validation`: optional validation report.
@@ -37,6 +38,18 @@ The mock cabinet is one top-level `ObjectInstance` with `asset_type="articulated
 `cabinet_drawer_slide` prismatic joint. The drawer is not a second top-level object and no
 `part_of` relation is used to imply duplicate identity.
 
+## Segmentation semantics
+
+Phase 2 segmentation does not measure final physical type. A prompt may carry
+`asset_type_hint`, whose source is explicitly `configured_semantic_hint`. Tracks may omit the hint
+or use `unclassified`; neither is a measured claim. The production Phase 2 DAG stops before Scene
+IR assembly. The explicit mixed/mock demo may use hints to exercise older downstream contracts,
+and labels every subsequent geometry result as mock.
+
+Every canonical segmentation observation records whether its frame has a registered camera pose.
+An unregistered frame remains a valid 2D mask and box, but cannot silently become eligible for
+multi-view 3D fusion. Segmentation never modifies or reinterprets the COLMAP coordinate convention.
+
 ## Coordinates
 
 `CoordinateConvention` explicitly records `world_frame`, `alignment_status`, `camera_axes`,
@@ -58,8 +71,9 @@ is propagated into the Scene IR metadata and camera record by the explicit mock-
 
 ## JSON Schema
 
-Pydantic v2 generates `schemas/scene_ir.schema.json`, including nested `$defs`, enums, required
-fields, numeric constraints, and `additionalProperties: false` behavior.
+Pydantic v2 generates Scene IR plus segmentation prompt, request, and track schemas under
+`schemas/`, including nested `$defs`, enums, required fields, numeric constraints, and
+`additionalProperties: false` behavior.
 
 ```bash
 uv run python scripts/generate_schema.py

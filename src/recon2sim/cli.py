@@ -15,10 +15,15 @@ from recon2sim.artifacts import (
     CameraReconstruction,
     FrameQualityReport,
     IngestManifest,
+    Sam3WorkerManifest,
+    SegmentationDiagnostics,
+    SegmentationPromptManifest,
+    SegmentationTrackingArtifact,
 )
 from recon2sim.config import load_config
 from recon2sim.ir import SceneIR
 from recon2sim.pipeline import PipelineConfigurationError, PipelineRunner
+from recon2sim.segmentation import export_coco, render_previews
 from recon2sim.storage import atomic_write_json
 
 app = typer.Typer(
@@ -31,9 +36,14 @@ adapters_app = typer.Typer(
 )
 ingest_app = typer.Typer(help="Inspect normalized ingest artifacts.", no_args_is_help=True)
 camera_app = typer.Typer(help="Inspect and export camera recovery artifacts.", no_args_is_help=True)
+segmentation_app = typer.Typer(
+    help="Inspect and export canonical segmentation tracks.",
+    no_args_is_help=True,
+)
 app.add_typer(adapters_app, name="adapters")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(camera_app, name="camera")
+app.add_typer(segmentation_app, name="segmentation")
 
 
 @app.command()
@@ -256,6 +266,42 @@ def _artifact_model[ModelT: BaseModel](
         raise typer.BadParameter(f"invalid artifact {path}: {exc}") from exc
 
 
+def _segmentation_inputs(
+    run_dir: Path,
+) -> tuple[
+    IngestManifest,
+    CameraReconstruction,
+    SegmentationPromptManifest,
+    Sam3WorkerManifest,
+    SegmentationTrackingArtifact,
+    SegmentationDiagnostics,
+]:
+    return (
+        _artifact_model(run_dir, "inputs/manifest.json", IngestManifest),
+        _artifact_model(run_dir, "camera/reconstruction.json", CameraReconstruction),
+        _artifact_model(
+            run_dir,
+            "observations/prompts.json",
+            SegmentationPromptManifest,
+        ),
+        _artifact_model(
+            run_dir,
+            "observations/worker_manifest.json",
+            Sam3WorkerManifest,
+        ),
+        _artifact_model(
+            run_dir,
+            "observations/object_tracks.json",
+            SegmentationTrackingArtifact,
+        ),
+        _artifact_model(
+            run_dir,
+            "observations/diagnostics.json",
+            SegmentationDiagnostics,
+        ),
+    )
+
+
 @ingest_app.command("inspect")
 def inspect_ingest(
     run_dir: Annotated[
@@ -389,3 +435,81 @@ def colmap_stats(
             indent=2,
         )
     )
+
+
+@segmentation_app.command("inspect")
+def inspect_segmentation(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    manifest, camera, prompts, worker, artifact, diagnostics = _segmentation_inputs(run_dir)
+    typer.echo(
+        json.dumps(
+            {
+                "backend_mode": diagnostics.backend_mode,
+                "official_code_commit": worker.official_code_commit,
+                "checkpoint": (f"{worker.checkpoint_repository}@{worker.checkpoint_revision}"),
+                "prompt_count": diagnostics.prompt_count,
+                "prompt_labels": [prompt.label for prompt in prompts.prompts if prompt.enabled],
+                "input_frames": len(manifest.frames),
+                "registered_frames": len(camera.registered_frame_ids),
+                "unregistered_frames": len(camera.unregistered_frame_ids),
+                "anchor_frames": [anchor.frame_id for anchor in diagnostics.anchor_frames],
+                "raw_tracks": diagnostics.raw_track_count,
+                "kept_tracks": diagnostics.kept_track_count,
+                "dropped_tracks": len(diagnostics.dropped_tracks),
+                "mask_count": diagnostics.mask_count,
+                "mean_coverage": diagnostics.mean_coverage,
+                "mean_confidence": diagnostics.mean_confidence,
+                "runtime_seconds": diagnostics.runtime_seconds,
+                "peak_gpu_memory_bytes": diagnostics.peak_gpu_memory_bytes,
+                "object_ids": [track.object_id for track in artifact.tracks],
+                "warnings": diagnostics.warnings,
+            },
+            indent=2,
+            default=str,
+        )
+    )
+
+
+@segmentation_app.command("render-preview")
+def render_segmentation_preview(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    manifest, camera, _, _, artifact, _ = _segmentation_inputs(run_dir)
+    try:
+        outputs = render_previews(
+            run_dir,
+            manifest,
+            artifact,
+            camera,
+            include_frame_previews=True,
+        )
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(f"preview rendering failed: {exc}") from exc
+    typer.echo(f"wrote {len(outputs)} deterministic previews under observations/previews")
+
+
+@segmentation_app.command("export-coco")
+def export_segmentation_coco(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    output: Annotated[
+        Path,
+        typer.Option("--output", help="COCO-style annotation JSON output path."),
+    ],
+) -> None:
+    manifest, _, _, _, artifact, _ = _segmentation_inputs(run_dir)
+    try:
+        export_coco(run_dir, manifest, artifact, output)
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(f"COCO export failed: {exc}") from exc
+    annotation_count = sum(len(track.observations) for track in artifact.tracks)
+    typer.echo(f"wrote {annotation_count} annotations to {output}")

@@ -1,0 +1,19 @@
+[project]
+name = "reconevery-sam3-worker"
+version = "0.1.0"
+description = "Isolated official SAM 3 worker for Reconevery"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "huggingface-hub==0.36.0",
+  "pillow==12.0.0",
+  "pydantic==2.12.5",
+  "torch==2.10.0",
+  "torchvision==0.25.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sam3_worker"]

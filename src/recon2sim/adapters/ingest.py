@@ -183,6 +183,7 @@ def run_process(
     context: StageContext,
     name: str,
     log_directory: str = "logs",
+    redact_values: tuple[str, ...] = (),
 ) -> ProcessResult:
     start = time.monotonic()
     process = subprocess.Popen(
@@ -205,6 +206,10 @@ def run_process(
         interruption = exc
         stdout, stderr = terminate_process_group(process)
     duration = time.monotonic() - start
+    for value in redact_values:
+        if value:
+            stdout = stdout.replace(value, "[REDACTED]")
+            stderr = stderr.replace(value, "[REDACTED]")
     log_root = context.path(log_directory)
     log_root.mkdir(parents=True, exist_ok=True)
     stdout_path = log_root / f"{context.stage_name}.{name}.attempt_{context.attempt}.stdout.log"

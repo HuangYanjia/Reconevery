@@ -26,6 +26,8 @@ from recon2sim.artifacts import (
     ReconstructedLink,
     ReconstructedMaterial,
     ReconstructedPart,
+    SegmentationTrack,
+    SegmentationTrackingArtifact,
     TrackObservation,
 )
 from recon2sim.images import png_dimensions, write_solid_png
@@ -63,6 +65,35 @@ def _read_model[ModelT: BaseModel](path: Path, model: type[ModelT]) -> ModelT:
     if not path.is_file():
         raise FileNotFoundError(f"required upstream artifact is missing: {path}")
     return model.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _read_tracking_artifact(
+    path: Path,
+) -> ObjectTracksArtifact | SegmentationTrackingArtifact:
+    if not path.is_file():
+        raise FileNotFoundError(f"required upstream artifact is missing: {path}")
+    text = path.read_text(encoding="utf-8")
+    if '"schema_version"' in text:
+        return SegmentationTrackingArtifact.model_validate_json(text)
+    return ObjectTracksArtifact.model_validate_json(text)
+
+
+def _track_name(track: ObjectTrack | SegmentationTrack) -> str:
+    return track.name if isinstance(track, ObjectTrack) else track.semantic_label
+
+
+def _track_asset_type(track: ObjectTrack | SegmentationTrack) -> AssetType:
+    if isinstance(track, ObjectTrack):
+        return track.asset_type
+    return track.asset_type_hint or AssetType.UNCLASSIFIED
+
+
+def _tracking_entries(
+    artifact: ObjectTracksArtifact | SegmentationTrackingArtifact,
+) -> list[ObjectTrack | SegmentationTrack]:
+    if isinstance(artifact, ObjectTracksArtifact):
+        return list(artifact.tracks)
+    return list(artifact.tracks)
 
 
 def _sha256(path: Path) -> str:
@@ -433,15 +464,15 @@ class MockObjectReconstructionAdapter(MockAdapter):
         ]
 
     def run(self, context: StageContext) -> StageResult:
-        tracks = _read_model(
-            context.path("observations", "object_tracks.json"), ObjectTracksArtifact
-        )
+        tracks = _read_tracking_artifact(context.path("observations", "object_tracks.json"))
         output_path = "reconstruction/objects/results.json"
         mesh_outputs: list[OutputSpec] = []
         all_mesh_paths: list[str] = []
         results: list[ObjectReconstructionResult] = []
-        for object_index, track in enumerate(tracks.tracks):
-            part_names = ["body", "drawer"] if track.object_id == "cabinet" else ["body"]
+        for object_index, track in enumerate(_tracking_entries(tracks)):
+            asset_type = _track_asset_type(track)
+            name = _track_name(track)
+            part_names = ["body", "drawer"] if asset_type is AssetType.ARTICULATED else ["body"]
             parts: list[ReconstructedPart] = []
             for part_index, part_name in enumerate(part_names):
                 part_id = f"{track.object_id}_{part_name}"
@@ -472,26 +503,32 @@ class MockObjectReconstructionAdapter(MockAdapter):
                 )
 
             articulation: ReconstructedArticulation | None = None
-            if track.asset_type is AssetType.ARTICULATED:
-                if track.object_id != "cabinet" or len(parts) != 2:
+            if asset_type is AssetType.ARTICULATED:
+                if name != "cabinet" or len(parts) != 2:
                     raise ValueError(
                         "the Phase 0.1 mock only supports the canonical cabinet articulation"
                     )
+                body_link_id = f"{track.object_id}_body"
+                drawer_link_id = f"{track.object_id}_drawer"
                 articulation = ReconstructedArticulation(
-                    articulation_id="cabinet_articulation",
+                    articulation_id=f"{track.object_id}_articulation",
                     links=[
                         ReconstructedLink(
-                            link_id="cabinet_body", name="cabinet body", part_ids=[parts[0].part_id]
+                            link_id=body_link_id,
+                            name="cabinet body",
+                            part_ids=[parts[0].part_id],
                         ),
                         ReconstructedLink(
-                            link_id="cabinet_drawer", name="drawer", part_ids=[parts[1].part_id]
+                            link_id=drawer_link_id,
+                            name="drawer",
+                            part_ids=[parts[1].part_id],
                         ),
                     ],
                     joints=[
                         ReconstructedJoint(
-                            joint_id="cabinet_drawer_slide",
-                            parent_link_id="cabinet_body",
-                            child_link_id="cabinet_drawer",
+                            joint_id=f"{track.object_id}_drawer_slide",
+                            parent_link_id=body_link_id,
+                            child_link_id=drawer_link_id,
                             joint_type="prismatic",
                             axis_xyz=(1.0, 0.0, 0.0),
                             limits=(0.0, 0.4),
@@ -506,15 +543,18 @@ class MockObjectReconstructionAdapter(MockAdapter):
                 [output_path, *all_mesh_paths],
                 score=0.84,
             )
-            is_static = track.asset_type in {AssetType.STATIC_STRUCTURE, AssetType.ARTICULATED}
+            is_static = asset_type in {
+                AssetType.STATIC_STRUCTURE,
+                AssetType.ARTICULATED,
+            }
             results.append(
                 ObjectReconstructionResult(
                     object_id=track.object_id,
-                    name=track.name,
-                    asset_type=track.asset_type,
+                    name=name,
+                    asset_type=asset_type,
                     parts=parts,
                     material=ReconstructedMaterial(
-                        name=f"mock {track.name} material",
+                        name=f"mock {name} material",
                         base_color_rgba=(
                             0.25 + object_index * 0.15,
                             0.4,
@@ -570,9 +610,7 @@ class MockSceneIRAssemblyAdapter(MockAdapter):
         camera_data = _read_model(
             context.path("camera", "reconstruction.json"), CameraReconstruction
         )
-        tracks_data = _read_model(
-            context.path("observations", "object_tracks.json"), ObjectTracksArtifact
-        )
+        tracks_data = _read_tracking_artifact(context.path("observations", "object_tracks.json"))
         global_data = _read_model(
             context.path("reconstruction", "global", "metadata.json"),
             GlobalReconstructionArtifact,
@@ -581,7 +619,8 @@ class MockSceneIRAssemblyAdapter(MockAdapter):
             context.path("reconstruction", "objects", "results.json"),
             ObjectReconstructionArtifact,
         )
-        track_ids = {track.object_id for track in tracks_data.tracks}
+        tracking_entries = _tracking_entries(tracks_data)
+        track_ids = {track.object_id for track in tracking_entries}
         result_ids = {result.object_id for result in object_data.results}
         if track_ids != result_ids:
             raise ValueError(
@@ -616,7 +655,7 @@ class MockSceneIRAssemblyAdapter(MockAdapter):
         observations_by_frame: dict[str, list[ObjectObservation]] = {
             frame.frame_id: [] for frame in manifest.frames
         }
-        for track in tracks_data.tracks:
+        for track in tracking_entries:
             for observation in track.observations:
                 if observation.frame_id not in observations_by_frame:
                     raise ValueError(
@@ -629,7 +668,14 @@ class MockSceneIRAssemblyAdapter(MockAdapter):
                         frame_id=observation.frame_id,
                         bbox_xywh=observation.bbox_xywh,
                         mask_path=observation.mask_path,
-                        confidence=observation.confidence,
+                        confidence=(
+                            observation.confidence
+                            if isinstance(observation, TrackObservation)
+                            else ConfidenceRecord(
+                                score=observation.frame_score,
+                                method="sam3_frame_score",
+                            )
+                        ),
                     )
                 )
         frames = [

@@ -10,6 +10,7 @@ from recon2sim.config import StageConfig
 from recon2sim.ir import StrictModel
 
 OutputValidation = Literal["exists", "json", "png", "obj", "scene_ir"]
+InputMaterialization = Literal["reflink_or_copy", "copy"]
 
 
 class ArtifactRecord(StrictModel):
@@ -41,6 +42,17 @@ class OutputSpec:
     validation: OutputValidation = "exists"
     schema_identifier: str | None = None
     model: type[BaseModel] | None = None
+
+
+@dataclass(frozen=True)
+class InputSpec:
+    relative_path: str
+    artifact_type: str
+    required: bool = True
+    expected_sha256: str | None = None
+    source_path: Path | None = None
+    source_artifact_path: str | None = None
+    materialization_mode: InputMaterialization = "reflink_or_copy"
 
 
 @dataclass(frozen=True)

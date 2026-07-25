@@ -25,12 +25,26 @@ gravity/canonical orientation and an external metric scale, transforms poses int
 +X-forward, +Y-left, +Z-up robot world, and emits new provenance. It must not relabel raw COLMAP
 translations as meters without an observable scale reference.
 
-## Recommended Phase 2
+## Phase 2 implementation
 
-Add a SAM 3 segmentation and tracking adapter that consumes selected frames and registered camera
-poses, emits typed masks/tracks, and preserves model provenance. Keep it independent of alignment
-when masks only require image coordinates, and require aligned poses for any metric 3D behavior.
-Do not combine it with global reconstruction, object reconstruction, SceneSmith, or simulators.
+- typed text, box, point, and mask prompt manifests;
+- selective attempt inputs that exclude raw COLMAP workspaces;
+- isolated official SAM 3.1 Object Multiplex local/Docker worker;
+- deterministic fake worker for the CPU-only gate;
+- registered/unregistered-aware anchor selection;
+- canonical binary masks, stable object IDs, track QA, diagnostics, and no-object results;
+- deterministic contact sheet, timeline, frame previews, and COCO export;
+- exact official code/checkpoint provenance and credential-safe healthchecks.
+
+A real official checkpoint smoke remains an external validation gate when no compatible GPU or
+authorized checkpoint is available. The PR should remain draft until that smoke succeeds or the
+external blocker is explicitly accepted.
+
+## Recommended Phase 2.5
+
+Design optional VLM-assisted scene inventory as a separate prompt-generation stage. It must
+produce a reviewable prompt manifest rather than bypass Phase 2 prompt contracts, and must not
+claim exhaustive vocabulary or physical classification without validation.
 
 ## Later phases
 

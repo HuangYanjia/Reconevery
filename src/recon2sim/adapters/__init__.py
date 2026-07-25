@@ -2,6 +2,7 @@ from recon2sim.adapters.base import (
     Adapter,
     ArtifactRecord,
     HealthcheckResult,
+    InputSpec,
     OutputSpec,
     StageContext,
     StageResult,
@@ -20,6 +21,7 @@ from recon2sim.adapters.mock import (
     MockSceneIRAssemblyAdapter,
     MockSegmentationTrackingAdapter,
 )
+from recon2sim.adapters.sam3 import Sam3SegmentationTrackingAdapter
 
 REGISTRY: dict[str, type[Adapter]] = {
     "mock_ingest": MockIngestAdapter,
@@ -35,6 +37,7 @@ REGISTRY: dict[str, type[Adapter]] = {
     "docker_command": DockerCommandAdapter,
     "ffmpeg_ingest": FFmpegIngestAdapter,
     "colmap_camera_recovery": ColmapCameraRecoveryAdapter,
+    "sam3_segmentation_tracking": Sam3SegmentationTrackingAdapter,
 }
 
 __all__ = [
@@ -45,8 +48,10 @@ __all__ = [
     "DockerCommandAdapter",
     "FFmpegIngestAdapter",
     "HealthcheckResult",
+    "InputSpec",
     "OutputSpec",
     "REGISTRY",
+    "Sam3SegmentationTrackingAdapter",
     "StageContext",
     "StageResult",
 ]
