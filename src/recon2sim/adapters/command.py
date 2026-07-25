@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import os
-import signal
+import shutil
 import subprocess
 import time
 from typing import Any
 
 from recon2sim.adapters.base import HealthcheckResult, OutputSpec, StageContext, StageResult
+from recon2sim.adapters.process import terminate_process_group
 from recon2sim.artifacts import CommandResultArtifact
 from recon2sim.ir import SceneIR
 from recon2sim.storage import atomic_write_json, atomic_write_text
@@ -20,9 +21,9 @@ class CommandExecutionError(RuntimeError):
 
 class CommandAdapter:
     name = "command"
-    version = "0.1.0"
+    version = "0.1.1"
 
-    def healthcheck(self) -> HealthcheckResult:
+    def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult:
         return HealthcheckResult(True, "subprocess execution is available")
 
     def prepare(self, context: StageContext) -> None:
@@ -81,6 +82,7 @@ class CommandAdapter:
         allowed_environment = {
             name: os.environ[name] for name in context.config.adapter.env if name in os.environ
         }
+        allowed_environment["RECON2SIM_ATTEMPT"] = str(context.attempt)
 
         start = time.monotonic()
         process = subprocess.Popen(
@@ -93,16 +95,15 @@ class CommandAdapter:
             start_new_session=True,
         )
         timed_out = False
+        interruption: KeyboardInterrupt | SystemExit | None = None
         try:
             stdout, stderr = process.communicate(timeout=context.config.adapter.timeout_s)
         except subprocess.TimeoutExpired:
             timed_out = True
-            os.killpg(process.pid, signal.SIGTERM)
-            try:
-                stdout, stderr = process.communicate(timeout=2)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL)
-                stdout, stderr = process.communicate()
+            stdout, stderr = terminate_process_group(process)
+        except (KeyboardInterrupt, SystemExit) as exc:
+            interruption = exc
+            stdout, stderr = terminate_process_group(process)
         duration = time.monotonic() - start
 
         atomic_write_text(context.path(stdout_relative), stdout)
@@ -119,6 +120,8 @@ class CommandAdapter:
         )
         atomic_write_json(context.path(result_relative), command_result)
         details: dict[str, Any] = command_result.model_dump(mode="json")
+        if interruption is not None:
+            raise interruption
 
         if timed_out:
             raise CommandExecutionError(
@@ -141,8 +144,22 @@ class CommandAdapter:
 class DockerCommandAdapter(CommandAdapter):
     name = "docker_command"
 
-    def healthcheck(self) -> HealthcheckResult:
-        return HealthcheckResult(
-            True,
-            "Docker command adapter is configured; Docker is not invoked by the healthcheck",
-        )
+    def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult:
+        executable = shutil.which("docker")
+        if executable is None:
+            return HealthcheckResult(False, "Docker executable was not found; install Docker")
+        try:
+            result = subprocess.run(
+                [executable, "version"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            return HealthcheckResult(False, f"docker version failed: {exc}")
+        if result.returncode != 0:
+            return HealthcheckResult(False, f"docker version failed: {result.stderr.strip()}")
+        first_line = (result.stdout or result.stderr).splitlines()
+        version = first_line[0] if first_line else "version available"
+        return HealthcheckResult(True, f"docker={executable} ({version})")

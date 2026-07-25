@@ -1,8 +1,7 @@
 # Adapters
 
-Adapters isolate implementation environments from the core package. Phase 0.1 contains only
-deterministic mock adapters plus generic subprocess and future Docker command boundaries. No
-heavyweight reconstruction package is imported or executed.
+Adapters isolate implementation environments from the core package. Phase 1 adds dedicated
+FFmpeg ingest and COLMAP camera recovery adapters; neither external tool is imported as Python.
 
 ## Contract
 
@@ -38,12 +37,41 @@ independent drawer track or object result.
 ## Command adapters
 
 `AdapterConfig.env` is an allowlist; the child receives no other environment variables. Commands
-run in the run directory, with a new process group, configured timeout, and configured retry count.
+run in an isolated attempt workspace, with a new process group, configured timeout, and configured
+retry count.
 Each attempt preserves separate stdout, stderr, and command-result JSON files. Timeout handling
 sends termination to the process group and escalates to kill if necessary.
 
 `AdapterConfig.expected_outputs` declares command output paths and validation modes. A zero return
 code with missing or invalid output is a failed attempt.
+
+## FFmpeg ingest
+
+`ffmpeg_ingest` detects `video` or `image_directory` input. Video mode checks FFmpeg and FFprobe,
+records versions and exact arguments, extracts `frame_%06d.png`, and retains logs. Image mode uses
+Pillow to validate JPEG/PNG input, apply `ImageOps.exif_transpose`, resize without changing aspect
+ratio, normalize RGB PNG bytes, preserve path order, and use EXIF timestamps when present.
+
+Both modes emit `inputs/manifest.json` and `inputs/frame_qa.json`. QA uses Laplacian variance,
+brightness mean, grayscale variance, and normalized 32x32 grayscale difference. Defaults are
+conservative and not universal quality thresholds.
+
+## COLMAP camera recovery
+
+`colmap_camera_recovery` consumes the normalized manifest and frames. It runs explicit argument
+lists for `feature_extractor`, `sequential_matcher` or `exhaustive_matcher`, and `mapper`.
+`use_gpu` controls SIFT extraction and matching flags.
+
+The internal binary parser supports `SIMPLE_PINHOLE`, `PINHOLE`, `SIMPLE_RADIAL`, `RADIAL`, and
+`OPENCV`, retains distortion, and rejects multi-camera or unsupported results. Models rank by
+registered frames, sparse points, reprojection error, then deterministic ID.
+
+Local health checks run the configured `colmap -h`. Docker mode runs `docker version`,
+`docker image inspect <image>`, and an in-container `colmap -h`; use `--config` on the CLI to
+check the selected executable or image. Linux containers run with the host UID:GID by default,
+and `docker_user` can override it. The workspace manifest records the inspected image identifier
+when available. Docker Phase 1 is CPU-only and rejects `use_gpu=true`. Raw databases, every sparse
+candidate, logs, commands, model diagnostics, and typed reconstruction remain under `camera/`.
 
 ## Future real adapters
 
@@ -52,6 +80,5 @@ allowlist, timeout, retries, GPU metadata, healthcheck, provenance, coordinate c
 failure artifacts. It must emit the existing typed contract before any downstream stage accepts
 its work.
 
-The first real adapter should be COLMAP camera recovery only: consume `inputs/manifest.json` and
-`frames/*.png`, run out of process, and emit `camera/reconstruction.json`. SAM 3, GenRecon,
-SceneSmith, Blender, and simulator integrations remain later phases.
+The next adapter should be SAM 3 segmentation/tracking only. GenRecon, SceneSmith, Blender, and
+simulator integrations remain later phases.

@@ -1,5 +1,14 @@
 {
   "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
     "Articulation": {
       "additionalProperties": false,
       "properties": {
@@ -53,6 +62,9 @@
           "title": "Camera Id",
           "type": "string"
         },
+        "coordinate_convention": {
+          "$ref": "#/$defs/CoordinateConvention"
+        },
         "intrinsics": {
           "$ref": "#/$defs/CameraIntrinsics"
         },
@@ -70,6 +82,10 @@
         },
         "provenance": {
           "$ref": "#/$defs/ProvenanceRecord"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
         }
       },
       "required": [
@@ -80,6 +96,14 @@
       ],
       "title": "Camera",
       "type": "object"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
     },
     "CameraIntrinsics": {
       "additionalProperties": false,
@@ -233,11 +257,13 @@
     "CoordinateConvention": {
       "additionalProperties": false,
       "properties": {
-        "camera_transform_direction": {
-          "const": "world_from_camera",
-          "default": "world_from_camera",
-          "title": "Camera Transform Direction",
-          "type": "string"
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
         },
         "handedness": {
           "const": "right",
@@ -245,23 +271,27 @@
           "title": "Handedness",
           "type": "string"
         },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
         "quaternion_order": {
           "const": "xyzw",
           "default": "xyzw",
           "title": "Quaternion Order",
           "type": "string"
         },
-        "units": {
-          "const": "meters",
-          "default": "meters",
-          "title": "Units",
-          "type": "string"
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
         },
-        "world_axes": {
-          "const": "x_forward_y_left_z_up",
-          "default": "x_forward_y_left_z_up",
-          "title": "World Axes",
-          "type": "string"
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
         }
       },
       "title": "CoordinateConvention",
@@ -446,6 +476,14 @@
       ],
       "title": "Joint",
       "type": "object"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
     },
     "Link": {
       "additionalProperties": false,
@@ -820,6 +858,15 @@
       "title": "RelationType",
       "type": "string"
     },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
     "SceneMetadata": {
       "additionalProperties": false,
       "properties": {
@@ -947,7 +994,7 @@
           "title": "Scale",
           "type": "array"
         },
-        "translation_m": {
+        "translation": {
           "default": [
             0.0,
             0.0,
@@ -966,12 +1013,19 @@
               "type": "number"
             }
           ],
-          "title": "Translation M",
+          "title": "Translation",
           "type": "array"
         }
       },
       "title": "Transform",
       "type": "object"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
     },
     "ValidationIssue": {
       "additionalProperties": false,
@@ -1051,6 +1105,14 @@
       ],
       "title": "ValidationReport",
       "type": "object"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
     }
   },
   "additionalProperties": false,
@@ -1108,8 +1170,11 @@
       "type": "array"
     },
     "schema_version": {
-      "const": "0.1.0",
-      "default": "0.1.0",
+      "default": "0.1.1",
+      "enum": [
+        "0.1.0",
+        "0.1.1"
+      ],
       "title": "Schema Version",
       "type": "string"
     },

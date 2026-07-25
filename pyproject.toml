@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Typed observation-to-simulation pipeline foundation"
 requires-python = ">=3.12"
 dependencies = [
+  "pillow>=11,<13",
   "pydantic>=2.10,<3",
   "pyyaml>=6.0.2,<7",
   "typer>=0.16,<1",

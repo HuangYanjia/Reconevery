@@ -1,0 +1,25 @@
+name: Manual COLMAP Docker validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Build Phase 1 COLMAP image
+        run: docker build --tag reconevery/colmap:phase1 docker/colmap
+
+      - name: Check COLMAP in container
+        run: docker run --rm reconevery/colmap:phase1 colmap -h
+
+      - name: Check FFmpeg in container
+        run: docker run --rm reconevery/colmap:phase1 ffmpeg -version

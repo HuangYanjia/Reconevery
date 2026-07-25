@@ -62,18 +62,95 @@ class RelationType(StrEnum):
     REACHABLE_BY = "reachable_by"
 
 
+class ScaleStatus(StrEnum):
+    METRIC_SCALE_KNOWN = "metric_scale_known"
+    SCALE_AMBIGUOUS = "scale_ambiguous"
+    EXTERNALLY_SCALED = "externally_scaled"
+
+
+class WorldFrame(StrEnum):
+    CANONICAL_X_FORWARD_Y_LEFT_Z_UP = "canonical_x_forward_y_left_z_up"
+    COLMAP_ARBITRARY = "colmap_arbitrary"
+
+
+class AlignmentStatus(StrEnum):
+    CANONICAL = "canonical"
+    GRAVITY_ALIGNED = "gravity_aligned"
+    UNORIENTED = "unoriented"
+
+
+class CameraAxes(StrEnum):
+    UNSPECIFIED = "unspecified"
+    X_RIGHT_Y_DOWN_Z_FORWARD = "x_right_y_down_z_forward"
+
+
+class LinearUnits(StrEnum):
+    METERS = "meters"
+    ARBITRARY_UNITS = "arbitrary_units"
+
+
+class TransformDirection(StrEnum):
+    WORLD_FROM_CAMERA = "world_from_camera"
+
+
 class CoordinateConvention(StrictModel):
-    world_axes: Literal["x_forward_y_left_z_up"] = "x_forward_y_left_z_up"
+    world_frame: WorldFrame = WorldFrame.CANONICAL_X_FORWARD_Y_LEFT_Z_UP
+    alignment_status: AlignmentStatus = AlignmentStatus.CANONICAL
+    camera_axes: CameraAxes = CameraAxes.UNSPECIFIED
     handedness: Literal["right"] = "right"
-    units: Literal["meters"] = "meters"
+    linear_units: LinearUnits = LinearUnits.METERS
+    scale_status: ScaleStatus = ScaleStatus.METRIC_SCALE_KNOWN
     quaternion_order: Literal["xyzw"] = "xyzw"
-    camera_transform_direction: Literal["world_from_camera"] = "world_from_camera"
+    transform_direction: TransformDirection = TransformDirection.WORLD_FROM_CAMERA
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_coordinate_fields(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        migrated = dict(value)
+        legacy_world_axes = migrated.pop("world_axes", None)
+        if legacy_world_axes is not None:
+            if legacy_world_axes != "x_forward_y_left_z_up":
+                raise ValueError(f"unsupported legacy world_axes value {legacy_world_axes!r}")
+            migrated.setdefault(
+                "world_frame",
+                WorldFrame.CANONICAL_X_FORWARD_Y_LEFT_Z_UP,
+            )
+        legacy_units = migrated.pop("units", None)
+        if legacy_units is not None:
+            if "linear_units" in migrated and migrated["linear_units"] != legacy_units:
+                raise ValueError("legacy units and linear_units disagree")
+            migrated.setdefault("linear_units", legacy_units)
+        legacy_direction = migrated.pop("camera_transform_direction", None)
+        if legacy_direction is not None:
+            if (
+                "transform_direction" in migrated
+                and migrated["transform_direction"] != legacy_direction
+            ):
+                raise ValueError(
+                    "legacy camera_transform_direction and transform_direction disagree"
+                )
+            migrated.setdefault("transform_direction", legacy_direction)
+        return migrated
 
 
 class Transform(StrictModel):
-    translation_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    translation: tuple[float, float, float] = (0.0, 0.0, 0.0)
     rotation_xyzw: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)
     scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_metric_translation(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "translation_m" not in value:
+            return value
+        migrated = dict(value)
+        legacy = migrated.pop("translation_m")
+        if "translation" in migrated and migrated["translation"] != legacy:
+            raise ValueError("legacy translation_m and translation disagree")
+        migrated.setdefault("translation", legacy)
+        return migrated
 
     @field_validator("rotation_xyzw")
     @classmethod
@@ -144,6 +221,8 @@ class Camera(StrictModel):
     model: Annotated[str, Field(min_length=1)]
     intrinsics: CameraIntrinsics
     poses: list[CameraPose] = Field(default_factory=list)
+    coordinate_convention: CoordinateConvention = Field(default_factory=CoordinateConvention)
+    scale_status: ScaleStatus = ScaleStatus.METRIC_SCALE_KNOWN
     provenance: ProvenanceRecord
 
     @model_validator(mode="after")
@@ -354,7 +433,7 @@ class ValidationReport(StrictModel):
 
 
 class SceneIR(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.1.0", "0.1.1"] = "0.1.1"
     metadata: SceneMetadata
     cameras: list[Camera] = Field(default_factory=list)
     frames: list[FrameObservation] = Field(default_factory=list)

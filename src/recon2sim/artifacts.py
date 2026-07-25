@@ -14,6 +14,7 @@ from recon2sim.ir import (
     CoordinateConvention,
     PhysicsProperties,
     ProvenanceRecord,
+    ScaleStatus,
     StrictModel,
 )
 
@@ -28,6 +29,8 @@ def _relative_artifact_path(value: str) -> str:
 class InputSourceType(StrEnum):
     GENERATED_TEST_IMAGE = "generated_test_image"
     IMAGE_DIRECTORY = "image_directory"
+    VIDEO = "video"
+    MOCK = "mock"
 
 
 class FrameManifestEntry(StrictModel):
@@ -38,6 +41,8 @@ class FrameManifestEntry(StrictModel):
     height: int = Field(gt=0)
     timestamp_s: float = Field(ge=0)
     source_type: InputSourceType
+    source_file: str | None = None
+    original_frame_index: int | None = Field(default=None, ge=0)
 
     @field_validator("relative_path")
     @classmethod
@@ -48,6 +53,18 @@ class FrameManifestEntry(StrictModel):
 class IngestManifest(StrictModel):
     source_type: InputSourceType
     frames: Annotated[list[FrameManifestEntry], Field(min_length=1)]
+    source_input_path: str | None = None
+    source_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    ffmpeg_version: str | None = None
+    ffprobe_version: str | None = None
+    extraction_config: dict[str, object] = Field(default_factory=dict)
+    total_decoded_frames: int | None = Field(default=None, ge=0)
+    selected_frames: int | None = Field(default=None, ge=0)
+    dropped_frames: int = Field(default=0, ge=0)
+    output_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]] = Field(
+        default_factory=dict
+    )
+    frame_qa_path: str | None = None
     provenance: ProvenanceRecord
 
     @model_validator(mode="after")
@@ -58,17 +75,144 @@ class IngestManifest(StrictModel):
             raise ValueError("ingest frame IDs must be unique")
         if len(paths) != len(set(paths)):
             raise ValueError("ingest frame paths must be unique")
+        if any(frame.source_type is not self.source_type for frame in self.frames):
+            raise ValueError("ingest frame source types must match the manifest source type")
+        if self.selected_frames is not None and self.selected_frames != len(self.frames):
+            raise ValueError("selected_frames must match the number of manifest frames")
+        if self.output_hashes and self.output_hashes != {
+            frame.relative_path: frame.sha256 for frame in self.frames
+        }:
+            raise ValueError("output_hashes must exactly match manifest frame paths and hashes")
+        if self.frame_qa_path is not None:
+            _relative_artifact_path(self.frame_qa_path)
+        return self
+
+
+class FrameSelectionStatus(StrEnum):
+    SELECTED = "selected"
+    REJECTED = "rejected"
+
+
+class FrameQualityEntry(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    relative_path: Annotated[str, Field(min_length=1)]
+    blur_score: float = Field(ge=0)
+    mean_brightness: float = Field(ge=0, le=255)
+    grayscale_variance: float = Field(ge=0)
+    near_duplicate: bool
+    duplicate_of_frame_id: str | None = None
+    status: FrameSelectionStatus
+    rejection_reason: str | None = None
+
+    @field_validator("relative_path")
+    @classmethod
+    def validate_quality_path(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+    @model_validator(mode="after")
+    def valid_selection(self) -> Self:
+        if self.status is FrameSelectionStatus.SELECTED and self.rejection_reason is not None:
+            raise ValueError("selected frames cannot have a rejection reason")
+        if self.status is FrameSelectionStatus.REJECTED and not self.rejection_reason:
+            raise ValueError("rejected frames require a rejection reason")
+        return self
+
+
+class FrameQualityReport(StrictModel):
+    entries: Annotated[list[FrameQualityEntry], Field(min_length=1)]
+    configuration: dict[str, object] = Field(default_factory=dict)
+    provenance: ProvenanceRecord
+
+    @model_validator(mode="after")
+    def unique_entries(self) -> Self:
+        frame_ids = [entry.frame_id for entry in self.entries]
+        if len(frame_ids) != len(set(frame_ids)):
+            raise ValueError("frame quality report frame IDs must be unique")
         return self
 
 
 class CameraReconstruction(StrictModel):
     camera_id: Annotated[str, Field(min_length=1)]
-    model: Literal["pinhole"] = "pinhole"
+    model: Annotated[str, Field(min_length=1)] = "pinhole"
     intrinsics: CameraIntrinsics
     poses: Annotated[list[CameraPose], Field(min_length=1)]
+    registered_frame_ids: list[str] = Field(default_factory=list)
+    unregistered_frame_ids: list[str] = Field(default_factory=list)
+    sparse_point_count: int = Field(default=0, ge=0)
+    average_reprojection_error: float | None = Field(default=None, ge=0)
     confidence: ConfidenceRecord
     coordinate_convention: CoordinateConvention
+    scale_status: ScaleStatus = ScaleStatus.METRIC_SCALE_KNOWN
     provenance: ProvenanceRecord
+
+    @model_validator(mode="after")
+    def consistent_registration(self) -> Self:
+        pose_ids = [pose.frame_id for pose in self.poses]
+        if len(pose_ids) != len(set(pose_ids)):
+            raise ValueError("camera reconstruction pose frame IDs must be unique")
+        if len(self.registered_frame_ids) != len(set(self.registered_frame_ids)):
+            raise ValueError("registered frame IDs must be unique")
+        if len(self.unregistered_frame_ids) != len(set(self.unregistered_frame_ids)):
+            raise ValueError("unregistered frame IDs must be unique")
+        if not self.registered_frame_ids:
+            self.registered_frame_ids = pose_ids
+        if set(self.registered_frame_ids) != set(pose_ids):
+            raise ValueError("registered frame IDs must exactly match camera poses")
+        if set(self.registered_frame_ids) & set(self.unregistered_frame_ids):
+            raise ValueError("registered and unregistered frame IDs must not overlap")
+        return self
+
+
+class SparseModelDiagnostics(StrictModel):
+    model_id: Annotated[str, Field(min_length=1)]
+    registered_frames: int = Field(ge=0)
+    registration_ratio: float = Field(ge=0, le=1)
+    sparse_points: int = Field(ge=0)
+    average_reprojection_error: float | None = Field(default=None, ge=0)
+    selected: bool = False
+    rejection_reason: str | None = None
+
+
+class CameraDiagnostics(StrictModel):
+    input_frame_count: int = Field(ge=0)
+    selected_frame_count: int = Field(ge=0)
+    models: list[SparseModelDiagnostics] = Field(default_factory=list)
+    selected_model: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+    failed_subcommand: str | None = None
+
+
+class ColmapCommandRecord(StrictModel):
+    name: Annotated[str, Field(min_length=1)]
+    command: Annotated[list[str], Field(min_length=1)]
+    return_code: int | None
+    duration_s: float = Field(ge=0)
+    timed_out: bool
+    stdout_path: Annotated[str, Field(min_length=1)]
+    stderr_path: Annotated[str, Field(min_length=1)]
+
+    @field_validator("stdout_path", "stderr_path")
+    @classmethod
+    def validate_log_paths(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class ColmapWorkspaceManifest(StrictModel):
+    execution_mode: Literal["local", "docker"]
+    executable_or_image: Annotated[str, Field(min_length=1)]
+    tool_version: str | None = None
+    image_identifier: str | None = None
+    database_path: Annotated[str, Field(min_length=1)]
+    image_path: Annotated[str, Field(min_length=1)]
+    sparse_path: Annotated[str, Field(min_length=1)]
+    selected_model: str | None = None
+    commands: list[ColmapCommandRecord] = Field(default_factory=list)
+    failed_subcommand: str | None = None
+
+    @field_validator("database_path", "image_path", "sparse_path")
+    @classmethod
+    def validate_workspace_paths(cls, value: str) -> str:
+        return _relative_artifact_path(value)
 
 
 class TrackObservation(StrictModel):

@@ -1,9 +1,9 @@
 # Recon2Sim
 
-Recon2Sim Phase 0.1 is a typed, CPU-only observation-to-simulation foundation. Its mock
-pipeline exercises the same filesystem contracts, validation, DAG, caching, retries, and
-provenance that future real adapters must satisfy. It does not install or run COLMAP, SAM 3,
-GenRecon, SceneSmith, Blender, simulator SDKs, model checkpoints, or GPU code.
+Recon2Sim Phase 1 is a typed observation-to-simulation pipeline with real video/image ingest,
+deterministic frame QA, and out-of-process COLMAP sparse camera recovery. The downstream
+segmentation, reconstruction, compilation, validation, and export stages remain deterministic
+mocks. COLMAP, FFmpeg, and Docker are optional system tools rather than Python dependencies.
 
 ## Quickstart
 
@@ -17,6 +17,28 @@ uv run recon2sim run \
   --config configs/mock.yaml \
   --run-dir runs/tabletop_demo
 uv run recon2sim validate-ir runs/tabletop_demo/scene_ir/scene.json
+```
+
+For a directory containing one video, or an `images/` directory of JPEG/PNG files:
+
+```bash
+uv run recon2sim adapters healthcheck --config configs/colmap.yaml
+uv run recon2sim run \
+  --input examples/real_video \
+  --config configs/colmap.yaml \
+  --run-dir runs/real_video_colmap
+uv run recon2sim ingest inspect runs/real_video_colmap
+uv run recon2sim camera inspect runs/real_video_colmap
+uv run recon2sim camera export-trajectory \
+  runs/real_video_colmap --output trajectory.json
+```
+
+`configs/colmap.yaml` and `configs/colmap_cpu.yaml` intentionally stop after camera recovery.
+`configs/colmap_with_mock_downstream.yaml` is the explicit integration demo for real ingest/COLMAP
+followed by Phase 0.1 mocks. The optional pinned COLMAP 3.11.1 image is:
+
+```bash
+docker build -t reconevery/colmap:phase1 docker/colmap
 ```
 
 Resume without changing successful status:
@@ -57,15 +79,30 @@ output, and its package explicitly contains no simulator outputs. These are sepa
 The cabinet is one top-level articulated object. Its body and drawer are articulation links;
 the drawer is not duplicated as an independent `ObjectInstance`.
 
+## Real ingest and camera recovery
+
+`ffmpeg_ingest` accepts a video file, a directory containing one video, or a deterministic
+JPEG/PNG image collection. Video decoding uses FFmpeg and FFprobe as subprocesses. Frame QA
+records Laplacian-variance sharpness, mean grayscale brightness, intensity variance, and a
+downsampled-pixel duplicate score in `inputs/frame_qa.json`. Defaults are conservative and
+require dataset-specific tuning.
+
+`colmap_camera_recovery` runs feature extraction, sequential or exhaustive matching, mapping,
+binary-model parsing, and deterministic sparse-model selection. It preserves `database.db`,
+every sparse model, commands, and logs under `camera/colmap/`. See
+[`docs/phase_1_colmap.md`](docs/phase_1_colmap.md) for setup and capture guidance.
+
 ## Coordinate convention
 
-- right-handed world frame;
-- +X forward, +Y left, +Z up;
-- meters;
-- quaternions ordered `(x, y, z, w)`;
-- camera poses are `transform_world_from_camera`.
+Raw Phase 1 COLMAP output is explicitly `world_frame="colmap_arbitrary"`,
+`alignment_status="unoriented"`, `camera_axes="x_right_y_down_z_forward"`,
+`linear_units="arbitrary_units"`, and `scale_status="scale_ambiguous"`. Poses are
+`transform_world_from_camera`, quaternions are `xyzw`, and the unit-neutral `translation` values
+remain in COLMAP's arbitrary gauge.
 
-The convention is stored in typed camera and Scene IR metadata rather than left implicit.
+The canonical robot scene frame is a separate, later contract: right-handed +X forward, +Y left,
++Z up, with meters after external alignment and scale recovery. Phase 1 does not perform or imply
+that conversion.
 
 ## Quality gate
 
@@ -85,6 +122,6 @@ uv run python scripts/generate_schema.py
 
 ## Adapter boundary
 
-Core code imports only lightweight dependencies. Future heavyweight tools must run behind an
-adapter boundary and exchange declared, typed, validated artifacts. See `docs/adapters.md` and
-`docs/roadmap.md`; Phase 1 begins with camera recovery only.
+Core code imports only lightweight dependencies. Heavyweight tools run behind an adapter boundary
+and exchange declared, typed, validated artifacts. SAM 3, GenRecon, SceneSmith, Blender,
+simulators, MVS, NeRF, and model checkpoints remain out of Phase 1.

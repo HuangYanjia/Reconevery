@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
@@ -44,9 +46,17 @@ def _stable_digest(payload: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _directory_snapshot(root: Path) -> list[dict[str, str | int]]:
+def _source_snapshot(root: Path) -> list[dict[str, str | int]]:
+    if root.is_file():
+        return [
+            {
+                "relative_path": root.name,
+                "sha256": _sha256(root),
+                "size_bytes": root.stat().st_size,
+            }
+        ]
     if not root.is_dir():
-        raise FileNotFoundError(f"input directory does not exist or is not a directory: {root}")
+        raise FileNotFoundError(f"input path does not exist: {root}")
     return [
         {
             "relative_path": path.relative_to(root).as_posix(),
@@ -147,10 +157,8 @@ class PipelineRunner:
         from_stage: str | None = None,
         until_stage: str | None = None,
     ) -> Manifest:
-        if not self.input_dir.is_dir():
-            raise FileNotFoundError(
-                f"input directory does not exist or is not a directory: {self.input_dir}"
-            )
+        if not self.input_dir.exists():
+            raise FileNotFoundError(f"input path does not exist: {self.input_dir}")
         ordered = self.order()
         selected = self.selected(from_stage, until_stage)
         chosen = set(selected)
@@ -194,7 +202,16 @@ class PipelineRunner:
                 self.logger.info("stage cache hit", extra={"stage": stage_name})
                 continue
 
-            health = adapter.healthcheck()
+            health_context = StageContext(
+                stage_name=stage_name,
+                input_dir=self.input_dir,
+                run_dir=self.run_dir,
+                canonical_run_dir=self.run_dir,
+                config=stage_config,
+                seed=self.config.seed,
+                attempt=0,
+            )
+            health = adapter.healthcheck(health_context)
             if not health.ok:
                 raise RuntimeError(
                     f"adapter {adapter.name!r} healthcheck failed for stage "
@@ -216,7 +233,17 @@ class PipelineRunner:
             self.logger.info("stage started", extra={"stage": stage_name})
             try:
                 records, metrics = self._execute_with_retries(adapter, stage_name, entry, manifest)
-            except Exception as exc:
+            except (KeyboardInterrupt, SystemExit) as exc:
+                entry.update(
+                    status="interrupted",
+                    last_execution="interrupted",
+                    end_time=_now(),
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                self.save_manifest(manifest)
+                self.logger.warning("stage interrupted", extra={"stage": stage_name})
+                raise
+            except BaseException as exc:
                 entry.update(
                     status="failed",
                     last_execution="failed",
@@ -238,7 +265,6 @@ class PipelineRunner:
                 {
                     "signature": signature,
                     "output_signature": output_signature,
-                    "execution_count": execution_count,
                 }
             )
             entry.update(
@@ -265,10 +291,15 @@ class PipelineRunner:
     ) -> tuple[list[ArtifactRecord], dict[str, float | int | str | bool]]:
         stage_config = self.config.stages[stage_name]
         total_attempts = stage_config.adapter.retries + 1
-        last_error: Exception | None = None
-        for attempt in range(1, total_attempts + 1):
+        last_error: BaseException | None = None
+        for _ in range(total_attempts):
+            attempt = self._next_attempt_number(stage_name)
+            workspace = self.run_dir / "work" / stage_name / f"attempt_{attempt}"
+            workspace.mkdir(parents=True, exist_ok=False)
+            self._populate_attempt_workspace(workspace, stage_name, manifest)
             attempt_entry: dict[str, Any] = {
                 "attempt": attempt,
+                "workspace": workspace.relative_to(self.run_dir).as_posix(),
                 "start_time": _now(),
                 "status": "running",
             }
@@ -278,7 +309,8 @@ class PipelineRunner:
             context = StageContext(
                 stage_name=stage_name,
                 input_dir=self.input_dir,
-                run_dir=self.run_dir,
+                run_dir=workspace,
+                canonical_run_dir=self.run_dir,
                 config=stage_config,
                 seed=self.config.seed,
                 attempt=attempt,
@@ -291,11 +323,29 @@ class PipelineRunner:
                     stage_name,
                     adapter.name,
                     [*declared, *result.outputs],
+                    root=workspace,
                 )
+                previous_records = [
+                    ArtifactRecord.model_validate(item)
+                    for item in cast(list[dict[str, Any]], entry.get("artifacts", []))
+                ]
+                self._promote_outputs(workspace, records, previous_records)
                 attempt_entry.update(status="succeeded", end_time=_now(), error=None)
                 self.save_manifest(manifest)
                 return records, result.metrics
-            except Exception as exc:
+            except (KeyboardInterrupt, SystemExit) as exc:
+                details = getattr(exc, "details", None)
+                attempt_entry.update(
+                    status="interrupted",
+                    end_time=_now(),
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+                if isinstance(details, dict):
+                    attempt_entry["details"] = details
+                self._preserve_attempt_logs(workspace)
+                self.save_manifest(manifest)
+                raise
+            except BaseException as exc:
                 last_error = exc
                 details = getattr(exc, "details", None)
                 attempt_entry.update(
@@ -305,8 +355,9 @@ class PipelineRunner:
                 )
                 if isinstance(details, dict):
                     attempt_entry["details"] = details
+                self._preserve_attempt_logs(workspace)
                 self.save_manifest(manifest)
-                if attempt < total_attempts:
+                if len(attempts) < total_attempts:
                     self.logger.warning(
                         f"stage attempt {attempt} failed; retrying: {exc}",
                         extra={"stage": stage_name},
@@ -320,6 +371,8 @@ class PipelineRunner:
         stage_name: str,
         adapter_name: str,
         specs: list[OutputSpec],
+        *,
+        root: Path | None = None,
     ) -> list[ArtifactRecord]:
         unique_specs: dict[str, OutputSpec] = {}
         for spec in specs:
@@ -342,7 +395,7 @@ class PipelineRunner:
                 raise OutputValidationError(
                     f"stage {stage_name!r} declared unsafe output path {relative_path!r}"
                 )
-            path = self.run_dir / relative_path
+            path = (root or self.run_dir) / relative_path
             if not path.is_file():
                 raise OutputValidationError(
                     f"stage {stage_name!r} did not produce required output {relative_path!r}"
@@ -367,6 +420,131 @@ class PipelineRunner:
                 )
             )
         return records
+
+    def _next_attempt_number(self, stage_name: str) -> int:
+        stage_work = self.run_dir / "work" / stage_name
+        existing = []
+        if stage_work.is_dir():
+            for path in stage_work.iterdir():
+                if path.is_dir() and path.name.startswith("attempt_"):
+                    try:
+                        existing.append(int(path.name.removeprefix("attempt_")))
+                    except ValueError:
+                        continue
+        return max(existing, default=0) + 1
+
+    def _populate_attempt_workspace(
+        self,
+        workspace: Path,
+        stage_name: str,
+        manifest: Manifest,
+    ) -> None:
+        stages = self._stage_entries(manifest)
+        ancestors = self._ancestor_stages(stage_name)
+        for producer_stage, entry in stages.items():
+            if producer_stage not in ancestors or entry.get("status") != "succeeded":
+                continue
+            for raw_record in cast(list[dict[str, Any]], entry.get("artifacts", [])):
+                record = ArtifactRecord.model_validate(raw_record)
+                source = self.run_dir / record.relative_path
+                if not source.is_file() or _sha256(source) != record.sha256:
+                    raise FileNotFoundError(
+                        f"stage {stage_name!r} requires stale or missing upstream artifact "
+                        f"{record.relative_path!r} from stage {producer_stage!r}"
+                    )
+                destination = workspace / record.relative_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+
+    def _promote_outputs(
+        self,
+        workspace: Path,
+        records: list[ArtifactRecord],
+        previous_records: list[ArtifactRecord],
+    ) -> None:
+        promotion_root = self.run_dir / ".promotion" / workspace.parent.name / workspace.name
+        if promotion_root.exists():
+            shutil.rmtree(promotion_root)
+        staged_root = promotion_root / "staged"
+        backup_root = promotion_root / "backup"
+        for record in records:
+            source = workspace / record.relative_path
+            staged = staged_root / record.relative_path
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, staged)
+
+        current_paths = {record.relative_path for record in records}
+        previous_paths = {record.relative_path for record in previous_records}
+        affected_paths = sorted(current_paths | previous_paths)
+        previously_present: set[str] = set()
+        for relative_path in affected_paths:
+            canonical = self.run_dir / relative_path
+            if not canonical.is_file():
+                continue
+            previously_present.add(relative_path)
+            backup = backup_root / relative_path
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(canonical, backup)
+
+        try:
+            for record in records:
+                staged = staged_root / record.relative_path
+                destination = self.run_dir / record.relative_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                self._replace_promoted_output(staged, destination)
+            for relative_path in previous_paths - current_paths:
+                obsolete = self.run_dir / relative_path
+                if obsolete.is_file():
+                    obsolete.unlink()
+        except BaseException as promotion_error:
+            try:
+                for relative_path in affected_paths:
+                    destination = self.run_dir / relative_path
+                    if relative_path in previously_present:
+                        backup = backup_root / relative_path
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        rollback_copy = destination.with_name(f".{destination.name}.rollback")
+                        shutil.copy2(backup, rollback_copy)
+                        os.replace(rollback_copy, destination)
+                    elif destination.is_file():
+                        destination.unlink()
+            except BaseException as rollback_error:
+                raise RuntimeError(
+                    f"output promotion failed and rollback was incomplete: {rollback_error}"
+                ) from promotion_error
+            raise
+        finally:
+            shutil.rmtree(promotion_root, ignore_errors=True)
+
+    @staticmethod
+    def _replace_promoted_output(source: Path, destination: Path) -> None:
+        os.replace(source, destination)
+
+    def _ancestor_stages(self, stage_name: str) -> set[str]:
+        ancestors: set[str] = set()
+
+        def collect(current: str) -> None:
+            for dependency in self.config.stages[current].depends_on:
+                if dependency not in ancestors:
+                    ancestors.add(dependency)
+                    collect(dependency)
+
+        collect(stage_name)
+        return ancestors
+
+    def _preserve_attempt_logs(self, workspace: Path) -> None:
+        logs_root = workspace / "logs"
+        if not logs_root.is_dir():
+            return
+        for source in sorted(logs_root.rglob("*")):
+            if not source.is_file():
+                continue
+            relative_path = source.relative_to(workspace)
+            destination = self.run_dir / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary = destination.with_name(f".{destination.name}.attempt-copy")
+            shutil.copy2(source, temporary)
+            os.replace(temporary, destination)
 
     @staticmethod
     def _validate_output_content(path: Path, spec: OutputSpec) -> None:
@@ -427,7 +605,7 @@ class PipelineRunner:
             "seed": self.config.seed,
             "input_artifacts": upstream_artifacts,
             "upstream_execution_signatures": upstream_signatures,
-            "source_input_files": _directory_snapshot(self.input_dir)
+            "source_input_files": _source_snapshot(self.input_dir)
             if not stage_config.depends_on
             else [],
         }

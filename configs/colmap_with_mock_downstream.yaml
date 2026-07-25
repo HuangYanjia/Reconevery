@@ -1,0 +1,60 @@
+seed: 7
+stages:
+  ingest:
+    adapter:
+      name: ffmpeg_ingest
+      timeout_s: 3600
+      env: [PATH, HOME, TMPDIR, LD_LIBRARY_PATH]
+      config:
+        input_mode: auto
+        target_fps: 3.0
+        max_frames: 300
+        image_format: png
+        resize_max_edge: 1920
+        blur_threshold: 0.0
+        duplicate_threshold: 0.0
+        min_brightness: 5.0
+        max_brightness: 250.0
+        keep_rejected_frames: true
+    depends_on: []
+  camera_recovery:
+    adapter:
+      name: colmap_camera_recovery
+      timeout_s: 14400
+      env: [PATH, HOME, TMPDIR, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local
+        executable: colmap
+        matcher: sequential
+        camera_model: OPENCV
+        single_camera: true
+        use_gpu: false
+        min_registered_frames: 8
+        min_registration_ratio: 0.4
+        mapper:
+          multiple_models: true
+        sequential_matcher:
+          overlap: 10
+          loop_detection: false
+    depends_on: [ingest]
+  segmentation_tracking:
+    adapter: {name: mock_segmentation_tracking, config: {source: mock}}
+    depends_on: [ingest, camera_recovery]
+  global_reconstruction:
+    adapter: {name: mock_global_reconstruction, config: {source: mock}}
+    depends_on: [camera_recovery]
+  object_reconstruction:
+    adapter: {name: mock_object_reconstruction, config: {source: mock}}
+    depends_on: [segmentation_tracking]
+  scene_ir_assembly:
+    adapter: {name: mock_scene_ir_assembly, config: {source: mock}}
+    depends_on: [global_reconstruction, object_reconstruction]
+  scene_compilation:
+    adapter: {name: mock_scene_compiler, config: {source: mock}}
+    depends_on: [scene_ir_assembly]
+  validation:
+    adapter: {name: mock_physics_validator, config: {source: mock}}
+    depends_on: [scene_compilation]
+  export:
+    adapter: {name: mock_export, config: {source: mock}}
+    depends_on: [validation]
