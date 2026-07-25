@@ -228,6 +228,37 @@ def test_fake_ffmpeg_video_ingest_records_metadata_commands_and_logs(tmp_path: P
     assert (run_dir / "logs" / "ingest.ffmpeg.attempt_1.stderr.log").is_file()
 
 
+def test_video_ingest_supports_relative_run_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = tmp_path / "capture.mp4"
+    video.write_bytes(b"fake video bytes")
+    fake = _fake_ffmpeg(tmp_path / "fake_ffmpeg")
+    config = PipelineConfig(
+        stages={
+            "ingest": StageConfig(
+                adapter=AdapterConfig(
+                    name="ffmpeg_ingest",
+                    env=["PATH"],
+                    config={
+                        "input_mode": "video",
+                        "executable": str(fake),
+                        "ffprobe_executable": str(fake),
+                        "min_brightness": 0,
+                        "max_brightness": 255,
+                    },
+                )
+            )
+        }
+    )
+    monkeypatch.chdir(tmp_path)
+
+    PipelineRunner(config, Path("capture.mp4"), Path("relative_run")).run()
+
+    assert (tmp_path / "relative_run" / "frames" / "frame_000000.png").is_file()
+
+
 @pytest.mark.parametrize(
     ("mode", "match"),
     [("nonzero", "return code 11"), ("timeout", "timed out")],

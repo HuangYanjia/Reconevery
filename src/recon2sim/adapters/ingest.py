@@ -283,7 +283,7 @@ def _provenance(
 
 class FFmpegIngestAdapter:
     name = "ffmpeg_ingest"
-    version = "0.1.1"
+    version = "0.1.2"
 
     def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult:
         config = (
@@ -533,7 +533,7 @@ class FFmpegIngestAdapter:
             str(config.max_frames),
             "-start_number",
             "0",
-            str(output_pattern),
+            str(output_pattern.resolve()),
         ]
         extraction = run_process(ffmpeg_command, context=context, name="ffmpeg")
         extracted = sorted(extracted_root.glob("frame_*.png"))
