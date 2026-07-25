@@ -433,7 +433,7 @@
       "type": "integer"
     },
     "strategy": {
-      "minLength": 1,
+      "const": "detect_then_track",
       "title": "Strategy",
       "type": "string"
     },

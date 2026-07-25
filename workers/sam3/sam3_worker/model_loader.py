@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
-import subprocess
-from importlib import metadata
 from pathlib import Path
 from typing import Any
 
 from huggingface_hub import HfApi, hf_hub_download
 
+from sam3_worker.commit_verification import require_official_commit
+from sam3_worker.official_compat import apply_sam31_start_session_compatibility
 from sam3_worker.schema import WorkerConfiguration
 from sam3_worker.version import OFFICIAL_CODE_COMMIT
 
@@ -26,50 +25,13 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def installed_sam_commit() -> str | None:
-    override = os.environ.get("RECONEVERY_SAM3_COMMIT")
-    if override:
-        return override
-    try:
-        distribution = metadata.distribution("sam3")
-        direct_url = distribution.read_text("direct_url.json")
-        if direct_url:
-            payload = json.loads(direct_url)
-            commit = payload.get("vcs_info", {}).get("commit_id")
-            if isinstance(commit, str):
-                return commit
-    except (metadata.PackageNotFoundError, json.JSONDecodeError):
-        pass
-    try:
-        import sam3
-
-        package_root = Path(sam3.__file__).resolve().parents[1]
-        result = subprocess.run(
-            ["git", "-C", str(package_root), "rev-parse", "HEAD"],
-            text=True,
-            capture_output=True,
-            timeout=10,
-            check=False,
-        )
-        return result.stdout.strip() if result.returncode == 0 else None
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-
-
 def validate_official_code_commit(config: WorkerConfiguration) -> str:
     if config.official_code_commit != OFFICIAL_CODE_COMMIT:
         raise RuntimeError(
             f"worker supports official SAM commit {OFFICIAL_CODE_COMMIT}, "
             f"not {config.official_code_commit}"
         )
-    installed = installed_sam_commit()
-    if installed != OFFICIAL_CODE_COMMIT:
-        raise RuntimeError(
-            "official SAM installation commit could not be verified"
-            if installed is None
-            else f"official SAM installation is at {installed}, expected {OFFICIAL_CODE_COMMIT}"
-        )
-    return installed
+    return require_official_commit(OFFICIAL_CODE_COMMIT)
 
 
 def check_checkpoint_access(config: WorkerConfiguration) -> dict[str, Any]:
@@ -135,4 +97,6 @@ def load_predictor(config: WorkerConfiguration) -> tuple[Any, Path]:
         use_fa3=False,
         async_loading_frames=False,
     )
+    if config.model_mode == "sam3.1":
+        apply_sam31_start_session_compatibility(predictor)
     return predictor, checkpoint

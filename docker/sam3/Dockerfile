@@ -15,7 +15,6 @@ RUN apt-get update \
 
 RUN python3.12 -m venv /opt/venv
 ENV PATH=/opt/venv/bin:${PATH}
-ENV RECONEVERY_SAM3_COMMIT=${SAM3_COMMIT}
 ENV PYTHONUNBUFFERED=1
 
 RUN python -m pip install --no-cache-dir --upgrade pip \
@@ -27,7 +26,7 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 RUN git clone https://github.com/facebookresearch/sam3.git /opt/sam3 \
     && git -C /opt/sam3 checkout --detach ${SAM3_COMMIT} \
     && test "$(git -C /opt/sam3 rev-parse HEAD)" = "${SAM3_COMMIT}" \
-    && python -m pip install --no-cache-dir /opt/sam3
+    && python -m pip install --no-cache-dir -e /opt/sam3
 
 COPY workers/sam3 /opt/reconevery-sam3-worker
 RUN python -m pip install --no-cache-dir \

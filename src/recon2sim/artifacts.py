@@ -345,7 +345,7 @@ class Sam3InferenceRequest(StrictModel):
     prompt_manifest: SegmentationPromptManifest
     prompt_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     anchor_frames: Annotated[list[Sam3AnchorFrame], Field(min_length=1)]
-    strategy: Annotated[str, Field(min_length=1)]
+    strategy: Literal["detect_then_track"]
     tracking_direction: Literal["forward", "backward", "forward_backward"]
     model_configuration: dict[str, object]
     postprocessing_configuration: dict[str, object]

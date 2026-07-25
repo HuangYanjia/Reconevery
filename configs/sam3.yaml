@@ -80,6 +80,7 @@ stages:
         offline: false
         strategy: detect_then_track
         anchor_strategy: best_quality_registered_frame
+        anchor_count: 1
         tracking_direction: forward_backward
         score_threshold: 0.5
         mask_threshold: 0.5

@@ -1,4 +1,4 @@
-WORKER_VERSION = "0.1.0"
+WORKER_VERSION = "0.1.1"
 OFFICIAL_REPOSITORY = "https://github.com/facebookresearch/sam3"
 OFFICIAL_CODE_COMMIT = "46957e47805eaa273f4aa7bbbd25a88bca9108ce"
 DEFAULT_CHECKPOINT_REPOSITORY = "facebook/sam3.1"

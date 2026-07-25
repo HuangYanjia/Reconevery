@@ -79,7 +79,7 @@ class InferenceRequest(WorkerModel):
     prompt_manifest: PromptManifest
     prompt_manifest_sha256: str
     anchor_frames: list[Anchor]
-    strategy: Literal["detect_then_track", "full_video_text_prompt"]
+    strategy: Literal["detect_then_track"]
     tracking_direction: Literal["forward", "backward", "forward_backward"]
     model_configuration: dict[str, Any]
     postprocessing_configuration: dict[str, Any]

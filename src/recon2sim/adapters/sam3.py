@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -55,6 +57,13 @@ SAM3_CHECKPOINT_REVISION = "3c879f39826c281e95690f02c7821c4de09afae7"
 OFFICIAL_LICENSE = "SAM License (see official checkpoint repository terms)"
 
 
+def _resolve_worker_python(value: str) -> str | None:
+    candidate = Path(value).expanduser()
+    if candidate.is_absolute() or candidate.parent != Path("."):
+        return str(candidate.absolute()) if candidate.is_file() else None
+    return shutil.which(value)
+
+
 class Sam3AdapterConfig(StrictModel):
     execution_mode: Literal["local_worker", "docker", "fake_worker"]
     prompt_manifest: str
@@ -77,7 +86,7 @@ class Sam3AdapterConfig(StrictModel):
     device: Literal["cpu", "cuda"] = "cuda"
     precision: Literal["float32", "float16", "bfloat16"] = "bfloat16"
     offline: bool = False
-    strategy: Literal["detect_then_track", "full_video_text_prompt"] = "detect_then_track"
+    strategy: Literal["detect_then_track"] = "detect_then_track"
     anchor_strategy: AnchorStrategy = "best_quality_registered_frame"
     anchor_count: int = Field(default=1, gt=0)
     explicit_anchor_frame_ids: list[str] = Field(default_factory=list)
@@ -99,19 +108,64 @@ class Sam3AdapterConfig(StrictModel):
         if self.execution_mode == "fake_worker":
             if not self.worker_script:
                 raise ValueError("fake_worker execution requires worker_script")
-        elif self.device != "cuda":
-            raise ValueError(
-                "the pinned official SAM 3 backend requires device=cuda; use fake_worker "
-                "for CPU-only validation"
+        else:
+            if self.device != "cuda":
+                raise ValueError(
+                    "the pinned official SAM 3 backend requires device=cuda; use fake_worker "
+                    "for CPU-only validation"
+                )
+            if self.precision != "bfloat16":
+                raise ValueError("the pinned official SAM 3 backend requires precision=bfloat16")
+            if self.anchor_count != 1:
+                raise ValueError(
+                    "local_worker and docker currently require anchor_count=1; "
+                    "multi-anchor inference is not implemented by the pinned official path"
+                )
+        if self.execution_mode == "local_worker":
+            visible_devices = os.environ.get("CUDA_VISIBLE_DEVICES")
+            if visible_devices is None or visible_devices.strip().lower() in {
+                "",
+                "-1",
+                "none",
+                "void",
+            }:
+                raise ValueError(
+                    "local_worker requires CUDA_VISIBLE_DEVICES to expose at least one GPU"
+                )
+            executable = _resolve_worker_python(self.worker_python)
+            if executable is None:
+                raise ValueError(f"configured worker Python {self.worker_python!r} was not found")
+            executable_path = Path(executable)
+            environment_roots = {
+                executable_path.parent.parent,
+                executable_path.resolve().parent.parent,
+            }
+            isolated_root = next(
+                (root for root in environment_roots if (root / "pyvenv.cfg").is_file()),
+                None,
             )
-        if self.execution_mode == "docker" and self.local_checkpoint_path is not None:
-            checkpoint = Path(self.local_checkpoint_path).expanduser()
-            if not checkpoint.is_absolute():
-                raise ValueError("Docker local_checkpoint_path must be absolute")
+            if isolated_root is None:
+                raise ValueError(
+                    "local_worker worker_python must resolve to an isolated virtual "
+                    "environment containing pyvenv.cfg"
+                )
+            if isolated_root.resolve() == Path(sys.prefix).resolve():
+                raise ValueError("local_worker must not use the Reconevery core Python environment")
+        for field_name, expected_kind in (
+            ("local_checkpoint_path", "file"),
+            ("model_cache_path", "directory"),
+        ):
+            raw_path = getattr(self, field_name)
+            if raw_path is None:
+                continue
+            path = Path(raw_path).expanduser()
+            if not path.is_absolute():
+                raise ValueError(f"{field_name} must be absolute")
+            valid = path.is_file() if expected_kind == "file" else path.is_dir()
+            if not valid or not os.access(path, os.R_OK):
+                raise ValueError(f"{field_name} must reference a readable {expected_kind}: {path}")
         if self.offline and self.local_checkpoint_path is None and self.model_cache_path is None:
             raise ValueError("offline mode requires local_checkpoint_path or model_cache_path")
-        if self.strategy == "full_video_text_prompt" and self.anchor_strategy == "explicit":
-            raise ValueError("full_video_text_prompt does not accept an explicit anchor strategy")
         expected_checkpoint = {
             "sam3": ("facebook/sam3", SAM3_CHECKPOINT_REVISION),
             "sam3.1": (DEFAULT_CHECKPOINT_REPOSITORY, DEFAULT_CHECKPOINT_REVISION),
@@ -172,7 +226,7 @@ def _classify_worker_failure(exc: ProcessExecutionError) -> RuntimeError:
 
 class Sam3SegmentationTrackingAdapter:
     name = "sam3_segmentation_tracking"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         config = Sam3AdapterConfig.model_validate(context.config.adapter.config)
@@ -793,7 +847,7 @@ class Sam3SegmentationTrackingAdapter:
         action: str,
         path: Path,
     ) -> list[str] | str:
-        python = resolve_executable(config.worker_python)
+        python = _resolve_worker_python(config.worker_python)
         if python is None:
             return f"configured worker Python {config.worker_python!r} was not found"
         option = "--config" if action == "healthcheck" else "--request"

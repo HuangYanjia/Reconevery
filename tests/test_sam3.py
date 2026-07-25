@@ -735,11 +735,26 @@ def test_fake_worker_healthcheck_is_configuration_aware() -> None:
     assert "fake_worker" in result.message
 
 
-def test_only_pinned_official_checkpoint_pairs_are_accepted() -> None:
+def _isolated_worker_python(tmp_path: Path, body: str = "") -> Path:
+    environment = tmp_path / "sam3-env"
+    executable = environment / "bin" / "python"
+    executable.parent.mkdir(parents=True)
+    (environment / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
+    executable.write_text(f"#!/usr/bin/env python3\n{body}", encoding="utf-8")
+    executable.chmod(0o755)
+    return executable
+
+
+def test_only_pinned_official_checkpoint_pairs_are_accepted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
     base = _config().stages["segmentation_tracking"].adapter.config.copy()
     base.update(
         {
             "execution_mode": "local_worker",
+            "worker_python": str(_isolated_worker_python(tmp_path)),
             "device": "cuda",
             "precision": "bfloat16",
             "model_mode": "sam3",
@@ -753,16 +768,17 @@ def test_only_pinned_official_checkpoint_pairs_are_accepted() -> None:
         Sam3AdapterConfig.model_validate(base)
 
 
-def test_local_worker_healthcheck_uses_configured_python(tmp_path: Path) -> None:
-    executable = tmp_path / "sam3-python"
-    executable.write_text(
-        "#!/usr/bin/env python3\n"
+def test_local_worker_healthcheck_uses_configured_python(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    executable = _isolated_worker_python(
+        tmp_path,
         "import json\n"
         "print(json.dumps({'available': True, 'official_code_commit': "
         "'46957e47805eaa273f4aa7bbbd25a88bca9108ce'}))\n",
-        encoding="utf-8",
     )
-    executable.chmod(0o755)
     config = {
         "execution_mode": "local_worker",
         "worker_python": str(executable),
@@ -774,6 +790,52 @@ def test_local_worker_healthcheck_uses_configured_python(tmp_path: Path) -> None
     result = Sam3SegmentationTrackingAdapter().healthcheck(_health_context(config))
     assert result.ok
     assert "46957e47805eaa273f4aa7bbbd25a88bca9108ce" in result.message
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("anchor_count", 2, "anchor_count=1"),
+        ("precision", "float16", "precision=bfloat16"),
+        ("strategy", "full_video_text_prompt", "detect_then_track"),
+    ],
+)
+def test_real_backend_rejects_unsupported_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    config: dict[str, object] = {
+        "execution_mode": "local_worker",
+        "worker_python": str(_isolated_worker_python(tmp_path)),
+        "prompt_manifest": "configs/prompts/tabletop.yaml",
+        "device": "cuda",
+        "precision": "bfloat16",
+        field: value,
+    }
+    with pytest.raises(ValidationError, match=message):
+        Sam3AdapterConfig.model_validate(config)
+
+
+def test_local_worker_requires_visible_gpu_and_isolated_python(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    config = {
+        "execution_mode": "local_worker",
+        "worker_python": shutil.which("python") or "python",
+        "prompt_manifest": "configs/prompts/tabletop.yaml",
+        "device": "cuda",
+        "precision": "bfloat16",
+    }
+    with pytest.raises(ValidationError, match="CUDA_VISIBLE_DEVICES"):
+        Sam3AdapterConfig.model_validate(config)
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    with pytest.raises(ValidationError, match="core Python environment|isolated virtual"):
+        Sam3AdapterConfig.model_validate(config)
 
 
 def test_docker_healthcheck_checks_image_gpu_and_uid(

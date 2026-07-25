@@ -9,7 +9,12 @@ from typing import Any
 
 from PIL import Image
 
+from sam3_worker.frame_preparation import (
+    prepared_video_frames,
+    resolve_worker_output_directory,
+)
 from sam3_worker.model_loader import load_predictor, sha256_file
+from sam3_worker.official_compat import official_propagation_directions
 from sam3_worker.schema import (
     InferenceRequest,
     RawObservation,
@@ -25,21 +30,6 @@ def _write_json(path: Path, payload: object) -> None:
     if hasattr(payload, "model_dump"):
         payload = payload.model_dump(mode="json")
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
-def _prepare_video_frames(root: Path, request: InferenceRequest, output_dir: Path) -> Path:
-    video_dir = output_dir / "video_frames"
-    video_dir.mkdir(parents=True, exist_ok=True)
-    for index, frame_path in enumerate(request.frame_paths):
-        with Image.open(root / frame_path) as image:
-            image.convert("RGB").save(
-                video_dir / f"{index:06d}.jpg",
-                format="JPEG",
-                quality=100,
-                subsampling=0,
-                optimize=False,
-            )
-    return video_dir
 
 
 def _prompt_request(
@@ -173,29 +163,13 @@ def _collect_outputs(
         )
 
 
-def run_inference(request_path: Path, output_dir: Path) -> None:
-    started = time.monotonic()
-    request_path = request_path.resolve()
-    root = request_path.parent.parent
-    request = InferenceRequest.model_validate_json(request_path.read_text(encoding="utf-8"))
-    config = WorkerConfiguration.model_validate(request.model_configuration)
-    if request.strategy == "full_video_text_prompt" and any(
-        prompt.enabled and prompt.prompt_type != "text"
-        for prompt in request.prompt_manifest.prompts
-    ):
-        raise RuntimeError("full_video_text_prompt supports enabled text prompts only")
-    if config.device != "cuda" or config.precision != "bfloat16":
-        raise RuntimeError("the pinned official SAM video predictor requires cuda/bfloat16")
-    import torch
-    import torchvision
-
-    random.seed(request.seed)
-    torch.manual_seed(request.seed)
-    torch.cuda.manual_seed_all(request.seed)
-    torch.use_deterministic_algorithms(True, warn_only=True)
-    predictor, checkpoint = load_predictor(config)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    video_dir = _prepare_video_frames(root, request, output_dir)
+def _run_prompts(
+    predictor: Any,
+    root: Path,
+    output_dir: Path,
+    request: InferenceRequest,
+    video_dir: Path,
+) -> list[RawTrack]:
     frame_index = {frame_id: index for index, frame_id in enumerate(request.frame_order)}
     default_anchor = request.anchor_frames[0].frame_id
     threshold = float(request.postprocessing_configuration["score_threshold"])
@@ -205,70 +179,61 @@ def run_inference(request_path: Path, output_dir: Path) -> None:
             continue
         anchor_id = prompt.frame_id or default_anchor
         anchor_index = frame_index[anchor_id]
-        start = predictor.handle_request(
-            {
-                "type": "start_session",
-                "resource_path": str(video_dir),
-                "offload_video_to_cpu": False,
-                "offload_state_to_cpu": False,
-            }
-        )
-        session_id = start["session_id"]
         tracks: dict[str, dict[str, RawObservation]] = defaultdict(dict)
-        try:
-            add_request = _prompt_request(
-                prompt,
-                anchor_index,
-                request.frame_dimensions[anchor_id],
-                prompt_index + 1,
-                threshold,
-            )
-            add_request["session_id"] = session_id
-            response = predictor.handle_request(add_request)
-            _collect_outputs(
-                root,
-                output_dir,
-                request,
-                prompt,
-                response["frame_index"],
-                response["outputs"],
-                tracks,
-            )
-            direction = {
-                "forward_backward": "both",
-                "forward": "forward",
-                "backward": "backward",
-            }[request.tracking_direction]
-            output_threshold = (
-                prompt.confidence_threshold
-                if prompt.confidence_threshold is not None
-                else threshold
-            )
-            for propagated in predictor.handle_stream_request(
+        for direction in official_propagation_directions(request.tracking_direction):
+            start = predictor.handle_request(
                 {
-                    "type": "propagate_in_video",
-                    "session_id": session_id,
-                    "propagation_direction": direction,
-                    "start_frame_index": anchor_index,
-                    "output_prob_thresh": output_threshold,
+                    "type": "start_session",
+                    "resource_path": str(video_dir),
+                    "offload_video_to_cpu": False,
+                    "offload_state_to_cpu": False,
                 }
-            ):
+            )
+            session_id = start["session_id"]
+            try:
+                add_request = _prompt_request(
+                    prompt,
+                    anchor_index,
+                    request.frame_dimensions[anchor_id],
+                    prompt_index + 1,
+                    threshold,
+                )
+                add_request["session_id"] = session_id
+                response = predictor.handle_request(add_request)
                 _collect_outputs(
                     root,
                     output_dir,
                     request,
                     prompt,
-                    propagated["frame_index"],
-                    propagated["outputs"],
+                    response["frame_index"],
+                    response["outputs"],
                     tracks,
                 )
-        finally:
-            predictor.handle_request(
-                {
-                    "type": "close_session",
-                    "session_id": session_id,
-                }
-            )
+                output_threshold = (
+                    prompt.confidence_threshold
+                    if prompt.confidence_threshold is not None
+                    else threshold
+                )
+                for propagated in predictor.handle_stream_request(
+                    {
+                        "type": "propagate_in_video",
+                        "session_id": session_id,
+                        "propagation_direction": direction,
+                        "start_frame_index": anchor_index,
+                        "output_prob_thresh": output_threshold,
+                    }
+                ):
+                    _collect_outputs(
+                        root,
+                        output_dir,
+                        request,
+                        prompt,
+                        propagated["frame_index"],
+                        propagated["outputs"],
+                        tracks,
+                    )
+            finally:
+                predictor.handle_request({"type": "close_session", "session_id": session_id})
         for raw_id in sorted(tracks):
             observations = [
                 tracks[raw_id][frame_id]
@@ -283,6 +248,34 @@ def run_inference(request_path: Path, output_dir: Path) -> None:
                     observations=observations,
                 )
             )
+    return all_tracks
+
+
+def run_inference(request_path: Path, output_dir: Path) -> None:
+    started = time.monotonic()
+    request_path = request_path.resolve()
+    root = request_path.parent.parent
+    output_dir = resolve_worker_output_directory(root, output_dir)
+    request = InferenceRequest.model_validate_json(request_path.read_text(encoding="utf-8"))
+    config = WorkerConfiguration.model_validate(request.model_configuration)
+    if config.device != "cuda" or config.precision != "bfloat16":
+        raise RuntimeError("the pinned official SAM video predictor requires cuda/bfloat16")
+    import torch
+    import torchvision
+
+    random.seed(request.seed)
+    torch.manual_seed(request.seed)
+    torch.cuda.manual_seed_all(request.seed)
+    torch.use_deterministic_algorithms(True, warn_only=True)
+    predictor, checkpoint = load_predictor(config)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    with prepared_video_frames(
+        root,
+        request.frame_order,
+        request.frame_paths,
+        request.frame_dimensions,
+    ) as video_dir:
+        all_tracks = _run_prompts(predictor, root, output_dir, request, video_dir)
     runtime = time.monotonic() - started
     _write_json(
         output_dir / "worker_result.json",

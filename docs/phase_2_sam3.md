@@ -66,8 +66,10 @@ python3.12 -m venv .venv-sam3
   --index-url https://download.pytorch.org/whl/cu128
 git clone https://github.com/facebookresearch/sam3.git .deps/sam3
 git -C .deps/sam3 checkout --detach 46957e47805eaa273f4aa7bbbd25a88bca9108ce
-.venv-sam3/bin/python -m pip install .deps/sam3
-.venv-sam3/bin/python -m pip install workers/sam3
+test "$(git -C .deps/sam3 rev-parse HEAD)" = \
+  "46957e47805eaa273f4aa7bbbd25a88bca9108ce"
+.venv-sam3/bin/python -m pip install -e .deps/sam3
+.venv-sam3/bin/python -m pip install -e workers/sam3
 ```
 
 Set `worker_python` in a local copy of `configs/sam3.yaml` to the absolute
@@ -79,9 +81,12 @@ export HF_HOME="$HOME/.cache/huggingface"
 uv run recon2sim adapters healthcheck --config configs/sam3.yaml
 ```
 
-The local healthcheck verifies the configured Python, worker command, official import and commit,
-Python/PyTorch/torchvision/CUDA versions, CUDA availability, GPU name, precision, and authorized
-checkpoint access. A worker is not healthy merely because its Python executable exists.
+The local healthcheck verifies the configured isolated Python, worker command, official import and
+commit, Python/PyTorch/torchvision/CUDA versions, CUDA availability, GPU name, precision, and
+authorized checkpoint access. Set `CUDA_VISIBLE_DEVICES` to at least one device. A non-editable
+local-directory installation is rejected because it does not retain verifiable Git provenance;
+an editable exact checkout or an exact `git+https` VCS install is required. A worker is not healthy
+merely because its Python executable exists.
 
 ## Docker setup
 
@@ -190,8 +195,28 @@ resets semantic state when a new text concept is added. Object Multiplex still j
 multiple instances found for each concept. This behavior is recorded rather than described as
 cross-concept joint inference.
 
-`full_video_text_prompt` is available only when every enabled prompt is text. Unsupported
-strategy/prompt combinations fail before canonicalization.
+`detect_then_track` is the only production strategy for the pinned backend. It uses exactly one
+anchor, then requests official forward/backward propagation. The former
+`full_video_text_prompt` name was removed because it was not a distinct official API path.
+
+The official pinned loader accepts ordered PNG files. The worker creates an ephemeral
+`000000.png`, `000001.png`, ... directory inside the isolated attempt, preserving manifest order
+without JPEG transcoding. This directory is removed after inference and is not promoted into
+`observations/raw`.
+
+The exact pinned SAM 3.1 Multiplex predictor has a public `start_session` dispatch mismatch:
+its shared dispatcher supplies `offload_state_to_cpu`, while the Multiplex model does not accept
+that argument. The worker applies a narrow compatibility shim that removes only the false default
+value and rejects any request that tries to enable state offload.
+
+For `forward_backward`, the worker opens independent official sessions for the two directions and
+merges observations by frame ID. This avoids a pinned Multiplex state transition that treats the
+second direction as a cache-only fetch, which fails when the first direction did not cover every
+frame.
+
+The isolated worker also pins `einops==0.8.2`, `pycocotools==2.0.11`, and
+`psutil==7.2.2`. The pinned official predictor import path requires these packages, while the
+official repository lists them outside the core install dependencies.
 
 ## Anchor selection
 

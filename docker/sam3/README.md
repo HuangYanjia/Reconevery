@@ -11,6 +11,10 @@ The image installs Meta's official repository at commit
 torchvision 0.25.0, and the isolated Reconevery worker. It does not download or
 contain a checkpoint, token, user frame, or cache.
 
+The official checkout remains in `/opt/sam3` and is installed editable so the
+worker can verify the Git HEAD directly. No environment variable is accepted as
+a substitute for commit provenance.
+
 Run through `configs/sam3_docker.example.yaml`. On Linux the adapter passes
 `--user <host-uid>:<host-gid>` so canonical outputs are owned by the invoking
 user. It mounts:

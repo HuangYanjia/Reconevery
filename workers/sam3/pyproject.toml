@@ -1,11 +1,14 @@
 [project]
 name = "reconevery-sam3-worker"
-version = "0.1.0"
+version = "0.1.1"
 description = "Isolated official SAM 3 worker for Reconevery"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+  "einops==0.8.2",
   "huggingface-hub==0.36.0",
   "pillow==12.0.0",
+  "psutil==7.2.2",
+  "pycocotools==2.0.11",
   "pydantic==2.12.5",
   "torch==2.10.0",
   "torchvision==0.25.0",

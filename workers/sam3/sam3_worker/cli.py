@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
+import traceback
 from pathlib import Path
 
 from sam3_worker.healthcheck import format_healthcheck
@@ -46,7 +46,7 @@ def main() -> int:
     except BaseException as exc:
         if isinstance(exc, (KeyboardInterrupt, SystemExit)):
             raise
-        print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        traceback.print_exc()
         return 1
     return 0
 
