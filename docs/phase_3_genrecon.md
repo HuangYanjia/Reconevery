@@ -42,13 +42,20 @@ Each run records URL, filename, byte size, SHA-256, file timestamp, and cache/do
 Weights are never committed, embedded in Docker, copied into stage attempts, or uploaded as CI
 artifacts.
 
+The release `.pt` files require the matching training configs in the pinned official checkout.
+The worker builds an ephemeral per-stage checkpoint layout using the official sparse, shape-512,
+and texture-512 configs and hardlinks or read-only references the verified checkpoint bytes.
+
 The pinned official pipeline also loads the official gated runtime encoder
 `facebook/dinov3-vitl16-pretrain-lvd1689m`. This is separate from the three GenRecon
 checkpoints. Accept its Hugging Face terms before real inference, authenticate with an
 implicitly discovered `HF_TOKEN` or cached login, and set `HF_HOME` when using a non-default
 cache. Reconevery never puts the token in a request, resolved configuration, log, provenance,
-or command argument. The worker records the exact resolved DINOv3 repository revision and
-runs the official subprocess from that cached snapshot in offline mode.
+or command argument. The official pipeline also loads decoder assets from
+`microsoft/TRELLIS-image-large` and `microsoft/TRELLIS.2-4B`. Before inference, the worker
+resolves and records exact revisions for all three runtime repositories, downloads only the
+required official files, verifies that `main` did not move during download, and then runs the
+official subprocess from the cache in offline mode.
 
 ## Local H100 Environment
 
@@ -170,6 +177,13 @@ COLMAP frame.
 The official argument name `radius_m` is retained for CLI compatibility, but its value operates
 in arbitrary COLMAP units. Diagnostics call this out. Tune chunk/cleaning values per dataset.
 If point cleaning removes all points or every chunk, the stage fails and preserves the attempt.
+
+The pinned official commit declares `--skip_point_cleaning` in
+`reconstruct_scene.py`, but its `IphoneChunker` constructor does not accept the
+declared argument. When this option is enabled, the isolated worker uses a narrow
+launcher that adds only the missing constructor argument and then executes the
+unchanged official script. It does not modify the official checkout or
+reimplement model inference.
 
 ## Official Execution
 

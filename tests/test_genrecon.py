@@ -97,6 +97,18 @@ def test_fake_full_phase3_dag_and_consistency_report(tmp_path: Path) -> None:
     assert report.real_modules_share_consistent_inputs
     assert not report.object_level_2d_3d_fusion_implemented
     assert not report.sim_ready_scene_implemented
+    worker = GenReconWorkerManifest.model_validate_json(
+        (run_dir / "reconstruction/global/worker_manifest.json").read_text(encoding="utf-8")
+    )
+    metadata = GlobalSceneReconstructionArtifact.model_validate_json(
+        (run_dir / "reconstruction/global/metadata.json").read_text(encoding="utf-8")
+    )
+    assert set(worker.runtime_repository_revisions) == {
+        "facebook/dinov3-vitl16-pretrain-lvd1689m",
+        "microsoft/TRELLIS-image-large",
+        "microsoft/TRELLIS.2-4B",
+    }
+    assert metadata.runtime_repository_revisions == worker.runtime_repository_revisions
 
 
 def test_fake_full_phase3_resume_hits_every_stage(tmp_path: Path) -> None:
@@ -549,6 +561,18 @@ def test_genrecon_worker_distinguishes_pending_gated_access(
     assert "repository authors" in str(error)
 
 
+def test_genrecon_worker_declares_all_official_runtime_repositories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "workers" / "genrecon"))
+    runtime_assets = importlib.import_module("genrecon_worker.runtime_assets")
+    assert set(runtime_assets.RUNTIME_REPOSITORY_FILES) == {
+        "facebook/dinov3-vitl16-pretrain-lvd1689m",
+        "microsoft/TRELLIS-image-large",
+        "microsoft/TRELLIS.2-4B",
+    }
+
+
 def test_local_worker_accepts_isolated_venv_python_symlink(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -582,6 +606,76 @@ def test_core_request_matches_real_worker_schema(
         (run_dir / "reconstruction/global/request.json").read_text(encoding="utf-8")
     )
     assert request.official_checkout_path
+
+
+def test_worker_stages_pinned_training_configs_without_copying_checkpoints(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_dir, _ = _run(tmp_path / "source")
+    monkeypatch.syspath_prepend(str(ROOT / "workers" / "genrecon"))
+    worker_schema = importlib.import_module("genrecon_worker.schema")
+    checkpoint_loader = importlib.import_module("genrecon_worker.checkpoint_loader")
+    request = worker_schema.InferenceRequest.model_validate_json(
+        (run_dir / "reconstruction/global/request.json").read_text(encoding="utf-8")
+    )
+    checkout = tmp_path / "checkout"
+    for relative_path in checkpoint_loader.CHECKPOINT_TRAIN_CONFIGS.values():
+        config = checkout / relative_path
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text(f"{relative_path}\n", encoding="utf-8")
+    temporary = tmp_path / "prepared"
+    temporary.mkdir()
+
+    staged = checkpoint_loader.stage_checkpoints(
+        checkout,
+        temporary,
+        request.checkpoint_paths,
+    )
+
+    for checkpoint_id, staged_path in staged.items():
+        source = Path(request.checkpoint_paths[checkpoint_id])
+        destination = Path(staged_path)
+        assert destination.read_bytes() == source.read_bytes()
+        assert destination.is_symlink() or destination.stat().st_ino == source.stat().st_ino
+        expected_config = checkpoint_loader.CHECKPOINT_TRAIN_CONFIGS[checkpoint_id]
+        assert (destination.parents[1] / "config.json").read_text(
+            encoding="utf-8"
+        ) == f"{expected_config}\n"
+
+
+def test_worker_compatibility_launcher_supports_official_skip_cleaning_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "workers" / "genrecon"))
+    launcher = importlib.import_module("genrecon_worker.official_launcher")
+
+    class PinnedIphoneChunker:
+        def __init__(self, chunk_size_factor: float = 1.08) -> None:
+            self.chunk_size_factor = chunk_size_factor
+
+    assert launcher.install_iphone_skip_cleaning_compat(PinnedIphoneChunker)
+    chunker = PinnedIphoneChunker(
+        chunk_size_factor=1.2,
+        skip_point_cleaning=True,
+    )
+    assert chunker.chunk_size_factor == 1.2
+    assert chunker.skip_point_cleaning is True
+
+
+def test_worker_compatibility_launcher_does_not_replace_supported_constructor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.syspath_prepend(str(ROOT / "workers" / "genrecon"))
+    launcher = importlib.import_module("genrecon_worker.official_launcher")
+
+    class FutureIphoneChunker:
+        def __init__(self, *, skip_point_cleaning: bool = False) -> None:
+            self.skip_point_cleaning = skip_point_cleaning
+
+    original = FutureIphoneChunker.__init__
+    assert not launcher.install_iphone_skip_cleaning_compat(FutureIphoneChunker)
+    assert FutureIphoneChunker.__init__ is original
 
 
 def test_docker_huggingface_cache_mount_is_explicit(

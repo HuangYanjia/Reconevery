@@ -157,9 +157,10 @@ COLMAP database, logs, or rejected models.
 official checkpoints come only from `https://kaldir.vc.cit.tum.de/genrecon/` and are identified
 by SHA-256. The official pipeline also requires separately accepted access to gated
 `facebook/dinov3-vitl16-pretrain-lvd1689m`; its resolved revision is recorded without storing
-Hugging Face credentials. A reversible PCA working transform may stabilize chunking, but it is
-not gravity alignment. Canonical `scene.glb` and `mesh.ply` are returned to the original COLMAP
-arbitrary frame.
+Hugging Face credentials. Required decoder assets from `microsoft/TRELLIS-image-large` and
+`microsoft/TRELLIS.2-4B` are likewise cached and identified by exact resolved revisions. A
+reversible PCA working transform may stabilize chunking, but it is not gravity alignment.
+Canonical `scene.glb` and `mesh.ply` are returned to the original COLMAP arbitrary frame.
 
 SAM and GenRecon are parallel evidence branches. Prompt changes rerun SAM and the consistency
 validator, not GenRecon. The validator checks ordered frame hashes, registration sets, camera

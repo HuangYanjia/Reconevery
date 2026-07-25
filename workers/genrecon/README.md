@@ -25,7 +25,8 @@ The worker:
 1. verifies the official checkout and recursive submodule;
 2. hashes all three official checkpoints;
 3. verifies access to official gated `facebook/dinov3-vitl16-pretrain-lvd1689m`;
-4. caches and records its exact resolved revision without exposing credentials;
+4. caches and records exact revisions for DINOv3, `microsoft/TRELLIS-image-large`, and
+   `microsoft/TRELLIS.2-4B` without exposing credentials;
 5. builds an ephemeral COLMAP/rgb input package;
 6. applies a recorded reversible PCA working transform;
 7. invokes the official `reconstruct_scene.py`;
@@ -34,3 +35,8 @@ The worker:
 10. writes a typed worker manifest and structured diagnostics.
 
 Checkpoint URLs and paths are never downloaded during image build.
+
+The pinned official CLI exposes `--skip_point_cleaning` but omits that argument
+from `IphoneChunker.__init__`. For that option only, the worker launches the
+unchanged official script through `official_launcher.py`, which adds the missing
+constructor parameter and delegates all reconstruction work to official code.

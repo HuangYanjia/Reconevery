@@ -230,6 +230,11 @@ def infer(request_path: Path, output_dir: Path) -> int:
         "checkpoint_records": records,
         "runtime_model_repository": "facebook/dinov3-vitl16-pretrain-lvd1689m",
         "runtime_model_revision": "1" * 40,
+        "runtime_repository_revisions": {
+            "facebook/dinov3-vitl16-pretrain-lvd1689m": "1" * 40,
+            "microsoft/TRELLIS-image-large": "2" * 40,
+            "microsoft/TRELLIS.2-4B": "3" * 40,
+        },
         "worker_version": "0.1.1",
         "python_version": sys.version.split()[0],
         "torch_version": None,

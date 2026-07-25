@@ -790,6 +790,10 @@ class GenReconWorkerManifest(StrictModel):
     checkpoint_records: list[GenReconCheckpointRecord]
     runtime_model_repository: Literal["facebook/dinov3-vitl16-pretrain-lvd1689m"]
     runtime_model_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    runtime_repository_revisions: dict[
+        str,
+        Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    ]
     worker_version: Annotated[str, Field(min_length=1)]
     python_version: Annotated[str, Field(min_length=1)]
     torch_version: str | None = None
@@ -903,6 +907,10 @@ class GlobalSceneReconstructionArtifact(StrictModel):
     official_code_commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
     runtime_model_repository: Literal["facebook/dinov3-vitl16-pretrain-lvd1689m"]
     runtime_model_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    runtime_repository_revisions: dict[
+        str,
+        Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")],
+    ]
     runtime_seconds: float = Field(ge=0)
     peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
     seed: int

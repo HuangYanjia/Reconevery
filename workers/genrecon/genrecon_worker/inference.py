@@ -19,8 +19,7 @@ from genrecon_worker.input_package import prepared_scene
 from genrecon_worker.mesh_inspection import transform_outputs_to_colmap
 from genrecon_worker.runtime_assets import (
     DINOV3_REPOSITORY,
-    prepare_dinov3_runtime_asset,
-    resolve_dinov3_revision,
+    prepare_official_runtime_assets,
 )
 from genrecon_worker.schema import InferenceRequest
 from genrecon_worker.version import OFFICIAL_LICENSE, OFFICIAL_SUBMODULES, WORKER_VERSION
@@ -107,45 +106,60 @@ def _official_command(
     prepared_root: Path,
     output_dir: Path,
     request: InferenceRequest,
+    checkpoint_paths: dict[str, str],
 ) -> list[str]:
     parameters = request.reconstruction_parameters
-    command = [
-        sys.executable,
-        str(checkout / "reconstruct_scene.py"),
-        "--mode",
-        "Iphone",
-        "--path",
-        str(prepared_root),
-        "--output_path",
-        str(output_dir),
-        "--ss_ckpt",
-        request.checkpoint_paths["sparse_structure"],
-        "--shape_ckpt",
-        request.checkpoint_paths["shape_slat"],
-        "--tex_ckpt",
-        request.checkpoint_paths["texture_slat"],
-        "--num_imgs_per_scene",
-        str(min(request.requested_max_views, len(request.eligible_frame_ids))),
-        "--chunk_size_factor",
-        str(parameters["chunk_size_factor"]),
-        "--stat_std_ratio",
-        str(parameters["stat_std_ratio"]),
-        "--radius_nb_points",
-        str(parameters["radius_nb_points"]),
-        "--radius_m",
-        str(parameters["radius_m"]),
-        "--min_points_per_chunk",
-        str(parameters["min_points_per_chunk"]),
-        "--pipeline_config",
-        str(checkout / request.pipeline_config),
-        "--proj_batch_voxels",
-        str(parameters["proj_batch_voxels"]),
-        "--seed",
-        str(request.seed),
-        "--colmap_subdir",
-        "colmap",
-    ]
-    if parameters.get("skip_point_cleaning"):
+    official_script = checkout / "reconstruct_scene.py"
+    use_skip_cleaning_compat = bool(parameters.get("skip_point_cleaning"))
+    command = (
+        [
+            sys.executable,
+            "-m",
+            "genrecon_worker.official_launcher",
+            "--script",
+            str(official_script),
+            "--",
+        ]
+        if use_skip_cleaning_compat
+        else [sys.executable, str(official_script)]
+    )
+    command.extend(
+        [
+            "--mode",
+            "Iphone",
+            "--path",
+            str(prepared_root),
+            "--output_path",
+            str(output_dir),
+            "--ss_ckpt",
+            checkpoint_paths["sparse_structure"],
+            "--shape_ckpt",
+            checkpoint_paths["shape_slat"],
+            "--tex_ckpt",
+            checkpoint_paths["texture_slat"],
+            "--num_imgs_per_scene",
+            str(min(request.requested_max_views, len(request.eligible_frame_ids))),
+            "--chunk_size_factor",
+            str(parameters["chunk_size_factor"]),
+            "--stat_std_ratio",
+            str(parameters["stat_std_ratio"]),
+            "--radius_nb_points",
+            str(parameters["radius_nb_points"]),
+            "--radius_m",
+            str(parameters["radius_m"]),
+            "--min_points_per_chunk",
+            str(parameters["min_points_per_chunk"]),
+            "--pipeline_config",
+            str(checkout / request.pipeline_config),
+            "--proj_batch_voxels",
+            str(parameters["proj_batch_voxels"]),
+            "--seed",
+            str(request.seed),
+            "--colmap_subdir",
+            "colmap",
+        ]
+    )
+    if use_skip_cleaning_compat:
         command.append("--skip_point_cleaning")
     return command
 
@@ -237,7 +251,7 @@ def run_inference(
         request.checkpoint_paths,
         request.checkpoint_hashes,
     )
-    dinov3_revision = prepare_dinov3_runtime_asset(resolve_dinov3_revision())
+    runtime_revisions = prepare_official_runtime_assets()
     root = request_path.resolve().parents[2]
     output_dir = output_dir.resolve()
     output_dir.relative_to(root)
@@ -253,11 +267,12 @@ def run_inference(
     environment["PYTHONHASHSEED"] = str(request.seed)
     environment["HF_HUB_OFFLINE"] = "1"
     peak_gpu_memory = 0
-    with prepared_scene(root, request) as (
+    with prepared_scene(root, checkout, request) as (
         prepared_root,
         working_to_colmap,
         transform_record,
         original_points,
+        staged_checkpoint_paths,
     ):
         colmap_to_working = np.asarray(
             transform_record["matrix_colmap_to_working"],
@@ -267,7 +282,13 @@ def run_inference(
             :3, 3
         ]
         reconstruct_return_code, reconstruct_peak = _run_with_gpu_monitor(
-            _official_command(checkout, prepared_root, output_dir, request),
+            _official_command(
+                checkout,
+                prepared_root,
+                output_dir,
+                request,
+                staged_checkpoint_paths,
+            ),
             cwd=checkout,
             environment=environment,
             stdout_path=logs / "reconstruct_scene.stdout.log",
@@ -351,7 +372,8 @@ def run_inference(
         "official_license": OFFICIAL_LICENSE,
         "checkpoint_records": checkpoint_records,
         "runtime_model_repository": DINOV3_REPOSITORY,
-        "runtime_model_revision": dinov3_revision,
+        "runtime_model_revision": runtime_revisions[DINOV3_REPOSITORY],
+        "runtime_repository_revisions": runtime_revisions,
         "worker_version": WORKER_VERSION,
         "python_version": platform.python_version(),
         "torch_version": torch.__version__,

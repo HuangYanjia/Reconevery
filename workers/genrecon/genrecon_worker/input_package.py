@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
+from genrecon_worker.checkpoint_loader import stage_checkpoints
 from genrecon_worker.schema import InferenceRequest
 
 
@@ -193,8 +194,17 @@ def _link_or_copy(source: Path, destination: Path) -> None:
 @contextlib.contextmanager
 def prepared_scene(
     root: Path,
+    checkout: Path,
     request: InferenceRequest,
-) -> Iterator[tuple[Path, np.ndarray, dict[str, object], np.ndarray]]:
+) -> Iterator[
+    tuple[
+        Path,
+        np.ndarray,
+        dict[str, object],
+        np.ndarray,
+        dict[str, str],
+    ]
+]:
     package_root = root / "camera" / "genrecon_package"
     rows, points = read_points(package_root / "points3D.txt")
     forward, inverse, transform = working_transform(
@@ -228,6 +238,11 @@ def prepared_scene(
             _link_or_copy(source, destination)
             if destination.stat().st_size != source.stat().st_size:
                 raise RuntimeError(f"prepared GenRecon frame size changed: {frame_id}")
-        yield temporary, inverse, transform, points
+        staged_checkpoints = stage_checkpoints(
+            checkout,
+            temporary,
+            request.checkpoint_paths,
+        )
+        yield temporary, inverse, transform, points, staged_checkpoints
     finally:
         shutil.rmtree(temporary, ignore_errors=True)

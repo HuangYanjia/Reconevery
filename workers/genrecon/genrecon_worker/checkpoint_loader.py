@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -8,6 +10,12 @@ CHECKPOINT_URLS = {
     "sparse_structure": "https://kaldir.vc.cit.tum.de/genrecon/sparse_structure.pt",
     "shape_slat": "https://kaldir.vc.cit.tum.de/genrecon/shape_slat.pt",
     "texture_slat": "https://kaldir.vc.cit.tum.de/genrecon/texture_slat.pt",
+}
+
+CHECKPOINT_TRAIN_CONFIGS = {
+    "sparse_structure": "configs/gen/ss_flow_img/genrecon.json",
+    "shape_slat": "configs/gen/slat_flow_img2shape/genrecon_512.json",
+    "texture_slat": "configs/gen/slat_flow_imgshape2tex/genrecon_512.json",
 }
 
 
@@ -52,3 +60,29 @@ def verify_checkpoints(
             }
         )
     return records
+
+
+def stage_checkpoints(
+    checkout: Path,
+    temporary: Path,
+    checkpoint_paths: dict[str, str],
+) -> dict[str, str]:
+    staged: dict[str, str] = {}
+    for checkpoint_id, config_relative_path in CHECKPOINT_TRAIN_CONFIGS.items():
+        source = Path(checkpoint_paths[checkpoint_id]).resolve()
+        stage_root = temporary / "model_inputs" / checkpoint_id
+        checkpoint_root = stage_root / "checkpoints"
+        checkpoint_root.mkdir(parents=True)
+        config_source = checkout / config_relative_path
+        if not config_source.is_file():
+            raise RuntimeError(
+                f"pinned official GenRecon training config is missing: {config_relative_path}"
+            )
+        shutil.copy2(config_source, stage_root / "config.json")
+        destination = checkpoint_root / source.name
+        try:
+            os.link(source, destination)
+        except OSError:
+            destination.symlink_to(source)
+        staged[checkpoint_id] = str(destination)
+    return staged

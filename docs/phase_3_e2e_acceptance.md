@@ -60,3 +60,21 @@ Required visual evidence:
 
 Do not mark the pull request ready based on fake output, a mock camera, or module-level GenRecon
 alone.
+
+## Validated H100 Smoke
+
+The Phase 3 implementation passed both acceptance levels on 2026-07-25 with one NVIDIA H100
+NVL. The shared image-directory lineage contained 16 normalized frames. Real COLMAP registered
+12 frames (75%) and reconstructed 2,454 sparse points. Official SAM 3.1 processed the same
+ordered frame sequence with `table`, `cup`, and `cabinet` prompts, retaining 4 tracks and 50
+canonical masks.
+
+Official GenRecon used all 12 registered frames and produced 9 chunks, a valid 661 MiB
+`scene.glb`, and a finite global mesh with 6,385,868 vertices and 13,437,638 faces. Its runtime
+was 1,142.94 seconds and recorded peak GPU memory was 14,170,456,064 bytes. All 13 consistency
+checks passed, and the identical resumed command reported cache hits for all six stages.
+
+The three official checkpoint SHA-256 prefixes were `e18c1caddb2357`, `d9e13be151a213`, and
+`28f99217a4fbcd`. Large run outputs and checkpoint files remain local and are not committed.
+This evidence confirms consistent module coexistence only: object-level 2D/3D fusion,
+simulation-ready geometry, metric scale, and gravity alignment remain unimplemented.

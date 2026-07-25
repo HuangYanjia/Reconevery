@@ -479,6 +479,14 @@
       "title": "Runtime Model Revision",
       "type": "string"
     },
+    "runtime_repository_revisions": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{40}$",
+        "type": "string"
+      },
+      "title": "Runtime Repository Revisions",
+      "type": "object"
+    },
     "runtime_seconds": {
       "minimum": 0,
       "title": "Runtime Seconds",
@@ -535,6 +543,7 @@
     "official_code_commit",
     "runtime_model_repository",
     "runtime_model_revision",
+    "runtime_repository_revisions",
     "runtime_seconds",
     "seed",
     "provenance"

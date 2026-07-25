@@ -817,6 +817,7 @@ class GenReconGlobalReconstructionAdapter:
             official_code_commit=OFFICIAL_GENRECON_COMMIT,
             runtime_model_repository=worker.runtime_model_repository,
             runtime_model_revision=worker.runtime_model_revision,
+            runtime_repository_revisions=worker.runtime_repository_revisions,
             runtime_seconds=worker.runtime_seconds,
             peak_gpu_memory_bytes=worker.peak_gpu_memory_bytes,
             seed=config.seed,
@@ -1025,11 +1026,22 @@ class GenReconGlobalReconstructionAdapter:
         actual_hashes = {
             record.checkpoint_id: record.sha256 for record in worker.checkpoint_records
         }
+        required_runtime_repositories = {
+            "facebook/dinov3-vitl16-pretrain-lvd1689m",
+            "microsoft/TRELLIS-image-large",
+            "microsoft/TRELLIS.2-4B",
+        }
         checks = {
             "official repository": worker.official_repository == OFFICIAL_GENRECON_REPOSITORY,
             "official commit": worker.official_code_commit == OFFICIAL_GENRECON_COMMIT,
             "submodules": worker.submodule_commits == OFFICIAL_GENRECON_SUBMODULES,
             "checkpoint hashes": actual_hashes == expected_hashes,
+            "runtime repositories": set(worker.runtime_repository_revisions)
+            == required_runtime_repositories,
+            "DINO revision": worker.runtime_repository_revisions.get(
+                worker.runtime_model_repository
+            )
+            == worker.runtime_model_revision,
             "request hash": worker.request_sha256
             == sha256_file(context.path("reconstruction", "global", "request.json")),
             "frame lineage": worker.frame_sequence_digest == request.frame_sequence_digest,

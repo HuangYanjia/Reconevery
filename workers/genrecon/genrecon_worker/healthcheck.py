@@ -7,7 +7,10 @@ from pathlib import Path
 
 from genrecon_worker.checkpoint_loader import verify_checkpoints
 from genrecon_worker.commit_verification import verify_checkout
-from genrecon_worker.runtime_assets import DINOV3_REPOSITORY, resolve_dinov3_revision
+from genrecon_worker.runtime_assets import (
+    DINOV3_REPOSITORY,
+    resolve_runtime_repository_revisions,
+)
 from genrecon_worker.schema import WorkerConfiguration
 from genrecon_worker.version import (
     PYTHON_VERSION,
@@ -60,7 +63,7 @@ def run_healthcheck(config: WorkerConfiguration) -> dict[str, object]:
         )
     for module in extension_modules:
         importlib.import_module(module)
-    dinov3_revision = resolve_dinov3_revision()
+    runtime_revisions = resolve_runtime_repository_revisions()
     return {
         "available": True,
         "official_code_commit": config.official_code_commit,
@@ -73,5 +76,6 @@ def run_healthcheck(config: WorkerConfiguration) -> dict[str, object]:
         "device_name": torch.cuda.get_device_name(0),
         "extensions": list(extension_modules),
         "runtime_model_repository": DINOV3_REPOSITORY,
-        "runtime_model_revision": dinov3_revision,
+        "runtime_model_revision": runtime_revisions[DINOV3_REPOSITORY],
+        "runtime_repository_revisions": runtime_revisions,
     }

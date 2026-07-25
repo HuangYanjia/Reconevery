@@ -559,6 +559,7 @@ def inspect_global_reconstruction(
                 "runtime_model": (
                     f"{worker.runtime_model_repository}@{worker.runtime_model_revision}"
                 ),
+                "runtime_repository_revisions": worker.runtime_repository_revisions,
                 "checkpoint_hashes": {
                     record.checkpoint_id: record.sha256 for record in worker.checkpoint_records
                 },
