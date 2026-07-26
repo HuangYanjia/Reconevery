@@ -1,0 +1,43 @@
+seed: 42
+stages:
+  ingest:
+    adapter:
+      name: ffmpeg_ingest
+      env: [PATH, HOME, TMPDIR]
+      config:
+        input_mode: auto
+        target_fps: 3.0
+        max_frames: 32
+        resize_max_edge: 1600
+        blur_threshold: 0.0
+        duplicate_threshold: 0.0
+    depends_on: []
+  camera_recovery:
+    adapter:
+      name: colmap_camera_recovery
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local
+        executable: colmap
+        matcher: sequential
+        camera_model: OPENCV
+        single_camera: true
+        use_gpu: true
+        min_registered_frames: 8
+        min_registration_ratio: 0.4
+    depends_on: [ingest]
+  dense_mvs:
+    adapter:
+      name: dense_mvs
+      timeout_s: 43200
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/dense-mvs-env/bin/python
+        worker_module: dense_mvs_worker
+        executable: /absolute/path/to/colmap-4.0.4/bin/colmap
+        use_gpu: true
+        max_image_size: 1600
+        patchmatch_cache_size_gb: 16
+        geom_consistency: true
+    depends_on: [ingest, camera_recovery]

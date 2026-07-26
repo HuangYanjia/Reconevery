@@ -1,0 +1,24 @@
+name: Manual dense MVS Docker
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build exact COLMAP dense image
+        run: |
+          docker build \
+            -f docker/dense-mvs/Dockerfile \
+            -t reconevery/dense-mvs:phase5a .
+      - name: Verify official COLMAP CLI
+        run: |
+          docker run --rm --entrypoint colmap \
+            reconevery/dense-mvs:phase5a -h | grep 'COLMAP 4.0.4'
+      - name: Verify isolated worker import
+        run: |
+          docker run --rm --entrypoint python3.10 \
+            reconevery/dense-mvs:phase5a \
+            -c 'import dense_mvs_worker; print(dense_mvs_worker.__version__)'

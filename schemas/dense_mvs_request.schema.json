@@ -1,0 +1,178 @@
+{
+  "$defs": {
+    "DenseSparseModelFile": {
+      "additionalProperties": false,
+      "properties": {
+        "relative_path": {
+          "title": "Relative Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relative_path",
+        "sha256"
+      ],
+      "title": "DenseSparseModelFile",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_reconstruction_path": {
+      "const": "camera/reconstruction.json",
+      "default": "camera/reconstruction.json",
+      "title": "Camera Reconstruction Path",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "executable": {
+      "minLength": 1,
+      "title": "Executable",
+      "type": "string"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "fusion_configuration": {
+      "additionalProperties": true,
+      "title": "Fusion Configuration",
+      "type": "object"
+    },
+    "manifest_path": {
+      "const": "inputs/manifest.json",
+      "default": "inputs/manifest.json",
+      "title": "Manifest Path",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "master_frame_order": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Master Frame Order",
+      "type": "array"
+    },
+    "normalized_frame_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Normalized Frame Hashes",
+      "type": "object"
+    },
+    "normalized_frame_paths": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Normalized Frame Paths",
+      "type": "object"
+    },
+    "official_colmap_commit": {
+      "pattern": "^[0-9a-f]{40}$",
+      "title": "Official Colmap Commit",
+      "type": "string"
+    },
+    "official_colmap_repository": {
+      "const": "https://github.com/colmap/colmap",
+      "title": "Official Colmap Repository",
+      "type": "string"
+    },
+    "official_colmap_version": {
+      "minLength": 1,
+      "title": "Official Colmap Version",
+      "type": "string"
+    },
+    "output_directory": {
+      "const": "reconstruction/dense",
+      "default": "reconstruction/dense",
+      "title": "Output Directory",
+      "type": "string"
+    },
+    "patchmatch_configuration": {
+      "additionalProperties": true,
+      "title": "Patchmatch Configuration",
+      "type": "object"
+    },
+    "registered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Registered Frame Ids",
+      "type": "array"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "selected_sparse_model_files": {
+      "items": {
+        "$ref": "#/$defs/DenseSparseModelFile"
+      },
+      "minItems": 3,
+      "title": "Selected Sparse Model Files",
+      "type": "array"
+    },
+    "undistortion_configuration": {
+      "additionalProperties": true,
+      "title": "Undistortion Configuration",
+      "type": "object"
+    },
+    "unregistered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unregistered Frame Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "master_frame_order",
+    "registered_frame_ids",
+    "unregistered_frame_ids",
+    "normalized_frame_paths",
+    "normalized_frame_hashes",
+    "camera_reconstruction_sha256",
+    "selected_sparse_model_files",
+    "official_colmap_repository",
+    "official_colmap_version",
+    "official_colmap_commit",
+    "executable",
+    "undistortion_configuration",
+    "patchmatch_configuration",
+    "fusion_configuration",
+    "seed"
+  ],
+  "title": "DenseMVSRequest",
+  "type": "object"
+}

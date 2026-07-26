@@ -173,5 +173,13 @@ allowlist, timeout, retries, GPU metadata, healthcheck, provenance, coordinate c
 failure artifacts. It must emit the existing typed contract before any downstream stage accepts
 its work.
 
-Automatic VLM scene inventory, object-level reconstruction/fusion, SceneSmith, Blender, and
-simulator integrations remain later, separate phases.
+## Dense and measured geometry adapters
+
+`dense_mvs` pins official COLMAP 4.0.4 and invokes `image_undistorter`,
+`patch_match_stereo`, and `stereo_fusion` with argument arrays. It preserves official dense maps,
+logs, and a typed reversible frame mapping. `measured_object_geometry` invokes an isolated
+NumPy/OpenCV worker to map binary masks, backproject depth, validate samples across views, and fuse
+surfels. Only declared attempt-local inputs are visible to either worker.
+
+Automatic VLM inventory, hidden-surface completion, SceneSmith, Blender, and simulator
+integrations remain later, separate phases.

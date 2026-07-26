@@ -91,6 +91,12 @@ to `0.373`, but the `0.10` inlier fraction remained approximately `0.141` and re
 structured by chunk. The candidate was therefore retained as diagnostic evidence and not applied
 to canonical object lifting.
 
+## Phase 5A measured geometry
+
+Official COLMAP dense MVS plus mask-constrained multi-view backprojection now provides measured
+visible object surfels independently of GenRecon. Phase 5A does not complete hidden surfaces,
+make objects watertight, infer physics, or establish metric/gravity coordinates.
+
 ## Recommended Phase 2.5
 
 Design optional VLM-assisted scene inventory as a separate prompt-generation stage. It must
@@ -99,8 +105,9 @@ claim exhaustive vocabulary or physical classification without validation.
 
 ## Later phases
 
-- Phase 4.5: separately evaluated hidden-surface completion or object reconstruction.
-- Phase 5: SceneSmith or equivalent scene compiler adapter.
+- Phase 5B: separately evaluated hidden-surface completion or object reconstruction that retains
+  Phase 5A measured assets as immutable evidence.
+- Phase 6: SceneSmith or equivalent scene compiler adapter.
 - Phase 6: physics repair and explicit simulator exports.
 
 Each phase must preserve the canonical Scene IR boundary and add real-adapter tests without making

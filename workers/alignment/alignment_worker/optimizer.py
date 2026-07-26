@@ -32,7 +32,6 @@ def optimize_candidate(
     initial_matrix: Any,
     mesh_samples: Any,
     training_points: Any,
-    validation_points: Any,
     scene_diagonal: float,
     configuration: dict[str, Any],
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
@@ -58,12 +57,6 @@ def optimize_candidate(
         updated = umeyama_similarity(source, target)
         delta = float(np.linalg.norm(updated - matrix, ord="fro"))
         matrix = updated
-        validation = point_surface_metrics(
-            mesh_samples,
-            validation_points,
-            matrix,
-            scene_diagonal,
-        )
         decomposition = decompose_similarity(matrix, scene_diagonal)
         loss = cauchy_loss(
             distances[mask] / max(scene_diagonal, 1e-12),
@@ -82,7 +75,7 @@ def optimize_candidate(
                 "translation_scene_diagonal_ratio": decomposition[
                     "translation_scene_diagonal_ratio"
                 ],
-                "validation_point_to_surface_median": validation["median"],
+                "validation_point_to_surface_median": None,
                 "converged": converged,
             }
         )
@@ -106,15 +99,7 @@ def optimize_candidate(
         matrix,
         scene_diagonal,
     )
-    validation_point = point_surface_metrics(
-        mesh_samples,
-        validation_points,
-        matrix,
-        scene_diagonal,
-    )
-    objective = (
-        validation_point["median"] if validation_point["median"] is not None else float("inf")
-    )
+    objective = train_point["median"] if train_point["median"] is not None else float("inf")
     candidate = {
         "candidate_id": candidate_id,
         "initialization_id": initialization_id,
@@ -128,7 +113,6 @@ def optimize_candidate(
         "hit_parameter_bound": not all(bounds.values()),
         "correspondence_collapsed": correspondence_collapsed,
         "training_point_metrics": train_point,
-        "validation_point_metrics": validation_point,
         "objective": float(objective),
         "selected": False,
         "rejection_reason": (
@@ -141,3 +125,19 @@ def optimize_candidate(
         "transform": decomposition,
     }
     return candidate, iterations
+
+
+def select_candidate_by_training_objective(
+    candidates: list[dict[str, object]],
+) -> dict[str, object]:
+    plausible = [
+        candidate
+        for candidate in candidates
+        if candidate["finite"]
+        and not candidate["hit_parameter_bound"]
+        and not candidate["correspondence_collapsed"]
+    ]
+    return min(
+        plausible or candidates,
+        key=lambda item: (float(item["objective"]), str(item["candidate_id"])),
+    )

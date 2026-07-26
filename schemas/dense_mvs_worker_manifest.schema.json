@@ -1,0 +1,176 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "build_configuration": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Build Configuration",
+      "type": "object"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "colmap_license": {
+      "minLength": 1,
+      "title": "Colmap License",
+      "type": "string"
+    },
+    "command_arguments": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": "Command Arguments",
+      "type": "object"
+    },
+    "compiler": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Compiler"
+    },
+    "cuda_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cuda Version"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "official_colmap_commit": {
+      "pattern": "^[0-9a-f]{40}$",
+      "title": "Official Colmap Commit",
+      "type": "string"
+    },
+    "official_colmap_repository": {
+      "const": "https://github.com/colmap/colmap",
+      "title": "Official Colmap Repository",
+      "type": "string"
+    },
+    "official_colmap_version": {
+      "minLength": 1,
+      "title": "Official Colmap Version",
+      "type": "string"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "raw_output_paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Raw Output Paths",
+      "type": "array"
+    },
+    "registered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Registered Frame Ids",
+      "type": "array"
+    },
+    "request_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Request Sha256",
+      "type": "string"
+    },
+    "return_codes": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Return Codes",
+      "type": "object"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "worker_version": {
+      "minLength": 1,
+      "title": "Worker Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "worker_version",
+    "official_colmap_repository",
+    "official_colmap_version",
+    "official_colmap_commit",
+    "colmap_license",
+    "build_configuration",
+    "request_sha256",
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "registered_frame_ids",
+    "command_arguments",
+    "return_codes",
+    "runtime_seconds",
+    "raw_output_paths"
+  ],
+  "title": "DenseMVSWorkerManifest",
+  "type": "object"
+}

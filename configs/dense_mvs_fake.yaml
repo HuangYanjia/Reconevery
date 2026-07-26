@@ -1,0 +1,13 @@
+seed: 42
+stages:
+  dense_mvs:
+    adapter:
+      name: dense_mvs
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_dense_mvs_worker.py
+        use_gpu: false
+        max_image_size: 1600
+    depends_on: [ingest, camera_recovery]

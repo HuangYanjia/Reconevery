@@ -1,0 +1,275 @@
+{
+  "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "DenseFrameRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "colmap_image_id": {
+          "exclusiveMinimum": 0,
+          "title": "Colmap Image Id",
+          "type": "integer"
+        },
+        "dense_camera_id": {
+          "exclusiveMinimum": 0,
+          "title": "Dense Camera Id",
+          "type": "integer"
+        },
+        "dense_camera_model": {
+          "minLength": 1,
+          "title": "Dense Camera Model",
+          "type": "string"
+        },
+        "dense_dimensions": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Dense Dimensions",
+          "type": "array"
+        },
+        "dense_intrinsics": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Dense Intrinsics",
+          "type": "array"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "source_dimensions": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Source Dimensions",
+          "type": "array"
+        },
+        "source_relative_path": {
+          "title": "Source Relative Path",
+          "type": "string"
+        },
+        "source_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Sha256",
+          "type": "string"
+        },
+        "workspace_filename": {
+          "title": "Workspace Filename",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frame_id",
+        "source_relative_path",
+        "source_sha256",
+        "colmap_image_id",
+        "workspace_filename",
+        "source_dimensions",
+        "dense_dimensions",
+        "dense_camera_id",
+        "dense_camera_model",
+        "dense_intrinsics"
+      ],
+      "title": "DenseFrameRecord",
+      "type": "object"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "coordinate_convention": {
+      "$ref": "#/$defs/CoordinateConvention"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "frames": {
+      "items": {
+        "$ref": "#/$defs/DenseFrameRecord"
+      },
+      "minItems": 1,
+      "title": "Frames",
+      "type": "array"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "patch_match_config_path": {
+      "title": "Patch Match Config Path",
+      "type": "string"
+    },
+    "patch_match_config_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Patch Match Config Sha256",
+      "type": "string"
+    },
+    "registered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Registered Frame Ids",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_sparse_model_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Selected Sparse Model Hashes",
+      "type": "object"
+    },
+    "workspace_path": {
+      "const": "reconstruction/dense/workspace",
+      "default": "reconstruction/dense/workspace",
+      "title": "Workspace Path",
+      "type": "string"
+    }
+  },
+  "required": [
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "selected_sparse_model_hashes",
+    "registered_frame_ids",
+    "frames",
+    "patch_match_config_path",
+    "patch_match_config_sha256",
+    "coordinate_convention"
+  ],
+  "title": "DenseWorkspaceManifest",
+  "type": "object"
+}

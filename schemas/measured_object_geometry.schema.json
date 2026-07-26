@@ -1,0 +1,690 @@
+{
+  "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "AssetType": {
+      "enum": [
+        "unclassified",
+        "static_structure",
+        "rigid",
+        "articulated",
+        "deformable",
+        "fluid_or_particle",
+        "ignore"
+      ],
+      "title": "AssetType",
+      "type": "string"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "ConfidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "minLength": 1,
+          "title": "Method",
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "score",
+        "method"
+      ],
+      "title": "ConfidenceRecord",
+      "type": "object"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "GeometrySourceType": {
+      "enum": [
+        "measured",
+        "radiance_field",
+        "generated",
+        "retrieved",
+        "fused",
+        "mock"
+      ],
+      "title": "GeometrySourceType",
+      "type": "string"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "MeasuredObjectHypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_type_hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssetType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "canonical_gravity_alignment_known": {
+          "const": false,
+          "default": false,
+          "title": "Canonical Gravity Alignment Known",
+          "type": "boolean"
+        },
+        "completeness_confidence": {
+          "default": 0.0,
+          "maximum": 0,
+          "minimum": 0,
+          "title": "Completeness Confidence",
+          "type": "number"
+        },
+        "connected_component_count": {
+          "minimum": 0,
+          "title": "Connected Component Count",
+          "type": "integer"
+        },
+        "coordinate_convention": {
+          "$ref": "#/$defs/CoordinateConvention"
+        },
+        "depth_consistency": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Depth Consistency",
+          "type": "number"
+        },
+        "fused_surfel_count": {
+          "minimum": 0,
+          "title": "Fused Surfel Count",
+          "type": "integer"
+        },
+        "geometry_source": {
+          "const": "measured",
+          "default": "measured",
+          "title": "Geometry Source",
+          "type": "string"
+        },
+        "geometry_status": {
+          "const": "partial_measured",
+          "default": "partial_measured",
+          "title": "Geometry Status",
+          "type": "string"
+        },
+        "hidden_surface_completion": {
+          "const": "not_implemented",
+          "default": "not_implemented",
+          "title": "Hidden Surface Completion",
+          "type": "string"
+        },
+        "measurement_confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Measurement Confidence",
+          "type": "number"
+        },
+        "metric_scale_known": {
+          "const": false,
+          "default": false,
+          "title": "Metric Scale Known",
+          "type": "boolean"
+        },
+        "normal_consistency": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Normal Consistency",
+          "type": "number"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "observations": {
+          "items": {
+            "$ref": "#/$defs/MeasuredObjectObservation"
+          },
+          "title": "Observations",
+          "type": "array"
+        },
+        "observations_with_valid_dense_depth": {
+          "minimum": 0,
+          "title": "Observations With Valid Dense Depth",
+          "type": "integer"
+        },
+        "observed_surface": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObservedSurfaceMeshManifest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "point_cloud": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeasuredPointCloudManifest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "prompt_id": {
+          "minLength": 1,
+          "title": "Prompt Id",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/ProvenanceRecord"
+        },
+        "raw_measured_sample_count": {
+          "minimum": 0,
+          "title": "Raw Measured Sample Count",
+          "type": "integer"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "registered_mask_observations": {
+          "minimum": 0,
+          "title": "Registered Mask Observations",
+          "type": "integer"
+        },
+        "reprojection_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Reprojection Iou",
+          "type": "number"
+        },
+        "reprojection_precision": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Reprojection Precision",
+          "type": "number"
+        },
+        "reprojection_recall": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Reprojection Recall",
+          "type": "number"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus"
+        },
+        "semantic_label": {
+          "minLength": 1,
+          "title": "Semantic Label",
+          "type": "string"
+        },
+        "sim_ready": {
+          "const": false,
+          "default": false,
+          "title": "Sim Ready",
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "partial",
+            "unresolved"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "supporting_view_count": {
+          "minimum": 0,
+          "title": "Supporting View Count",
+          "type": "integer"
+        },
+        "surfel_cloud": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeasuredPointCloudManifest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "validated_sample_count": {
+          "minimum": 0,
+          "title": "Validated Sample Count",
+          "type": "integer"
+        },
+        "visible_mask_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Visible Mask Coverage",
+          "type": "number"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        },
+        "watertight": {
+          "const": false,
+          "default": false,
+          "title": "Watertight",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "object_id",
+        "semantic_label",
+        "prompt_id",
+        "status",
+        "registered_mask_observations",
+        "observations_with_valid_dense_depth",
+        "raw_measured_sample_count",
+        "validated_sample_count",
+        "fused_surfel_count",
+        "supporting_view_count",
+        "observations",
+        "depth_consistency",
+        "normal_consistency",
+        "reprojection_precision",
+        "reprojection_recall",
+        "reprojection_iou",
+        "visible_mask_coverage",
+        "connected_component_count",
+        "measurement_confidence",
+        "coordinate_convention",
+        "scale_status",
+        "provenance"
+      ],
+      "title": "MeasuredObjectHypothesis",
+      "type": "object"
+    },
+    "MeasuredObjectObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "contradicting_view_count": {
+          "minimum": 0,
+          "title": "Contradicting View Count",
+          "type": "integer"
+        },
+        "depth_residual_median": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Residual Median"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "mask_support_fraction": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mask Support Fraction",
+          "type": "number"
+        },
+        "raw_sample_count": {
+          "minimum": 0,
+          "title": "Raw Sample Count",
+          "type": "integer"
+        },
+        "registered": {
+          "const": true,
+          "default": true,
+          "title": "Registered",
+          "type": "boolean"
+        },
+        "supporting_view_count": {
+          "minimum": 0,
+          "title": "Supporting View Count",
+          "type": "integer"
+        },
+        "validated_sample_count": {
+          "minimum": 0,
+          "title": "Validated Sample Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "frame_id",
+        "raw_sample_count",
+        "validated_sample_count",
+        "supporting_view_count",
+        "contradicting_view_count",
+        "mask_support_fraction"
+      ],
+      "title": "MeasuredObjectObservation",
+      "type": "object"
+    },
+    "MeasuredPointCloudManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "has_colors": {
+          "title": "Has Colors",
+          "type": "boolean"
+        },
+        "has_normals": {
+          "title": "Has Normals",
+          "type": "boolean"
+        },
+        "point_count": {
+          "exclusiveMinimum": 0,
+          "title": "Point Count",
+          "type": "integer"
+        },
+        "relative_path": {
+          "title": "Relative Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relative_path",
+        "sha256",
+        "point_count",
+        "has_normals",
+        "has_colors"
+      ],
+      "title": "MeasuredPointCloudManifest",
+      "type": "object"
+    },
+    "ObservedSurfaceMeshManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "face_count": {
+          "exclusiveMinimum": 0,
+          "title": "Face Count",
+          "type": "integer"
+        },
+        "relative_path": {
+          "title": "Relative Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        },
+        "surface_type": {
+          "const": "observed_depth_triangulation",
+          "title": "Surface Type",
+          "type": "string"
+        },
+        "vertex_count": {
+          "exclusiveMinimum": 0,
+          "title": "Vertex Count",
+          "type": "integer"
+        },
+        "watertight": {
+          "const": false,
+          "default": false,
+          "title": "Watertight",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "relative_path",
+        "sha256",
+        "vertex_count",
+        "face_count",
+        "surface_type"
+      ],
+      "title": "ObservedSurfaceMeshManifest",
+      "type": "object"
+    },
+    "ProvenanceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_name": {
+          "minLength": 1,
+          "title": "Adapter Name",
+          "type": "string"
+        },
+        "adapter_version": {
+          "minLength": 1,
+          "title": "Adapter Version",
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ConfidenceRecord"
+        },
+        "configuration": {
+          "additionalProperties": true,
+          "title": "Configuration",
+          "type": "object"
+        },
+        "input_artifact_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Artifact Paths",
+          "type": "array"
+        },
+        "output_artifact_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Artifact Paths",
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/$defs/GeometrySourceType"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter_name",
+        "adapter_version",
+        "confidence",
+        "source"
+      ],
+      "title": "ProvenanceRecord",
+      "type": "object"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "coordinate_convention": {
+      "$ref": "#/$defs/CoordinateConvention"
+    },
+    "dense_workspace_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Dense Workspace Manifest Sha256",
+      "type": "string"
+    },
+    "depth_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Depth Manifest Sha256",
+      "type": "string"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "generated_geometry_used_as_source": {
+      "const": false,
+      "default": false,
+      "title": "Generated Geometry Used As Source",
+      "type": "boolean"
+    },
+    "hypotheses": {
+      "items": {
+        "$ref": "#/$defs/MeasuredObjectHypothesis"
+      },
+      "title": "Hypotheses",
+      "type": "array"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "scale_status": {
+      "$ref": "#/$defs/ScaleStatus"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segmentation_tracking_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Segmentation Tracking Sha256",
+      "type": "string"
+    },
+    "undistortion_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Undistortion Manifest Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "segmentation_tracking_sha256",
+    "dense_workspace_manifest_sha256",
+    "undistortion_manifest_sha256",
+    "depth_manifest_sha256",
+    "hypotheses",
+    "coordinate_convention",
+    "scale_status"
+  ],
+  "title": "MeasuredObjectGeometryArtifact",
+  "type": "object"
+}

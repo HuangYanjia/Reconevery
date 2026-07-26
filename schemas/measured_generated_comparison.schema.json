@@ -1,0 +1,139 @@
+{
+  "$defs": {
+    "MeasuredGeneratedObjectComparison": {
+      "additionalProperties": false,
+      "properties": {
+        "diagnosis": {
+          "enum": [
+            "not_computed",
+            "consistent",
+            "genrecon_missing_object_geometry",
+            "genrecon_displaced_geometry",
+            "genrecon_over_completed_geometry",
+            "mvs_insufficient_geometry"
+          ],
+          "title": "Diagnosis",
+          "type": "string"
+        },
+        "genrecon_hypothesis_covered_by_measurement": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Genrecon Hypothesis Covered By Measurement"
+        },
+        "measured_surface_covered_by_genrecon": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Surface Covered By Genrecon"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "point_to_genrecon_surface_median": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Point To Genrecon Surface Median"
+        },
+        "rendered_depth_discrepancy": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rendered Depth Discrepancy"
+        },
+        "reprojection_precision": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Reprojection Precision",
+          "type": "number"
+        },
+        "reprojection_recall": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Reprojection Recall",
+          "type": "number"
+        }
+      },
+      "required": [
+        "object_id",
+        "reprojection_precision",
+        "reprojection_recall",
+        "diagnosis"
+      ],
+      "title": "MeasuredGeneratedObjectComparison",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "diagnostic_only": {
+      "const": true,
+      "default": true,
+      "title": "Diagnostic Only",
+      "type": "boolean"
+    },
+    "global_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Reconstruction Sha256",
+      "type": "string"
+    },
+    "measured_geometry_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Measured Geometry Sha256",
+      "type": "string"
+    },
+    "objects": {
+      "items": {
+        "$ref": "#/$defs/MeasuredGeneratedObjectComparison"
+      },
+      "title": "Objects",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "measured_geometry_sha256",
+    "global_reconstruction_sha256",
+    "objects"
+  ],
+  "title": "MeasuredGeneratedComparisonArtifact",
+  "type": "object"
+}

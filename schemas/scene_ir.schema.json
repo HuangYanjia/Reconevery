@@ -416,7 +416,10 @@
         "geometry_status": {
           "anyOf": [
             {
-              "const": "partial_observation_supported",
+              "enum": [
+                "partial_observation_supported",
+                "partial_measured"
+              ],
               "type": "string"
             },
             {
@@ -762,7 +765,10 @@
         "geometry_status": {
           "anyOf": [
             {
-              "const": "partial_observation_supported",
+              "enum": [
+                "partial_observation_supported",
+                "partial_measured"
+              ],
               "type": "string"
             },
             {
@@ -1317,7 +1323,8 @@
         "0.1.0",
         "0.1.1",
         "0.1.2",
-        "0.1.3"
+        "0.1.3",
+        "0.1.4"
       ],
       "title": "Schema Version",
       "type": "string"

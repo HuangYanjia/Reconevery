@@ -285,7 +285,7 @@ class GeometryAsset(StrictModel):
     source: GeometrySourceType
     coordinate_convention: CoordinateConvention | None = None
     scale_status: ScaleStatus | None = None
-    geometry_status: Literal["partial_observation_supported"] | None = None
+    geometry_status: Literal["partial_observation_supported", "partial_measured"] | None = None
     completion_status: Literal["not_completed"] | None = None
     sim_ready: bool | None = None
     source_asset_id: Identifier | None = None
@@ -412,7 +412,7 @@ class ObjectInstance(StrictModel):
     collision_asset_ids: list[Identifier] = Field(default_factory=list)
     physics: PhysicsProperties = Field(default_factory=PhysicsProperties)
     articulation: Articulation | None = None
-    geometry_status: Literal["partial_observation_supported"] | None = None
+    geometry_status: Literal["partial_observation_supported", "partial_measured"] | None = None
     completion_status: Literal["not_completed"] | None = None
     sim_ready: bool | None = None
     provenance: list[ProvenanceRecord] = Field(default_factory=list)
@@ -452,7 +452,7 @@ class ValidationReport(StrictModel):
 
 
 class SceneIR(StrictModel):
-    schema_version: Literal["0.1.0", "0.1.1", "0.1.2", "0.1.3"] = "0.1.1"
+    schema_version: Literal["0.1.0", "0.1.1", "0.1.2", "0.1.3", "0.1.4"] = "0.1.1"
     metadata: SceneMetadata
     cameras: list[Camera] = Field(default_factory=list)
     frames: list[FrameObservation] = Field(default_factory=list)

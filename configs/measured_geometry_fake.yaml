@@ -1,0 +1,12 @@
+seed: 42
+stages:
+  measured_object_geometry:
+    adapter:
+      name: measured_object_geometry
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_measured_geometry_worker.py
+        fake_mode: success
+    depends_on: [camera_recovery, segmentation_tracking, dense_mvs]
