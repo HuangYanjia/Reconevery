@@ -1,0 +1,96 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "failed_depth_map_count": {
+      "minimum": 0,
+      "title": "Failed Depth Map Count",
+      "type": "integer"
+    },
+    "fused_point_count": {
+      "exclusiveMinimum": 0,
+      "title": "Fused Point Count",
+      "type": "integer"
+    },
+    "fusion_seconds": {
+      "minimum": 0,
+      "title": "Fusion Seconds",
+      "type": "number"
+    },
+    "image_undistortion_seconds": {
+      "minimum": 0,
+      "title": "Image Undistortion Seconds",
+      "type": "number"
+    },
+    "patchmatch_seconds": {
+      "minimum": 0,
+      "title": "Patchmatch Seconds",
+      "type": "number"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "registered_frame_count": {
+      "exclusiveMinimum": 0,
+      "title": "Registered Frame Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "successful_depth_map_count": {
+      "minimum": 0,
+      "title": "Successful Depth Map Count",
+      "type": "integer"
+    },
+    "total_runtime_seconds": {
+      "minimum": 0,
+      "title": "Total Runtime Seconds",
+      "type": "number"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "registered_frame_count",
+    "successful_depth_map_count",
+    "failed_depth_map_count",
+    "fused_point_count",
+    "image_undistortion_seconds",
+    "patchmatch_seconds",
+    "fusion_seconds",
+    "total_runtime_seconds"
+  ],
+  "title": "DenseMVSDiagnostics",
+  "type": "object"
+}

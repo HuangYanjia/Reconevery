@@ -22,7 +22,11 @@ from alignment_worker.diagnostics import (
     residual_is_structured,
 )
 from alignment_worker.mesh_sampling import sample_mesh_surface
-from alignment_worker.optimizer import optimize_candidate, point_surface_metrics
+from alignment_worker.optimizer import (
+    optimize_candidate,
+    point_surface_metrics,
+    select_candidate_by_training_objective,
+)
 from alignment_worker.previews import write_previews
 from alignment_worker.schema import load_request
 from alignment_worker.sim3 import (
@@ -289,21 +293,13 @@ def run_inference(
             initial_matrix=initialization["matrix"],
             mesh_samples=mesh_samples,
             training_points=training_points,
-            validation_points=validation_points,
             scene_diagonal=scene_diagonal,
             configuration=request.optimization_configuration,
         )
         candidates.append(candidate)
         iterations.extend(candidate_iterations)
     correspondence_seconds = time.monotonic() - correspondence_start
-    plausible = [
-        candidate
-        for candidate in candidates
-        if candidate["finite"]
-        and not candidate["hit_parameter_bound"]
-        and not candidate["correspondence_collapsed"]
-    ]
-    best = min(plausible or candidates, key=lambda item: float(item["objective"]))
+    best = select_candidate_by_training_objective(candidates)
     best["selected"] = True
     competing_candidates = ambiguous_candidate_ids(candidates, scene_diagonal=scene_diagonal)
     candidate_matrix = np.asarray(
@@ -461,7 +457,12 @@ def run_inference(
     selected_id = str(best["candidate_id"])
     for candidate in candidates:
         train_point = candidate.pop("training_point_metrics")
-        validation_point = candidate.pop("validation_point_metrics")
+        validation_point = point_surface_metrics(
+            mesh_samples,
+            validation_points,
+            candidate["matrix_original_mesh_to_aligned_colmap"],
+            scene_diagonal,
+        )
         candidate.pop("transform")
         if candidate["candidate_id"] == selected_id:
             candidate["training_metrics"] = aligned_training
@@ -470,7 +471,7 @@ def run_inference(
             candidate["training_metrics"] = _point_only_metrics(train_point)
             candidate["validation_metrics"] = _point_only_metrics(validation_point)
         if not candidate["selected"] and candidate["rejection_reason"] is None:
-            candidate["rejection_reason"] = "higher_heldout_point_surface_objective"
+            candidate["rejection_reason"] = "higher_training_point_surface_objective"
 
     chunks = chunk_residual_metrics(
         baseline_records=baseline_records,

@@ -1,0 +1,203 @@
+{
+  "$defs": {
+    "DenseUndistortionRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "dense_camera_model": {
+          "const": "PINHOLE",
+          "title": "Dense Camera Model",
+          "type": "string"
+        },
+        "dense_dimensions": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Dense Dimensions",
+          "type": "array"
+        },
+        "dense_intrinsics": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Dense Intrinsics",
+          "type": "array"
+        },
+        "dense_rgb_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Dense Rgb Hash",
+          "type": "string"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "map_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Map Hash",
+          "type": "string"
+        },
+        "mask_resampling": {
+          "const": "nearest",
+          "default": "nearest",
+          "title": "Mask Resampling",
+          "type": "string"
+        },
+        "rgb_remap_mean_absolute_error": {
+          "minimum": 0,
+          "title": "Rgb Remap Mean Absolute Error",
+          "type": "number"
+        },
+        "roi_xywh": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Roi Xywh"
+        },
+        "source_camera_model": {
+          "minLength": 1,
+          "title": "Source Camera Model",
+          "type": "string"
+        },
+        "source_dimensions": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Source Dimensions",
+          "type": "array"
+        },
+        "source_distortion": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Source Distortion",
+          "type": "array"
+        },
+        "source_intrinsics": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Source Intrinsics",
+          "type": "array"
+        },
+        "source_rgb_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Rgb Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frame_id",
+        "source_camera_model",
+        "source_intrinsics",
+        "source_distortion",
+        "source_dimensions",
+        "dense_camera_model",
+        "dense_intrinsics",
+        "dense_dimensions",
+        "map_hash",
+        "source_rgb_hash",
+        "dense_rgb_hash",
+        "rgb_remap_mean_absolute_error"
+      ],
+      "title": "DenseUndistortionRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "policy": {
+      "const": "official_colmap_image_undistorter",
+      "title": "Policy",
+      "type": "string"
+    },
+    "records": {
+      "items": {
+        "$ref": "#/$defs/DenseUndistortionRecord"
+      },
+      "minItems": 1,
+      "title": "Records",
+      "type": "array"
+    },
+    "rgb_remap_tolerance": {
+      "minimum": 0,
+      "title": "Rgb Remap Tolerance",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "policy",
+    "records",
+    "rgb_remap_tolerance"
+  ],
+  "title": "DenseUndistortionManifest",
+  "type": "object"
+}

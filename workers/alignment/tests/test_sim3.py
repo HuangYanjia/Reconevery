@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 from alignment_worker.diagnostics import ambiguous_candidate_ids, residual_is_structured
+from alignment_worker.optimizer import select_candidate_by_training_objective
 from alignment_worker.sim3 import apply_transform, decompose_similarity, umeyama_similarity
 from alignment_worker.transform_chain import _render_equivalence
 
@@ -144,3 +145,30 @@ def test_working_and_colmap_frame_renders_are_equivalent() -> None:
     assert depth_error is not None
     assert depth_error < 1e-5
     assert silhouette_iou >= 0.999
+
+
+def test_validation_evidence_cannot_change_candidate_selection() -> None:
+    candidates = [
+        {
+            "candidate_id": "training_winner",
+            "objective": 0.1,
+            "finite": True,
+            "hit_parameter_bound": False,
+            "correspondence_collapsed": False,
+            "validation_metrics": {"median": 10.0},
+        },
+        {
+            "candidate_id": "validation_winner",
+            "objective": 0.2,
+            "finite": True,
+            "hit_parameter_bound": False,
+            "correspondence_collapsed": False,
+            "validation_metrics": {"median": 0.0},
+        },
+    ]
+    selected = select_candidate_by_training_objective(candidates)
+    candidates[0]["validation_metrics"] = {"median": 1000.0}
+    candidates[1]["validation_metrics"] = {"median": 0.0}
+
+    assert selected["candidate_id"] == "training_winner"
+    assert select_candidate_by_training_objective(candidates)["candidate_id"] == "training_winner"

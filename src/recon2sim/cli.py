@@ -18,12 +18,20 @@ from recon2sim.artifacts import (
     CameraMeshAlignmentPreviewManifest,
     CameraMeshAlignmentResult,
     CameraReconstruction,
+    DenseDepthManifest,
+    DenseFusionArtifact,
+    DenseMVSDiagnostics,
+    DenseWorkspaceManifest,
     EndToEndConsistencyReport,
     FrameQualityReport,
     GenReconWorkerManifest,
     GlobalSceneDiagnostics,
     GlobalSceneReconstructionArtifact,
     IngestManifest,
+    MeasuredGeneratedComparisonArtifact,
+    MeasuredObjectDiagnostics,
+    MeasuredObjectGeometryArtifact,
+    MeasuredObjectHypothesis,
     ObjectLiftingAlignmentComparison,
     ObjectSurfaceDiagnostics,
     ObjectSurfaceEvidenceArtifact,
@@ -31,6 +39,7 @@ from recon2sim.artifacts import (
     ObjectSurfaceMethodComparison,
     Phase4_2ConsistencyReport,
     Phase4ConsistencyReport,
+    Phase5AConsistencyReport,
     Sam3WorkerManifest,
     SegmentationDiagnostics,
     SegmentationPromptManifest,
@@ -79,6 +88,10 @@ alignment_app = typer.Typer(
     help="Inspect and export camera-to-global-mesh alignment artifacts.",
     no_args_is_help=True,
 )
+dense_app = typer.Typer(
+    help="Inspect and export official COLMAP dense MVS artifacts.",
+    no_args_is_help=True,
+)
 app.add_typer(adapters_app, name="adapters")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(camera_app, name="camera")
@@ -87,6 +100,7 @@ app.add_typer(reconstruction_app, name="reconstruction")
 app.add_typer(validation_app, name="validation")
 app.add_typer(objects_app, name="objects")
 app.add_typer(alignment_app, name="alignment")
+app.add_typer(dense_app, name="dense")
 
 
 @app.command()
@@ -1124,3 +1138,266 @@ def verify_phase4_2(
         failed = [check.check_id for check in report.checks if not check.passed]
         raise typer.BadParameter(f"Phase 4.2 consistency verification failed: {failed}")
     typer.echo(f"Phase 4.2 camera/mesh consistency passed ({len(report.checks)} checks)")
+
+
+@dense_app.command("inspect")
+def inspect_dense_mvs(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    workspace = _artifact_model(
+        run_dir,
+        "reconstruction/dense/workspace_manifest.json",
+        DenseWorkspaceManifest,
+    )
+    diagnostics = _artifact_model(
+        run_dir,
+        "reconstruction/dense/diagnostics.json",
+        DenseMVSDiagnostics,
+    )
+    fusion = _artifact_model(
+        run_dir,
+        "reconstruction/dense/fusion.json",
+        DenseFusionArtifact,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "registered_frames": diagnostics.registered_frame_count,
+                "successful_depth_maps": diagnostics.successful_depth_map_count,
+                "failed_depth_maps": diagnostics.failed_depth_map_count,
+                "fused_points": fusion.point_count,
+                "scene_bounds": [fusion.bounds_min, fusion.bounds_max],
+                "patchmatch_runtime_seconds": diagnostics.patchmatch_seconds,
+                "fusion_runtime_seconds": diagnostics.fusion_seconds,
+                "peak_gpu_memory_bytes": diagnostics.peak_gpu_memory_bytes,
+                "coordinate_convention": fusion.coordinate_convention.model_dump(mode="json"),
+                "frame_ids": workspace.registered_frame_ids,
+                "warnings": diagnostics.warnings,
+            },
+            indent=2,
+        )
+    )
+
+
+@dense_app.command("inspect-frame")
+def inspect_dense_frame(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    frame_id: Annotated[str, typer.Argument(help="Registered canonical frame ID.")],
+) -> None:
+    depth = _artifact_model(
+        run_dir,
+        "reconstruction/dense/depth_manifest.json",
+        DenseDepthManifest,
+    )
+    for record in depth.records:
+        if record.frame_id == frame_id:
+            typer.echo(json.dumps(record.model_dump(mode="json"), indent=2))
+            return
+    raise typer.BadParameter(f"dense MVS has no successful depth map for {frame_id!r}")
+
+
+@dense_app.command("render-previews")
+def render_dense_previews(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    root = run_dir / "reconstruction" / "dense" / "previews"
+    expected = [
+        root / f"{name}.png"
+        for name in (
+            "depth_contact_sheet",
+            "normal_contact_sheet",
+            "consistency_contact_sheet",
+            "fused_point_cloud",
+            "camera_dense_coverage",
+        )
+    ]
+    missing = [path.name for path in expected if not path.is_file()]
+    if missing:
+        raise typer.BadParameter(f"dense preview artifacts are missing: {missing}")
+    typer.echo("dense MVS previews are present and deterministic")
+
+
+@dense_app.command("export-fused")
+def export_dense_fused(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    output: Annotated[Path, typer.Option("--output", help="Destination PLY path.")],
+) -> None:
+    source = run_dir / "reconstruction" / "dense" / "fused.ply"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, output)
+    typer.echo(f"exported dense fused point cloud to {output}")
+
+
+def _measured_artifact(run_dir: Path) -> MeasuredObjectGeometryArtifact:
+    return _artifact_model(
+        run_dir,
+        "reconstruction/measured_objects/geometry_manifest.json",
+        MeasuredObjectGeometryArtifact,
+    )
+
+
+def _measured_hypothesis(
+    artifact: MeasuredObjectGeometryArtifact, object_id: str
+) -> MeasuredObjectHypothesis:
+    for hypothesis in artifact.hypotheses:
+        if hypothesis.object_id == object_id:
+            return hypothesis
+    raise typer.BadParameter(f"measured geometry has no object {object_id!r}")
+
+
+@objects_app.command("inspect-measured")
+def inspect_measured_objects(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    artifact = _measured_artifact(run_dir)
+    diagnostics = _artifact_model(
+        run_dir,
+        "reconstruction/measured_objects/diagnostics.json",
+        MeasuredObjectDiagnostics,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "tracks": diagnostics.track_count,
+                "accepted": diagnostics.accepted_object_count,
+                "partial": diagnostics.partial_object_count,
+                "unresolved": diagnostics.unresolved_object_count,
+                "raw_samples": diagnostics.raw_sample_count,
+                "validated_samples": diagnostics.validated_sample_count,
+                "surfels": diagnostics.fused_surfel_count,
+                "objects": [
+                    {
+                        "object_id": item.object_id,
+                        "status": item.status,
+                        "surfels": item.fused_surfel_count,
+                        "supporting_views": item.supporting_view_count,
+                        "reprojection_iou": item.reprojection_iou,
+                    }
+                    for item in artifact.hypotheses
+                ],
+                "warnings": diagnostics.warnings,
+            },
+            indent=2,
+        )
+    )
+
+
+@objects_app.command("inspect-measured-object")
+def inspect_measured_object(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Canonical SAM object ID.")],
+) -> None:
+    typer.echo(
+        json.dumps(
+            _measured_hypothesis(_measured_artifact(run_dir), object_id).model_dump(mode="json"),
+            indent=2,
+        )
+    )
+
+
+def _export_measured_path(run_dir: Path, object_id: str, output: Path, *, surface: bool) -> None:
+    hypothesis = _measured_hypothesis(_measured_artifact(run_dir), object_id)
+    record = hypothesis.observed_surface if surface else hypothesis.point_cloud
+    if record is None:
+        kind = "observed surface" if surface else "measured points"
+        raise typer.BadParameter(f"{object_id!r} has no {kind}")
+    source = run_dir / record.relative_path
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, output)
+
+
+@objects_app.command("export-measured-points")
+def export_measured_points(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Canonical SAM object ID.")],
+    output: Annotated[Path, typer.Option("--output", help="Destination PLY path.")],
+) -> None:
+    _export_measured_path(run_dir, object_id, output, surface=False)
+    typer.echo(f"exported measured points for {object_id} to {output}")
+
+
+@objects_app.command("export-observed-surface")
+def export_observed_surface(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Canonical SAM object ID.")],
+    output: Annotated[Path, typer.Option("--output", help="Destination PLY path.")],
+) -> None:
+    _export_measured_path(run_dir, object_id, output, surface=True)
+    typer.echo(f"exported observed-only surface for {object_id} to {output}")
+
+
+@objects_app.command("compare-measured-generated")
+def compare_measured_generated(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Canonical SAM object ID.")],
+) -> None:
+    artifact = _artifact_model(
+        run_dir,
+        "reconstruction/measured_generated/comparison.json",
+        MeasuredGeneratedComparisonArtifact,
+    )
+    for item in artifact.objects:
+        if item.object_id == object_id:
+            typer.echo(json.dumps(item.model_dump(mode="json"), indent=2))
+            return
+    raise typer.BadParameter(f"comparison has no object {object_id!r}")
+
+
+@validation_app.command("inspect-phase5a")
+def inspect_phase5a(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase5a_measured_geometry.json",
+        Phase5AConsistencyReport,
+    )
+    typer.echo(json.dumps(report.model_dump(mode="json"), indent=2))
+
+
+@validation_app.command("verify-phase5a")
+def verify_phase5a(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase5a_measured_geometry.json",
+        Phase5AConsistencyReport,
+    )
+    if not report.passed:
+        failed = [check.check_id for check in report.checks if not check.passed]
+        raise typer.BadParameter(f"Phase 5A consistency verification failed: {failed}")
+    typer.echo(f"Phase 5A measured-geometry consistency passed ({len(report.checks)} checks)")

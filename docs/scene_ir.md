@@ -101,3 +101,8 @@ uv run python scripts/generate_schema.py
 
 Tests compare the complete checked-in schema to `SceneIR.model_json_schema()` and separately assert
 major properties, enum values, numeric bounds, and strict-object behavior.
+
+Phase 5A adds `source=measured`, `geometry_status=partial_measured` assets with
+`completion_status=not_completed`, `sim_ready=false`, and ambiguous scale. A measured
+point/surfel asset and a generated or fused Phase 4 hypothesis may coexist on the same object.
+Neither silently replaces the other, and no measured asset is promoted to collision geometry.

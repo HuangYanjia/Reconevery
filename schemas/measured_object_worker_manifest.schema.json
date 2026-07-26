@@ -1,0 +1,113 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "backend": {
+      "enum": [
+        "fake",
+        "numpy_opencv"
+      ],
+      "title": "Backend",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "depth_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Depth Manifest Sha256",
+      "type": "string"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "raw_output_paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Raw Output Paths",
+      "type": "array"
+    },
+    "request_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Request Sha256",
+      "type": "string"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segmentation_tracking_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Segmentation Tracking Sha256",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "worker_version": {
+      "minLength": 1,
+      "title": "Worker Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "worker_version",
+    "backend",
+    "request_sha256",
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "segmentation_tracking_sha256",
+    "depth_manifest_sha256",
+    "runtime_seconds",
+    "raw_output_paths"
+  ],
+  "title": "MeasuredObjectWorkerManifest",
+  "type": "object"
+}

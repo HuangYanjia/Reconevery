@@ -1,0 +1,14 @@
+seed: 42
+stages:
+  dense_mvs:
+    adapter:
+      name: dense_mvs
+      timeout_s: 43200
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: docker
+        docker_image: reconevery/dense-mvs:phase5a
+        executable: colmap
+        use_gpu: true
+        max_image_size: 1600
+    depends_on: [ingest, camera_recovery]

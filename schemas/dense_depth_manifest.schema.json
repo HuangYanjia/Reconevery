@@ -1,0 +1,174 @@
+{
+  "$defs": {
+    "DenseDepthMapRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "consistency_graph_path": {
+          "title": "Consistency Graph Path",
+          "type": "string"
+        },
+        "consistency_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Consistency Sha256",
+          "type": "string"
+        },
+        "consistency_valid_pixel_count": {
+          "minimum": 0,
+          "title": "Consistency Valid Pixel Count",
+          "type": "integer"
+        },
+        "depth_channels": {
+          "const": 1,
+          "default": 1,
+          "title": "Depth Channels",
+          "type": "integer"
+        },
+        "depth_path": {
+          "title": "Depth Path",
+          "type": "string"
+        },
+        "depth_percentiles": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Depth Percentiles",
+          "type": "object"
+        },
+        "depth_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Depth Sha256",
+          "type": "string"
+        },
+        "dimensions": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Dimensions",
+          "type": "array"
+        },
+        "finite_normal_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Finite Normal Ratio",
+          "type": "number"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "mean_consistency_source_count": {
+          "minimum": 0,
+          "title": "Mean Consistency Source Count",
+          "type": "number"
+        },
+        "median_consistency_source_count": {
+          "minimum": 0,
+          "title": "Median Consistency Source Count",
+          "type": "number"
+        },
+        "normal_channels": {
+          "const": 3,
+          "default": 3,
+          "title": "Normal Channels",
+          "type": "integer"
+        },
+        "normal_path": {
+          "title": "Normal Path",
+          "type": "string"
+        },
+        "normal_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Normal Sha256",
+          "type": "string"
+        },
+        "positive_finite_depth_count": {
+          "minimum": 0,
+          "title": "Positive Finite Depth Count",
+          "type": "integer"
+        },
+        "source_view_ids": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Source View Ids",
+          "type": "array"
+        },
+        "valid_depth_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Valid Depth Ratio",
+          "type": "number"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "frame_id",
+        "depth_path",
+        "normal_path",
+        "consistency_graph_path",
+        "dimensions",
+        "positive_finite_depth_count",
+        "valid_depth_ratio",
+        "depth_percentiles",
+        "finite_normal_ratio",
+        "consistency_valid_pixel_count",
+        "mean_consistency_source_count",
+        "median_consistency_source_count",
+        "source_view_ids",
+        "depth_sha256",
+        "normal_sha256",
+        "consistency_sha256"
+      ],
+      "title": "DenseDepthMapRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "failed_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Failed Frame Ids",
+      "type": "array"
+    },
+    "map_type": {
+      "const": "geometric",
+      "default": "geometric",
+      "title": "Map Type",
+      "type": "string"
+    },
+    "records": {
+      "items": {
+        "$ref": "#/$defs/DenseDepthMapRecord"
+      },
+      "title": "Records",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "records"
+  ],
+  "title": "DenseDepthManifest",
+  "type": "object"
+}

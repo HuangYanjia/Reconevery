@@ -2232,3 +2232,469 @@ class CommandResultArtifact(StrictModel):
     timed_out: bool
     stdout_path: Annotated[str, Field(min_length=1)]
     stderr_path: Annotated[str, Field(min_length=1)]
+
+
+# Phase 5A: measured dense geometry.  These models deliberately contain only
+# serializable metadata so the lightweight core never needs a numerical runtime.
+class DenseSparseModelFile(StrictModel):
+    relative_path: str
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+    @field_validator("relative_path")
+    @classmethod
+    def safe_sparse_path(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class DenseMVSRequest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    run_id: Annotated[str, Field(min_length=1)]
+    manifest_path: Literal["inputs/manifest.json"] = "inputs/manifest.json"
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    master_frame_order: Annotated[list[str], Field(min_length=1)]
+    registered_frame_ids: Annotated[list[str], Field(min_length=1)]
+    unregistered_frame_ids: list[str]
+    normalized_frame_paths: dict[str, str]
+    normalized_frame_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    camera_reconstruction_path: Literal["camera/reconstruction.json"] = "camera/reconstruction.json"
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    selected_sparse_model_files: Annotated[list[DenseSparseModelFile], Field(min_length=3)]
+    official_colmap_repository: Literal["https://github.com/colmap/colmap"]
+    official_colmap_version: Annotated[str, Field(min_length=1)]
+    official_colmap_commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    executable: Annotated[str, Field(min_length=1)]
+    undistortion_configuration: dict[str, object]
+    patchmatch_configuration: dict[str, object]
+    fusion_configuration: dict[str, object]
+    output_directory: Literal["reconstruction/dense"] = "reconstruction/dense"
+    seed: int
+
+    @field_validator("normalized_frame_paths")
+    @classmethod
+    def safe_dense_frame_paths(cls, value: dict[str, str]) -> dict[str, str]:
+        return {frame_id: _relative_artifact_path(path) for frame_id, path in value.items()}
+
+    @model_validator(mode="after")
+    def consistent_dense_request(self) -> Self:
+        master = set(self.master_frame_order)
+        if len(master) != len(self.master_frame_order):
+            raise ValueError("dense MVS master frame order must be unique")
+        if set(self.registered_frame_ids) | set(self.unregistered_frame_ids) != master:
+            raise ValueError("dense MVS registration sets must cover the master frames")
+        if set(self.registered_frame_ids) & set(self.unregistered_frame_ids):
+            raise ValueError("dense MVS registration sets must not overlap")
+        if set(self.normalized_frame_paths) != master:
+            raise ValueError("dense MVS frame paths must exactly cover the master frames")
+        if set(self.normalized_frame_hashes) != master:
+            raise ValueError("dense MVS frame hashes must exactly cover the master frames")
+        ordered_registered = [
+            frame_id
+            for frame_id in self.master_frame_order
+            if frame_id in self.registered_frame_ids
+        ]
+        if self.registered_frame_ids != ordered_registered:
+            raise ValueError("dense MVS registered frames must follow manifest order")
+        names = {
+            PurePosixPath(item.relative_path).name for item in self.selected_sparse_model_files
+        }
+        if names != {"cameras.bin", "images.bin", "points3D.bin"}:
+            raise ValueError("dense MVS requires exactly one complete selected sparse model")
+        return self
+
+
+class DenseFrameRecord(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    source_relative_path: str
+    source_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    colmap_image_id: int = Field(gt=0)
+    workspace_filename: str
+    source_dimensions: tuple[int, int]
+    dense_dimensions: tuple[int, int]
+    dense_camera_id: int = Field(gt=0)
+    dense_camera_model: Annotated[str, Field(min_length=1)]
+    dense_intrinsics: tuple[float, float, float, float]
+
+    @field_validator("source_relative_path", "workspace_filename")
+    @classmethod
+    def safe_dense_record_paths(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class DenseWorkspaceManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    selected_sparse_model_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    registered_frame_ids: Annotated[list[str], Field(min_length=1)]
+    frames: Annotated[list[DenseFrameRecord], Field(min_length=1)]
+    patch_match_config_path: str
+    patch_match_config_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    workspace_path: Literal["reconstruction/dense/workspace"] = "reconstruction/dense/workspace"
+    coordinate_convention: CoordinateConvention
+
+    @field_validator("patch_match_config_path")
+    @classmethod
+    def safe_patchmatch_path(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+    @model_validator(mode="after")
+    def consistent_dense_frames(self) -> Self:
+        if [frame.frame_id for frame in self.frames] != self.registered_frame_ids:
+            raise ValueError("dense frame records must follow registered manifest order")
+        if len(self.registered_frame_ids) != len(set(self.registered_frame_ids)):
+            raise ValueError("dense registered frame IDs must be unique")
+        return self
+
+
+class DenseUndistortionRecord(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    source_camera_model: Annotated[str, Field(min_length=1)]
+    source_intrinsics: tuple[float, float, float, float]
+    source_distortion: list[float]
+    source_dimensions: tuple[int, int]
+    dense_camera_model: Literal["PINHOLE"]
+    dense_intrinsics: tuple[float, float, float, float]
+    dense_dimensions: tuple[int, int]
+    roi_xywh: tuple[int, int, int, int] | None = None
+    map_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    source_rgb_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    dense_rgb_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    rgb_remap_mean_absolute_error: float = Field(ge=0)
+    mask_resampling: Literal["nearest"] = "nearest"
+
+
+class DenseUndistortionManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    policy: Literal["official_colmap_image_undistorter"]
+    records: Annotated[list[DenseUndistortionRecord], Field(min_length=1)]
+    rgb_remap_tolerance: float = Field(ge=0)
+
+
+class DenseDepthMapRecord(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    depth_path: str
+    normal_path: str
+    consistency_graph_path: str
+    dimensions: tuple[int, int]
+    depth_channels: Literal[1] = 1
+    normal_channels: Literal[3] = 3
+    positive_finite_depth_count: int = Field(ge=0)
+    valid_depth_ratio: float = Field(ge=0, le=1)
+    depth_percentiles: dict[str, float]
+    finite_normal_ratio: float = Field(ge=0, le=1)
+    consistency_valid_pixel_count: int = Field(ge=0)
+    mean_consistency_source_count: float = Field(ge=0)
+    median_consistency_source_count: float = Field(ge=0)
+    source_view_ids: list[int]
+    depth_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    normal_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    consistency_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    warnings: list[str] = Field(default_factory=list)
+
+    @field_validator("depth_path", "normal_path", "consistency_graph_path")
+    @classmethod
+    def safe_dense_map_paths(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class DenseDepthManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    map_type: Literal["geometric"] = "geometric"
+    records: list[DenseDepthMapRecord]
+    failed_frame_ids: list[str] = Field(default_factory=list)
+
+
+class DenseFusionArtifact(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    fused_point_cloud_path: Literal["reconstruction/dense/fused.ply"]
+    fused_point_cloud_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    point_count: int = Field(gt=0)
+    normal_count: int = Field(ge=0)
+    bounds_min: tuple[float, float, float]
+    bounds_max: tuple[float, float, float]
+    scene_diagonal_arbitrary_units: float = Field(gt=0)
+    coordinate_convention: CoordinateConvention
+    scale_status: ScaleStatus
+
+
+class DenseMVSDiagnostics(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    registered_frame_count: int = Field(gt=0)
+    successful_depth_map_count: int = Field(ge=0)
+    failed_depth_map_count: int = Field(ge=0)
+    fused_point_count: int = Field(gt=0)
+    image_undistortion_seconds: float = Field(ge=0)
+    patchmatch_seconds: float = Field(ge=0)
+    fusion_seconds: float = Field(ge=0)
+    total_runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    peak_host_memory_bytes: int | None = Field(default=None, ge=0)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class DenseMVSWorkerManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    worker_version: Annotated[str, Field(min_length=1)]
+    official_colmap_repository: Literal["https://github.com/colmap/colmap"]
+    official_colmap_version: Annotated[str, Field(min_length=1)]
+    official_colmap_commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    colmap_license: Annotated[str, Field(min_length=1)]
+    build_configuration: dict[str, str]
+    cuda_version: str | None = None
+    compiler: str | None = None
+    request_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    registered_frame_ids: Annotated[list[str], Field(min_length=1)]
+    command_arguments: dict[str, list[str]]
+    return_codes: dict[str, int]
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    peak_host_memory_bytes: int | None = Field(default=None, ge=0)
+    raw_output_paths: list[str]
+    warnings: list[str] = Field(default_factory=list)
+
+    @field_validator("raw_output_paths")
+    @classmethod
+    def safe_dense_worker_outputs(cls, values: list[str]) -> list[str]:
+        return [_relative_artifact_path(value) for value in values]
+
+
+class MeasuredObjectTrackRequest(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    semantic_label: Annotated[str, Field(min_length=1)]
+    prompt_id: Annotated[str, Field(min_length=1)]
+    asset_type_hint: AssetType | None = None
+    track_coverage: float = Field(ge=0, le=1)
+    mask_paths_by_frame: dict[str, str]
+    frame_scores: dict[str, float]
+
+    @field_validator("mask_paths_by_frame")
+    @classmethod
+    def safe_measured_mask_paths(cls, value: dict[str, str]) -> dict[str, str]:
+        return {frame_id: _relative_artifact_path(path) for frame_id, path in value.items()}
+
+
+class MeasuredObjectGeometryRequest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    run_id: Annotated[str, Field(min_length=1)]
+    manifest_path: Literal["inputs/manifest.json"] = "inputs/manifest.json"
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_path: Literal["camera/reconstruction.json"] = "camera/reconstruction.json"
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    segmentation_tracking_path: Literal["observations/object_tracks.json"] = (
+        "observations/object_tracks.json"
+    )
+    segmentation_tracking_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    object_tracks: list[MeasuredObjectTrackRequest]
+    dense_workspace_manifest_path: Literal["reconstruction/dense/workspace_manifest.json"]
+    dense_workspace_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    undistortion_manifest_path: Literal["reconstruction/dense/undistortion_manifest.json"]
+    undistortion_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    depth_manifest_path: Literal["reconstruction/dense/depth_manifest.json"]
+    depth_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    backprojection_configuration: dict[str, object]
+    consistency_configuration: dict[str, object]
+    surfel_fusion_configuration: dict[str, object]
+    observed_mesh_configuration: dict[str, object]
+    reprojection_configuration: dict[str, object]
+    coordinate_convention: CoordinateConvention
+    output_directory: Literal["reconstruction/measured_objects"] = "reconstruction/measured_objects"
+    seed: int
+
+
+class MeasuredObjectObservation(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    registered: Literal[True] = True
+    raw_sample_count: int = Field(ge=0)
+    validated_sample_count: int = Field(ge=0)
+    supporting_view_count: int = Field(ge=0)
+    contradicting_view_count: int = Field(ge=0)
+    depth_residual_median: float | None = Field(default=None, ge=0)
+    mask_support_fraction: float = Field(ge=0, le=1)
+
+
+class MeasuredPointCloudManifest(StrictModel):
+    relative_path: str
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    point_count: int = Field(gt=0)
+    has_normals: bool
+    has_colors: bool
+
+    @field_validator("relative_path")
+    @classmethod
+    def safe_measured_cloud_path(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class ObservedSurfaceMeshManifest(StrictModel):
+    relative_path: str
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    vertex_count: int = Field(gt=0)
+    face_count: int = Field(gt=0)
+    surface_type: Literal["observed_depth_triangulation"]
+    watertight: Literal[False] = False
+
+    @field_validator("relative_path")
+    @classmethod
+    def safe_observed_mesh_path(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class MeasuredObjectHypothesis(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    semantic_label: Annotated[str, Field(min_length=1)]
+    prompt_id: Annotated[str, Field(min_length=1)]
+    asset_type_hint: AssetType | None = None
+    status: Literal["accepted", "partial", "unresolved"]
+    reason: str | None = None
+    registered_mask_observations: int = Field(ge=0)
+    observations_with_valid_dense_depth: int = Field(ge=0)
+    raw_measured_sample_count: int = Field(ge=0)
+    validated_sample_count: int = Field(ge=0)
+    fused_surfel_count: int = Field(ge=0)
+    supporting_view_count: int = Field(ge=0)
+    point_cloud: MeasuredPointCloudManifest | None = None
+    surfel_cloud: MeasuredPointCloudManifest | None = None
+    observed_surface: ObservedSurfaceMeshManifest | None = None
+    observations: list[MeasuredObjectObservation]
+    depth_consistency: float = Field(ge=0, le=1)
+    normal_consistency: float = Field(ge=0, le=1)
+    reprojection_precision: float = Field(ge=0, le=1)
+    reprojection_recall: float = Field(ge=0, le=1)
+    reprojection_iou: float = Field(ge=0, le=1)
+    visible_mask_coverage: float = Field(ge=0, le=1)
+    connected_component_count: int = Field(ge=0)
+    measurement_confidence: float = Field(ge=0, le=1)
+    completeness_confidence: float = Field(default=0.0, ge=0, le=0)
+    geometry_source: Literal["measured"] = "measured"
+    geometry_status: Literal["partial_measured"] = "partial_measured"
+    hidden_surface_completion: Literal["not_implemented"] = "not_implemented"
+    watertight: Literal[False] = False
+    sim_ready: Literal[False] = False
+    metric_scale_known: Literal[False] = False
+    canonical_gravity_alignment_known: Literal[False] = False
+    coordinate_convention: CoordinateConvention
+    scale_status: ScaleStatus
+    provenance: ProvenanceRecord
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def consistent_measured_geometry(self) -> Self:
+        if self.status == "unresolved":
+            if self.point_cloud is not None or self.surfel_cloud is not None:
+                raise ValueError("unresolved measured objects cannot contain geometry")
+            if not self.reason:
+                raise ValueError("unresolved measured objects require a reason")
+        elif self.point_cloud is None or self.surfel_cloud is None:
+            raise ValueError("accepted or partial measured objects require point and surfel clouds")
+        return self
+
+
+class MeasuredObjectGeometryArtifact(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    segmentation_tracking_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    dense_workspace_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    undistortion_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    depth_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    hypotheses: list[MeasuredObjectHypothesis]
+    coordinate_convention: CoordinateConvention
+    scale_status: ScaleStatus
+    generated_geometry_used_as_source: Literal[False] = False
+
+
+class MeasuredObjectDiagnostics(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    track_count: int = Field(ge=0)
+    accepted_object_count: int = Field(ge=0)
+    partial_object_count: int = Field(ge=0)
+    unresolved_object_count: int = Field(ge=0)
+    raw_sample_count: int = Field(ge=0)
+    validated_sample_count: int = Field(ge=0)
+    fused_surfel_count: int = Field(ge=0)
+    mask_mapping_seconds: float = Field(ge=0)
+    backprojection_seconds: float = Field(ge=0)
+    multiview_validation_seconds: float = Field(ge=0)
+    surfel_fusion_seconds: float = Field(ge=0)
+    observed_mesh_seconds: float = Field(ge=0)
+    preview_seconds: float = Field(ge=0)
+    total_runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    peak_host_memory_bytes: int | None = Field(default=None, ge=0)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class MeasuredObjectWorkerManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    worker_version: Annotated[str, Field(min_length=1)]
+    backend: Literal["fake", "numpy_opencv"]
+    request_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    segmentation_tracking_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    depth_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    peak_host_memory_bytes: int | None = Field(default=None, ge=0)
+    raw_output_paths: list[str]
+    warnings: list[str] = Field(default_factory=list)
+
+    @field_validator("raw_output_paths")
+    @classmethod
+    def safe_measured_worker_outputs(cls, values: list[str]) -> list[str]:
+        return [_relative_artifact_path(value) for value in values]
+
+
+class MeasuredGeneratedObjectComparison(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    point_to_genrecon_surface_median: float | None = Field(default=None, ge=0)
+    rendered_depth_discrepancy: float | None = Field(default=None, ge=0)
+    reprojection_precision: float = Field(ge=0, le=1)
+    reprojection_recall: float = Field(ge=0, le=1)
+    measured_surface_covered_by_genrecon: float | None = Field(default=None, ge=0, le=1)
+    genrecon_hypothesis_covered_by_measurement: float | None = Field(default=None, ge=0, le=1)
+    diagnosis: Literal[
+        "not_computed",
+        "consistent",
+        "genrecon_missing_object_geometry",
+        "genrecon_displaced_geometry",
+        "genrecon_over_completed_geometry",
+        "mvs_insufficient_geometry",
+    ]
+
+
+class MeasuredGeneratedComparisonArtifact(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    measured_geometry_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    objects: list[MeasuredGeneratedObjectComparison]
+    diagnostic_only: Literal[True] = True
+
+
+class Phase5AConsistencyReport(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    passed: bool
+    checks: list[EndToEndConsistencyCheck]
+    measured_dense_geometry_available: bool
+    measured_object_geometry_available: bool
+    generated_geometry_used_as_source: Literal[False] = False
+    hidden_surface_completion_implemented: Literal[False] = False
+    object_replacement_implemented: Literal[False] = False
+    sim_ready_scene_implemented: Literal[False] = False
+    metric_scale_known: Literal[False] = False
+    canonical_gravity_alignment_known: Literal[False] = False
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def phase5a_summary_matches_checks(self) -> Self:
+        if self.passed != all(check.passed for check in self.checks):
+            raise ValueError("Phase 5A pass status must match its checks")
+        return self

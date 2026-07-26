@@ -158,3 +158,11 @@ checks held-out gates and publishes the original mesh plus a typed root transfor
 the PBR GLB by default. Object lifting consumes the transform with `use_if_accepted`, keeps
 original face IDs, and records an unaligned/aligned comparison. The final validator writes
 `scene_ir/phase4_2_scene.json` without mutating Phase 3 or Phase 4 source artifacts.
+
+## Phase 5A measured branch
+
+`camera_recovery -> dense_mvs` and
+`segmentation_tracking + dense_mvs -> measured_object_geometry`. Dense MVS consumes only the
+selected sparse model and registered normalized frames. Measured extraction consumes canonical
+masks and dense maps, never GenRecon. Prompt changes rerun SAM and measured extraction but not
+PatchMatch; GenRecon changes do not invalidate canonical measured geometry.

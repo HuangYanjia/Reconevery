@@ -111,5 +111,11 @@ Behavior changes require tests and documentation. Typed artifact changes require
 checked-in schemas. Adapter changes must document inputs, outputs, schema identifiers, environment
 allowlists, timeout, retry behavior, healthcheck, provenance, and tests.
 
-The next task after Phase 4.2 is a separately reviewed completion or object-reconstruction design.
-Do not conflate visible surface attribution with hidden geometry, physics, or simulator export.
+Phase 5A dense MVS uses official pinned COLMAP out of process. Core code must not import pycolmap,
+NumPy, OpenCV, Open3D, trimesh, PyTorch, or CUDA. Measured object geometry may consume canonical
+SAM masks and official dense maps, but never GenRecon geometry. Keep measured and generated
+hypotheses as separate Scene IR assets.
+
+Observed geometry stays open and partial: do not close holes, infer hidden backsides, create
+collisions, or claim simulation readiness. Completion and object reconstruction remain separately
+reviewed future work.

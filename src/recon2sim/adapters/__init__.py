@@ -13,12 +13,18 @@ from recon2sim.adapters.base import (
 )
 from recon2sim.adapters.colmap import ColmapCameraRecoveryAdapter
 from recon2sim.adapters.command import CommandAdapter, DockerCommandAdapter
+from recon2sim.adapters.dense_mvs import DenseMVSAdapter
 from recon2sim.adapters.genrecon import (
     GenReconCameraPackageAdapter,
     GenReconGlobalReconstructionAdapter,
     Phase3EndToEndConsistencyAdapter,
 )
 from recon2sim.adapters.ingest import FFmpegIngestAdapter
+from recon2sim.adapters.measured_geometry import (
+    MeasuredGeneratedComparisonAdapter,
+    MeasuredObjectGeometryAdapter,
+    Phase5AConsistencyValidationAdapter,
+)
 from recon2sim.adapters.mock import (
     MockCameraRecoveryAdapter,
     MockExportAdapter,
@@ -58,6 +64,10 @@ REGISTRY: dict[str, type[Adapter]] = {
     "phase4_consistency_validation": Phase4ConsistencyValidationAdapter,
     "camera_mesh_alignment": CameraMeshAlignmentAdapter,
     "phase4_2_consistency_validation": Phase4_2ConsistencyValidationAdapter,
+    "dense_mvs": DenseMVSAdapter,
+    "measured_object_geometry": MeasuredObjectGeometryAdapter,
+    "measured_generated_comparison": MeasuredGeneratedComparisonAdapter,
+    "phase5a_consistency_validation": Phase5AConsistencyValidationAdapter,
 }
 
 __all__ = [
@@ -67,6 +77,7 @@ __all__ = [
     "CameraMeshAlignmentAdapter",
     "ColmapCameraRecoveryAdapter",
     "DockerCommandAdapter",
+    "DenseMVSAdapter",
     "FFmpegIngestAdapter",
     "GenReconCameraPackageAdapter",
     "GenReconGlobalReconstructionAdapter",
@@ -74,10 +85,13 @@ __all__ = [
     "InputSpec",
     "OutputSpec",
     "ObjectSurfaceLiftingAdapter",
+    "MeasuredObjectGeometryAdapter",
+    "MeasuredGeneratedComparisonAdapter",
     "REGISTRY",
     "Phase3EndToEndConsistencyAdapter",
     "Phase4ConsistencyValidationAdapter",
     "Phase4_2ConsistencyValidationAdapter",
+    "Phase5AConsistencyValidationAdapter",
     "Sam3SegmentationTrackingAdapter",
     "StageContext",
     "StageResult",

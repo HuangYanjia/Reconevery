@@ -256,5 +256,13 @@ uv run python scripts/generate_schema.py
 Core code imports only lightweight dependencies. Official SAM and GenRecon code, PyTorch, CUDA
 packages, checkpoints, GPU rasterization, SciPy, and Sim(3) optimization exist only in isolated
 workers or Docker images.
-SceneSmith, hidden object completion, physics, simulators, MVS, NeRF, and automatic VLM prompt
-inventory remain outside Phase 4.2.
+SceneSmith, hidden object completion, physics, simulators, NeRF, and automatic VLM prompt
+inventory remain outside Phase 5A.
+
+## Phase 5A: measured object geometry
+
+Phase 5A runs official COLMAP 4.0.4 dense MVS out of process, maps canonical SAM masks into the
+exact undistorted cameras, and fuses multi-view-consistent measured surfels. GenRecon is not a
+source for these canonical measurements. Outputs remain partial, non-watertight, unoriented,
+scale-ambiguous, and not simulation-ready. See `docs/phase_5a_dense_mvs.md`,
+`docs/phase_5a_measured_geometry.md`, and `docs/phase_5a_acceptance.md`.

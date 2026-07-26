@@ -1,0 +1,19 @@
+seed: 42
+stages:
+  measured_object_geometry:
+    adapter:
+      name: measured_object_geometry
+      timeout_s: 14400
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/measured-geometry-env/bin/python
+        worker_module: measured_geometry_worker
+        minimum_consistent_source_views: 2
+        minimum_supporting_views: 2
+        maximum_relative_depth_residual: 0.03
+        voxel_size_source: median_sample_spacing
+        voxel_size_multiplier: 1.5
+        reprojection_splat_radius_pixels: 1
+        minimum_accepted_reprojection_iou: 0.1
+    depends_on: [camera_recovery, segmentation_tracking, dense_mvs]

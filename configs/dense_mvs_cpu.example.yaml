@@ -1,0 +1,15 @@
+seed: 42
+stages:
+  dense_mvs:
+    adapter:
+      name: dense_mvs
+      env: [PATH, HOME, TMPDIR]
+      config:
+        # Official COLMAP 4.0.4 PatchMatchStereo is CUDA-only. This is the
+        # deterministic CPU protocol path used by tests, not real dense MVS.
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_dense_mvs_worker.py
+        use_gpu: false
+        max_image_size: 32
+    depends_on: [ingest, camera_recovery]
