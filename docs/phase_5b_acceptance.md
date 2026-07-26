@@ -24,6 +24,13 @@ verified code/checkpoint identities, native target-camera rendering, registratio
 held-out evaluation, preview inspection, consistency, and full cache hits. The PR
 remains draft when access or a compatible environment is unavailable.
 
+The audit run must retain the original evidence split, anchors, seeds, and held-out
+gates. For SAM 3D Objects it reports native Gaussian and optional visual GLB
+separately, including representation parity. Every candidate reports anchor,
+fitting, and held-out IoU plus valid pixels, occlusion, negative space, depth
+inliers, and a stage-specific failure classification. A zero-IoU generated result is
+interpretable only after the fitting-only measured renderer control is non-empty.
+
 Use a gitignored local configuration with absolute worker/checkpoint paths. Supply
 credentials only in the environment, accept gated terms separately, and prefetch
 official snapshots before enabling offline mode:

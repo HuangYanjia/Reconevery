@@ -36,6 +36,7 @@ def run_healthcheck(config_path: Path) -> dict[str, object]:
     ):
         raise RuntimeError("pipeline_config must be a file inside the verified checkpoint root")
     load_inference_class(Path(checkout_value))
+    import gsplat
     import nvdiffrast.torch as dr
     import torch
     import trimesh
@@ -50,6 +51,7 @@ def run_healthcheck(config_path: Path) -> dict[str, object]:
         "cuda_version": torch.version.cuda,
         "device_name": torch.cuda.get_device_name(0),
         "nvdiffrast_import": dr.__name__,
+        "gsplat_version": getattr(gsplat, "__version__", "unknown"),
         "trimesh_version": trimesh.__version__,
         "official_code_commit": commit,
         "checkpoint_revision": config["checkpoint_revision"],

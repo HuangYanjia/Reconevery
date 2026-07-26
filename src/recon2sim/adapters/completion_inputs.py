@@ -29,11 +29,13 @@ from recon2sim.artifacts import (
     CompletionEvidencePackage,
     CompletionEvidencePreparationRequest,
     CompletionEvidenceSplit,
+    CompletionTrainingMeasuredGeometry,
     CompletionWorkerManifest,
     DenseDepthManifest,
     FrameQualityReport,
     IngestManifest,
     MeasuredObjectGeometryArtifact,
+    MeasuredObjectGeometryRequest,
     SegmentationTrackingArtifact,
 )
 from recon2sim.completion import (
@@ -139,7 +141,7 @@ def _crop_rgba(
 
 class CompletionEvidencePackageAdapter:
     name = "completion_evidence_package"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         config = CompletionInputsAdapterConfig.model_validate(context.config.adapter.config)
@@ -214,14 +216,14 @@ class CompletionEvidencePackageAdapter:
                 minimum_heldout_frames=config.minimum_heldout_frames,
                 fitting_fraction=config.fitting_fraction,
             )
-            training_frames = {
-                *split.generation_anchor_frames,
-                *split.registration_fitting_frames,
-            }
             frame_ids_to_materialize.update(split.generation_anchor_frames)
-            depth_frame_ids_to_materialize.update(training_frames)
+            depth_frame_ids_to_materialize.update(split.registration_fitting_frames)
             mask_paths_to_materialize.update(
-                observations[frame_id].mask_path for frame_id in training_frames
+                observations[frame_id].mask_path
+                for frame_id in {
+                    *split.generation_anchor_frames,
+                    *split.registration_fitting_frames,
+                }
             )
         specs = [
             InputSpec("inputs/manifest.json", "ingest_manifest"),
@@ -236,6 +238,10 @@ class CompletionEvidencePackageAdapter:
             InputSpec(
                 "reconstruction/measured_objects/geometry_manifest.json",
                 "measured_object_geometry",
+            ),
+            InputSpec(
+                "reconstruction/measured_objects/request.json",
+                "measured_object_geometry_request",
             ),
         ]
         specs.extend(
@@ -337,6 +343,7 @@ class CompletionEvidencePackageAdapter:
         depth_path = context.path("reconstruction", "dense", "depth_manifest.json")
         undistortion_path = context.path("reconstruction", "dense", "undistortion_manifest.json")
         measured_path = context.path("reconstruction", "measured_objects", "geometry_manifest.json")
+        measured_request_path = context.path("reconstruction", "measured_objects", "request.json")
         manifest = IngestManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
         frame_qa = FrameQualityReport.model_validate_json(
             context.path("inputs", "frame_qa.json").read_text(encoding="utf-8")
@@ -348,6 +355,9 @@ class CompletionEvidencePackageAdapter:
         depth = DenseDepthManifest.model_validate_json(depth_path.read_text(encoding="utf-8"))
         measured = MeasuredObjectGeometryArtifact.model_validate_json(
             measured_path.read_text(encoding="utf-8")
+        )
+        measured_request = MeasuredObjectGeometryRequest.model_validate_json(
+            measured_request_path.read_text(encoding="utf-8")
         )
         if manifest.frame_sequence_digest is None:
             raise ValueError("completion requires a frame-sequence digest")
@@ -502,15 +512,17 @@ class CompletionEvidencePackageAdapter:
         object_inputs: dict[str, dict[str, object]] = {}
         for split in splits.objects:
             track = tracks_by_id[split.object_id]
+            measured_item = measured_by_id[split.object_id]
             observation_by_id = {item.frame_id: item for item in track.observations}
-            training_frames = [
-                *split.generation_anchor_frames,
-                *split.registration_fitting_frames,
-            ]
+            training_frames = list(split.registration_fitting_frames)
             object_inputs[split.object_id] = {
                 "semantic_label": track.semantic_label,
                 "training_frame_ids": training_frames,
                 "heldout_frame_ids": split.heldout_validation_frames,
+                "frame_scores": {
+                    frame_id: observation_by_id[frame_id].frame_score
+                    for frame_id in training_frames
+                },
                 "training_masks": {
                     frame_id: observation_by_id[frame_id].mask_path for frame_id in training_frames
                 },
@@ -523,6 +535,12 @@ class CompletionEvidencePackageAdapter:
                     for frame_id in training_frames
                 },
                 "measured_point_cloud_path": None,
+                "phase5a_all_view_validated_point_count": (measured_item.validated_sample_count),
+                "phase5a_point_cloud_sha256": (
+                    measured_item.point_cloud.sha256
+                    if measured_item.point_cloud is not None
+                    else None
+                ),
                 "training_geometry_source": "dense_depth_backprojection_only",
             }
         request = CompletionEvidencePreparationRequest(
@@ -538,11 +556,15 @@ class CompletionEvidencePackageAdapter:
             dense_undistortion_manifest_sha256=sha256_file(undistortion_path),
             measured_geometry_path="reconstruction/measured_objects/geometry_manifest.json",
             measured_geometry_sha256=sha256_file(measured_path),
+            measured_geometry_request_path="reconstruction/measured_objects/request.json",
+            measured_geometry_request_sha256=sha256_file(measured_request_path),
             evidence_split_path="reconstruction/completion/evidence_split.json",
             evidence_split_sha256=sha256_file(root / "evidence_split.json"),
             crop_manifest_path="reconstruction/completion/crop_manifest.json",
             crop_manifest_sha256=sha256_file(root / "crop_manifest.json"),
             object_inputs=object_inputs,
+            backprojection_configuration=measured_request.backprojection_configuration,
+            consistency_configuration=measured_request.consistency_configuration,
             coordinate_convention=camera.coordinate_convention,
             output_directory="reconstruction/completion/evidence",
             seed=context.seed,
@@ -583,6 +605,27 @@ class CompletionEvidencePackageAdapter:
         }
         if any(getattr(package, key) != value for key, value in expected.items()):
             raise RuntimeError("completion evidence package lineage does not match request")
+        for item in package.objects:
+            geometry_path = context.path(*Path(item.training_geometry_manifest_path).parts)
+            geometry = CompletionTrainingMeasuredGeometry.model_validate_json(
+                geometry_path.read_text(encoding="utf-8")
+            )
+            if (
+                geometry.object_id != item.object_id
+                or sha256_file(geometry_path) != item.training_geometry_manifest_sha256
+                or geometry.point_cloud_sha256 != item.training_points_sha256
+                or geometry.validated_point_count != item.training_point_count
+                or geometry.renderer_control_mesh_path != item.renderer_control_mesh_path
+                or geometry.renderer_control_mesh_sha256 != item.renderer_control_mesh_sha256
+            ):
+                raise RuntimeError("completion training measured geometry is inconsistent")
+            if item.renderer_control_mesh_path is not None:
+                control_path = context.path(*Path(item.renderer_control_mesh_path).parts)
+                if (
+                    not control_path.is_file()
+                    or sha256_file(control_path) != item.renderer_control_mesh_sha256
+                ):
+                    raise RuntimeError("measured renderer control mesh is inconsistent")
         dynamic = [
             OutputSpec(
                 path.relative_to(context.run_dir).as_posix(),

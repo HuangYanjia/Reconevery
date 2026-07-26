@@ -41,12 +41,46 @@
           "title": "Object Id",
           "type": "string"
         },
+        "renderer_control_mesh_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Renderer Control Mesh Path"
+        },
+        "renderer_control_mesh_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Renderer Control Mesh Sha256"
+        },
         "training_frame_ids": {
           "items": {
             "type": "string"
           },
           "title": "Training Frame Ids",
           "type": "array"
+        },
+        "training_geometry_manifest_path": {
+          "title": "Training Geometry Manifest Path",
+          "type": "string"
+        },
+        "training_geometry_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Training Geometry Manifest Sha256",
+          "type": "string"
         },
         "training_normals_available": {
           "default": false,
@@ -89,6 +123,8 @@
         "training_frame_ids",
         "heldout_frame_ids",
         "training_point_count",
+        "training_geometry_manifest_path",
+        "training_geometry_manifest_sha256",
         "heldout_measurement_manifest_path",
         "heldout_measurement_manifest_sha256"
       ],

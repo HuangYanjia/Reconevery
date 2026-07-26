@@ -42,6 +42,20 @@ def write_points(path: Path, object_id: str) -> None:
     )
 
 
+def write_control_mesh(path: Path, object_id: str) -> None:
+    offset = (int(hashlib.sha256(object_id.encode()).hexdigest()[:4], 16) % 50) / 100
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "ply\nformat ascii 1.0\nelement vertex 4\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "element face 2\nproperty list uchar int vertex_indices\nend_header\n"
+        f"{offset} 0 1\n{offset + 0.1} 0 1\n"
+        f"{offset} 0.1 1\n{offset + 0.1} 0.1 1\n"
+        "3 0 1 2\n3 1 3 2\n",
+        encoding="ascii",
+    )
+
+
 def manifest(
     output_dir: Path,
     request_path: Path,
@@ -76,6 +90,51 @@ def prepare_evidence(request_path: Path, input_root: Path, output_dir: Path) -> 
     for object_id, values in sorted(request["object_inputs"].items()):
         point_path = output_dir / object_id / "training_points.ply"
         write_points(point_path, object_id)
+        control_path = output_dir / object_id / "training_renderer_control_mesh.ply"
+        write_control_mesh(control_path, object_id)
+        training_geometry_path = output_dir / object_id / "training_measured_geometry.json"
+        write_json(
+            training_geometry_path,
+            {
+                "schema_version": "0.1.0",
+                "object_id": object_id,
+                "training_frame_ids": values["training_frame_ids"],
+                "heldout_frame_ids": values["heldout_frame_ids"],
+                "raw_sample_count": 12,
+                "boundary_rejected_count": 2,
+                "invalid_geometry_rejected_count": 1,
+                "sam_score_rejected_count": 0,
+                "consistency_rejected_count": 2,
+                "depth_discontinuity_rejected_count": 1,
+                "multi_view_rejected_count": 2,
+                "validated_point_count": 4,
+                "supporting_fitting_views": values["training_frame_ids"],
+                "point_cloud_path": point_path.relative_to(input_root).as_posix(),
+                "point_cloud_sha256": sha256(point_path),
+                "normal_sha256": "0" * 64,
+                "renderer_control_mesh_path": control_path.relative_to(input_root).as_posix(),
+                "renderer_control_mesh_sha256": sha256(control_path),
+                "renderer_control_face_count": 2,
+                "renderer_control_triangle_radius": 0.05,
+                "phase5a_all_view_validated_point_count": values[
+                    "phase5a_all_view_validated_point_count"
+                ],
+                "phase5a_point_cloud_sha256": values["phase5a_point_cloud_sha256"],
+                "frame_records": [
+                    {
+                        "frame_id": frame_id,
+                        "raw_sample_count": 4,
+                        "backprojected_point_count": 4,
+                        "validated_point_count": (4 if index == 0 else 0),
+                        "maximum_supporting_views": len(values["training_frame_ids"]),
+                        "median_relative_depth_residual": 0.01,
+                    }
+                    for index, frame_id in enumerate(values["training_frame_ids"])
+                ],
+                "backprojection_configuration": request["backprojection_configuration"],
+                "consistency_configuration": request["consistency_configuration"],
+            },
+        )
         heldout_path = output_dir / object_id / "heldout_measurements.json"
         write_json(
             heldout_path,
@@ -93,6 +152,13 @@ def prepare_evidence(request_path: Path, input_root: Path, output_dir: Path) -> 
                 "training_points_path": point_path.relative_to(input_root).as_posix(),
                 "training_points_sha256": sha256(point_path),
                 "training_point_count": 4,
+                "training_normals_available": True,
+                "training_geometry_manifest_path": training_geometry_path.relative_to(
+                    input_root
+                ).as_posix(),
+                "training_geometry_manifest_sha256": sha256(training_geometry_path),
+                "renderer_control_mesh_path": control_path.relative_to(input_root).as_posix(),
+                "renderer_control_mesh_sha256": sha256(control_path),
                 "heldout_measurement_manifest_path": heldout_path.relative_to(
                     input_root
                 ).as_posix(),
@@ -165,6 +231,8 @@ def register(request_path: Path, input_root: Path, output_dir: Path) -> int:
                 {
                     "candidate_id": candidate_id,
                     "object_id": object_id,
+                    "registration_asset_id": candidate["registration_asset_id"],
+                    "registration_asset_path": candidate["registration_asset_path"],
                     "status": "registration_failed",
                     "frozen_transform": None,
                     "fitting_frame_ids": split_by_id[object_id]["registration_fitting_frames"],
@@ -182,6 +250,8 @@ def register(request_path: Path, input_root: Path, output_dir: Path) -> int:
             {
                 "candidate_id": candidate_id,
                 "object_id": object_id,
+                "registration_asset_id": candidate["registration_asset_id"],
+                "registration_asset_path": candidate["registration_asset_path"],
                 "status": "registered",
                 "frozen_transform": {
                     "matrix_world_from_candidate": matrix,
@@ -299,6 +369,51 @@ def write_fake_render(
     image.save(path, format="PNG", compress_level=9)
 
 
+def sanity_payload(
+    frame_ids: list[str],
+    *,
+    transform_source: str,
+    iou: float,
+) -> dict[str, object]:
+    return {
+        "frame_ids": frame_ids,
+        "transform_source": transform_source,
+        "mask_precision": max(iou, 0.5),
+        "mask_recall": iou,
+        "mask_iou": iou,
+        "dense_depth_relative_residual": 0.04,
+        "depth_inlier_fraction": 0.75,
+        "negative_space_violation_ratio": 0.02,
+        "front_of_scene_violation_ratio": 0.01,
+        "valid_candidate_pixel_count": 100 * len(frame_ids),
+        "per_frame": [
+            {
+                "frame_id": frame_id,
+                "raw_candidate_pixel_count": 100,
+                "visible_pixel_count": 80,
+                "occluded_pixel_count": 20,
+                "negative_space_pixel_count": 2,
+                "front_of_scene_pixel_count": 1,
+                "candidate_depth_min": 0.8,
+                "candidate_depth_median": 1.0,
+                "candidate_depth_max": 1.2,
+                "scene_depth_min": 0.7,
+                "scene_depth_median": 1.0,
+                "scene_depth_max": 1.3,
+                "candidate_projected_bbox": [10, 10, 30, 30],
+                "target_mask_bbox": [12, 12, 32, 32],
+                "bbox_intersection": [12, 12, 30, 30],
+                "mask_area": 100,
+                "candidate_area": 100,
+                "mask_precision": max(iou, 0.5),
+                "mask_recall": iou,
+                "mask_iou": iou,
+            }
+            for frame_id in frame_ids
+        ],
+    }
+
+
 def evaluate(request_path: Path, input_root: Path, output_dir: Path) -> int:
     request = json.loads(request_path.read_text(encoding="utf-8"))
     mode = request["evaluation_configuration"].get("fake_mode", "success")
@@ -384,7 +499,9 @@ def evaluate(request_path: Path, input_root: Path, output_dir: Path) -> int:
             failed.append("maximum_precision_drop_from_measured_baseline")
         render_paths = {}
         for frame_id in heldout:
-            render_path = output_dir / "renders" / item["candidate_id"] / f"{frame_id}.png"
+            render_path = (
+                output_dir / "renders" / item["candidate_id"] / "heldout" / f"{frame_id}.png"
+            )
             write_fake_render(
                 render_path,
                 item["candidate_id"],
@@ -392,12 +509,54 @@ def evaluate(request_path: Path, input_root: Path, output_dir: Path) -> int:
                 passed=not failed,
             )
             render_paths[frame_id] = render_path.relative_to(input_root).as_posix()
+        anchor_frames = request["anchor_inputs"][item["object_id"]]["frame_ids"][:1]
+        fitting_frames = item["fitting_frame_ids"]
+        anchor_paths = {}
+        fitting_paths = {}
+        for group, frame_ids, paths in (
+            ("anchor", anchor_frames, anchor_paths),
+            ("fitting", fitting_frames, fitting_paths),
+        ):
+            for frame_id in frame_ids:
+                render_path = (
+                    output_dir / "renders" / item["candidate_id"] / group / f"{frame_id}.png"
+                )
+                write_fake_render(
+                    render_path,
+                    item["candidate_id"],
+                    frame_id,
+                    passed=True,
+                )
+                paths[frame_id] = render_path.relative_to(input_root).as_posix()
+        classification = (
+            "negative_space_violation"
+            if "maximum_negative_space_violation_ratio" in failed
+            else "heldout_shape_inconsistent"
+            if failed
+            else "passed"
+        )
         evaluations.append(
             {
                 "candidate_id": item["candidate_id"],
                 "object_id": item["object_id"],
                 "backend": backend,
+                "registration_asset_id": candidate["registration_asset_id"],
+                "registration_asset_path": candidate["registration_asset_path"],
+                "evaluation_asset_id": candidate["evaluation_asset_id"],
+                "evaluation_asset_path": candidate["evaluation_asset_path"],
+                "selection_asset_id": candidate["selection_asset_id"],
+                "selection_asset_path": candidate["selection_asset_path"],
                 "transform_sha256": digest(item["frozen_transform"]),
+                "anchor_sanity": sanity_payload(
+                    anchor_frames,
+                    transform_source="backend_predicted_layout",
+                    iou=0.7,
+                ),
+                "fitting_metrics": sanity_payload(
+                    fitting_frames,
+                    transform_source="frozen_registration",
+                    iou=0.65,
+                ),
                 "heldout_frame_ids": heldout,
                 "metrics": metrics,
                 "measured_baseline_metrics": baseline,
@@ -407,6 +566,11 @@ def evaluate(request_path: Path, input_root: Path, output_dir: Path) -> int:
                 "evaluation_runtime_seconds": 0.01,
                 "license_record": candidate["license_record"],
                 "render_paths": render_paths,
+                "anchor_render_paths": anchor_paths,
+                "fitting_render_paths": fitting_paths,
+                "failure_classification": classification,
+                "representation_parity_path": None,
+                "representation_parity_accepted": False,
             }
         )
     write_json(

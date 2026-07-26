@@ -1572,7 +1572,7 @@ def _export_completion_candidate(run_dir: Path, candidate_id: str, output: Path)
         for candidate in generation.candidates:
             if candidate.candidate_id != candidate_id:
                 continue
-            source = run_dir / candidate.native_assets[0].relative_path
+            source = run_dir / candidate.selection_asset_path
             output.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, output)
             return

@@ -63,6 +63,15 @@
           "title": "Object Id",
           "type": "string"
         },
+        "registration_asset_id": {
+          "minLength": 1,
+          "title": "Registration Asset Id",
+          "type": "string"
+        },
+        "registration_asset_path": {
+          "title": "Registration Asset Path",
+          "type": "string"
+        },
         "status": {
           "enum": [
             "registered",
@@ -88,6 +97,8 @@
       "required": [
         "candidate_id",
         "object_id",
+        "registration_asset_id",
+        "registration_asset_path",
         "status",
         "fitting_frame_ids",
         "heldout_frame_ids",

@@ -56,7 +56,7 @@ class CompletionRegistrationAdapterConfig(CompletionWorkerConfig):
 
 class CompletionCandidateRegistrationAdapter:
     name = "completion_candidate_registration"
-    version = "0.1.0"
+    version = "0.1.2"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         package = CompletionEvidencePackage.model_validate_json(
@@ -121,9 +121,13 @@ class CompletionCandidateRegistrationAdapter:
                     InputSpec(
                         asset.relative_path,
                         (
-                            "measured_object_geometry_file"
-                            if candidate.backend.value == "measured_partial_baseline"
-                            else "completion_candidate_file"
+                            "completion_evidence_file"
+                            if asset.relative_path.startswith("reconstruction/completion/evidence/")
+                            else (
+                                "measured_object_geometry_file"
+                                if candidate.backend.value == "measured_partial_baseline"
+                                else "completion_candidate_file"
+                            )
                         ),
                         materialization_mode="reflink_or_copy",
                     )
@@ -218,6 +222,7 @@ class CompletionCandidateRegistrationAdapter:
                 },
             }
         candidate_ids: list[str] = []
+        candidates = {}
         generation_hashes: dict[str, str] = {}
         for backend, path in GENERATION_MANIFESTS.items():
             full_path = context.path(*Path(path).parts)
@@ -226,6 +231,7 @@ class CompletionCandidateRegistrationAdapter:
             )
             generation_hashes[backend] = sha256_file(full_path)
             candidate_ids.extend(item.candidate_id for item in generation.candidates)
+            candidates.update({item.candidate_id: item for item in generation.candidates})
         request = CandidateRegistrationRequest(
             evidence_package_sha256=sha256_file(package_path),
             generation_manifest_hashes=generation_hashes,
@@ -296,6 +302,12 @@ class CompletionCandidateRegistrationAdapter:
         splits = {object_split.object_id: object_split for object_split in split.objects}
         evidence = {record.object_id: record for record in package.objects}
         for registration_item in registration.registrations:
+            candidate = candidates[registration_item.candidate_id]
+            if (
+                registration_item.registration_asset_id != candidate.registration_asset_id
+                or registration_item.registration_asset_path != candidate.registration_asset_path
+            ):
+                raise RuntimeError("registration worker changed the candidate representation")
             object_split = splits[registration_item.object_id]
             if registration_item.fitting_frame_ids != object_split.registration_fitting_frames:
                 raise RuntimeError("registration worker changed fitting evidence")

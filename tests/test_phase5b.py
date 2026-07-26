@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import random
+import struct
 import sys
 import types
 from pathlib import Path
@@ -28,6 +29,7 @@ from recon2sim.adapters.completion_inputs import _crop_rgba
 from recon2sim.artifacts import (
     CandidateEvaluationManifest,
     CandidateGenerationManifest,
+    CandidateHeldoutEvaluation,
     CandidateSelectionArtifact,
     CompletionCropManifest,
     CompletionEligibilityStatus,
@@ -44,7 +46,13 @@ from recon2sim.completion import (
     select_diverse_anchors,
     split_object_evidence,
 )
+from recon2sim.completion_parity import (
+    backend_layout_world_matrix,
+    binary_mask_metrics,
+    target_mask_metrics,
+)
 from recon2sim.config import load_config
+from recon2sim.dense_mvs import read_dense_array
 from recon2sim.ir import AssetType, SceneIR
 from recon2sim.pipeline import PipelineRunner
 
@@ -344,6 +352,54 @@ def test_official_candidate_backend_pins_are_exact() -> None:
     }
 
 
+def test_sam3d_backend_layout_converts_pytorch3d_camera_axes_to_opencv() -> None:
+    result = backend_layout_world_matrix(
+        {
+            "scale": [[2.0, 2.0, 2.0]],
+            "rotation": [[1.0, 0.0, 0.0, 0.0]],
+            "translation": [[1.0, 2.0, 3.0]],
+        },
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    )
+    assert result == [
+        [-2.0, 0.0, 0.0, -1.0],
+        [0.0, -2.0, 0.0, -2.0],
+        [0.0, 0.0, 2.0, 3.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+    quarter_turn = backend_layout_world_matrix(
+        {
+            "scale": [[1.0, 1.0, 1.0]],
+            "rotation": [[2**-0.5, 0.0, 0.0, 2**-0.5]],
+            "translation": [[0.0, 0.0, 1.0]],
+        },
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    )
+    assert [value for row in quarter_turn for value in row] == pytest.approx(
+        [
+            value
+            for row in [
+                [0.0, -1.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+            for value in row
+        ],
+        abs=1e-12,
+    )
+
+
 def test_real_candidate_configs_require_checkpoint_and_runtime_hashes() -> None:
     with pytest.raises(ValueError, match="checkpoint file hashes"):
         Sam3DObjectsAdapterConfig.model_validate(
@@ -476,24 +532,283 @@ def test_dense_depth_occlusion_and_negative_space_are_distinct() -> None:
     assert result["negative"][0, 1]
 
 
-def test_measured_baseline_uses_point_rendering_even_with_ply_asset() -> None:
+@pytest.mark.parametrize("channels", [1, 3])
+def test_phase5b_dense_reader_is_byte_equivalent_to_phase5a(
+    tmp_path: Path,
+    channels: int,
+) -> None:
+    np = pytest.importorskip("numpy")
+    worker_root = ROOT / "workers/completion_evaluation"
+    sys.path.insert(0, str(worker_root))
+    try:
+        from completion_evaluation_worker.dense_io import read_array
+    finally:
+        sys.path.remove(str(worker_root))
+    width, height = 3, 2
+    values = [float(index) + 0.25 for index in range(width * height * channels)]
+    path = tmp_path / f"known-{channels}.bin"
+    path.write_bytes(
+        f"{width}&{height}&{channels}&".encode() + struct.pack(f"<{len(values)}f", *values)
+    )
+    phase5a = read_dense_array(path, expected_channels=channels)
+    phase5b = read_array(path, channels, require_finite=True)
+    expected = np.asarray(
+        [
+            [
+                [phase5a.value(column, row, channel) for channel in range(channels)]
+                for column in range(width)
+            ]
+            for row in range(height)
+        ],
+        dtype=np.float32,
+    )
+    actual = phase5b[:, :, None] if channels == 1 else phase5b
+    assert actual.tobytes() == expected.tobytes()
+
+
+def test_phase5b_dense_reader_rejects_channels_truncation_and_nonfinite_normals(
+    tmp_path: Path,
+) -> None:
     pytest.importorskip("numpy")
     worker_root = ROOT / "workers/completion_evaluation"
     sys.path.insert(0, str(worker_root))
     try:
-        from completion_evaluation_worker.inference import _mesh_render_asset
+        from completion_evaluation_worker.dense_io import read_array
     finally:
         sys.path.remove(str(worker_root))
-    measured = {
-        "backend": "measured_partial_baseline",
-        "native_assets": [{"format": "mesh_ply", "relative_path": "measured_points.ply"}],
-    }
-    generated = {
+    wrong_channels = tmp_path / "wrong.bin"
+    wrong_channels.write_bytes(b"1&1&1&" + struct.pack("<f", 1.0))
+    with pytest.raises(ValueError, match="expected 3"):
+        read_array(wrong_channels, 3)
+    truncated = tmp_path / "truncated.bin"
+    truncated.write_bytes(b"2&1&3&" + struct.pack("<3f", 1.0, 2.0, 3.0))
+    with pytest.raises(ValueError, match="expected 6"):
+        read_array(truncated, 3)
+    nonfinite = tmp_path / "nonfinite.bin"
+    nonfinite.write_bytes(b"1&1&3&" + struct.pack("<3f", 0.0, float("nan"), 1.0))
+    with pytest.raises(ValueError, match="non-finite"):
+        read_array(nonfinite, 3, require_finite=True)
+
+
+def test_evaluation_schema_rejects_implicit_representation_transfer() -> None:
+    common = {
+        "candidate_id": "cup__sam3d",
+        "object_id": "cup_0001",
         "backend": "sam3d_objects",
-        "native_assets": [{"format": "pbr_glb", "relative_path": "visual_asset.glb"}],
+        "registration_asset_id": "visual_glb",
+        "registration_asset_path": "candidate/visual.glb",
+        "evaluation_asset_id": "visual_glb",
+        "evaluation_asset_path": "candidate/visual.glb",
+        "selection_asset_id": "native_gaussian",
+        "selection_asset_path": "candidate/gaussians.ply",
+        "transform_sha256": "0" * 64,
+        "anchor_sanity": {
+            "frame_ids": ["frame_1"],
+            "transform_source": "backend_predicted_layout",
+            "mask_precision": 0.5,
+            "mask_recall": 0.5,
+            "mask_iou": 0.5,
+            "negative_space_violation_ratio": 0,
+            "front_of_scene_violation_ratio": 0,
+            "valid_candidate_pixel_count": 1,
+            "per_frame": [],
+        },
+        "fitting_metrics": {
+            "frame_ids": ["frame_2"],
+            "transform_source": "frozen_registration",
+            "mask_precision": 0.5,
+            "mask_recall": 0.5,
+            "mask_iou": 0.5,
+            "negative_space_violation_ratio": 0,
+            "front_of_scene_violation_ratio": 0,
+            "valid_candidate_pixel_count": 1,
+            "per_frame": [],
+        },
+        "heldout_frame_ids": ["frame_3"],
+        "metrics": {
+            "mask_precision": 0.5,
+            "mask_recall": 0.5,
+            "mask_iou": 0.5,
+            "per_frame_iou": {"frame_3": 0.5},
+            "dense_depth_relative_residual": 0.01,
+            "depth_inlier_fraction": 0.9,
+            "negative_space_violation_ratio": 0,
+            "front_of_scene_violation_ratio": 0,
+            "measured_point_to_candidate_median": 0.01,
+            "measured_point_to_candidate_p90": 0.02,
+            "normal_agreement": 0.9,
+            "candidate_visible_coverage": 0.5,
+            "validation_view_count": 1,
+            "visible_candidate_area": 1,
+            "occluded_candidate_area": 0,
+            "negative_space_violation_area": 0,
+            "front_of_scene_violation_area": 0,
+        },
+        "measured_baseline_metrics": {
+            "mask_precision": 0.5,
+            "mask_recall": 0.5,
+            "mask_iou": 0.5,
+            "per_frame_iou": {"frame_3": 0.5},
+            "dense_depth_relative_residual": 0.01,
+            "depth_inlier_fraction": 0.9,
+            "negative_space_violation_ratio": 0,
+            "front_of_scene_violation_ratio": 0,
+            "measured_point_to_candidate_median": 0.01,
+            "measured_point_to_candidate_p90": 0.02,
+            "normal_agreement": 0.9,
+            "candidate_visible_coverage": 0.5,
+            "validation_view_count": 1,
+            "visible_candidate_area": 1,
+            "occluded_candidate_area": 0,
+            "negative_space_violation_area": 0,
+            "front_of_scene_violation_area": 0,
+        },
+        "completion_gain": {
+            "recall_gain_vs_measured_baseline": 0,
+            "iou_gain_vs_measured_baseline": 0,
+            "precision_change_vs_measured_baseline": 0,
+            "depth_residual_change": 0,
+            "visible_coverage_gain": 0,
+            "negative_space_change": 0,
+        },
+        "passed_hard_gates": True,
+        "failed_gates": [],
+        "evaluation_runtime_seconds": 0,
+        "license_record": {
+            "backend": "sam3d_objects",
+            "code_license": "SAM License",
+            "checkpoint_license": "SAM License",
+            "dependency_licenses": {},
+            "asset_license": "SAM License",
+            "access_conditions": [],
+            "commercial_use_review_status": "not_reviewed",
+            "research_evaluation_allowed": True,
+            "production_selectable": False,
+        },
+        "failure_classification": "passed",
     }
-    assert _mesh_render_asset(measured) is None
-    assert _mesh_render_asset(generated) == generated["native_assets"][0]
+    with pytest.raises(ValueError, match="without accepted parity"):
+        CandidateHeldoutEvaluation.model_validate(common)
+
+
+def test_representation_parity_detects_equivalence_and_mismatch() -> None:
+    equivalent = [0, 255, 255, 0]
+    metrics = binary_mask_metrics(equivalent, equivalent, 2, 2)
+    assert metrics[:2] == (1.0, 1.0)
+    assert metrics[2] == 0.0
+    mismatch = binary_mask_metrics(
+        [255, 0, 0, 0],
+        [0, 0, 0, 255],
+        2,
+        2,
+    )
+    assert mismatch[0] == 0.0
+    assert mismatch[1] == 0.0
+    assert mismatch[2] is not None and mismatch[2] > 0
+    assert target_mask_metrics([255, 255, 0, 0], [255, 0, 255, 0]) == (
+        0.5,
+        0.5,
+        1 / 3,
+    )
+
+
+def test_measured_renderer_control_uses_mesh_rasterizer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    np = pytest.importorskip("numpy")
+    worker_root = ROOT / "workers/completion_evaluation"
+    sys.path.insert(0, str(worker_root))
+    try:
+        import completion_evaluation_worker.inference as worker_inference
+    finally:
+        sys.path.remove(str(worker_root))
+    expected = np.asarray([[1.0]], dtype=np.float32)
+    calls = []
+
+    def fake_render(path: Path, transform: object, camera: object) -> object:
+        calls.append((path, transform, camera))
+        return type("Rendered", (), {"depth": expected})()
+
+    monkeypatch.setattr(worker_inference, "render_mesh_candidate", fake_render)
+    result = worker_inference._candidate_depth(  # noqa: SLF001
+        input_root=tmp_path,
+        asset={
+            "relative_path": "control.ply",
+            "format": "mesh_ply",
+            "role": "fitting_only_open_surface_renderer_control",
+        },
+        points=np.asarray([[0.0, 0.0, 1.0]]),
+        transform=np.eye(4),
+        camera_from_world=np.eye(4),
+        undistortion={
+            "dense_dimensions": [1, 1],
+            "dense_intrinsics": [1.0, 1.0, 0.0, 0.0],
+        },
+        measured_baseline=True,
+    )
+    assert result is expected
+    assert len(calls) == 1
+
+
+def test_candidate_glb_node_transforms_are_applied_during_surface_loading(
+    tmp_path: Path,
+) -> None:
+    np = pytest.importorskip("numpy")
+    trimesh = pytest.importorskip("trimesh")
+    worker_root = ROOT / "workers/completion_evaluation"
+    sys.path.insert(0, str(worker_root))
+    try:
+        from completion_evaluation_worker.candidate_io import load_candidate_surface
+    finally:
+        sys.path.remove(str(worker_root))
+    mesh = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
+    scene = trimesh.Scene()
+    transform = np.eye(4)
+    transform[:3, 3] = (4.0, -2.0, 3.0)
+    scene.add_geometry(mesh, node_name="translated", transform=transform)
+    path = tmp_path / "transformed.glb"
+    scene.export(path)
+    points = load_candidate_surface(path, maximum_samples=20_000, seed=42)
+    assert np.median(points, axis=0) == pytest.approx((4.0, -2.0, 3.0), abs=0.05)
+
+
+@pytest.mark.parametrize(
+    ("anchor_iou", "fitting_iou", "heldout_iou", "expected"),
+    [
+        (0.0, 0.0, 0.0, "registration_failed"),
+        (0.5, 0.0, 0.0, "fitting_view_inconsistent"),
+        (0.5, 0.4, 0.0, "fitting_overfit_heldout_failure"),
+        (0.5, 0.4, 0.3, "heldout_shape_inconsistent"),
+    ],
+)
+def test_zero_iou_failure_classification_is_stage_specific(
+    anchor_iou: float,
+    fitting_iou: float,
+    heldout_iou: float,
+    expected: str,
+) -> None:
+    pytest.importorskip("numpy")
+    worker_root = ROOT / "workers/completion_evaluation"
+    sys.path.insert(0, str(worker_root))
+    try:
+        from completion_evaluation_worker.inference import _failure_classification
+    finally:
+        sys.path.remove(str(worker_root))
+    candidate = {"backend": "sam3d_objects"}
+    anchor = {"valid_candidate_pixel_count": 1, "mask_iou": anchor_iou}
+    fitting = {"mask_iou": fitting_iou}
+    heldout = {"mask_iou": heldout_iou}
+    assert (
+        _failure_classification(
+            candidate,
+            anchor,
+            fitting,
+            heldout,
+            ["minimum_mask_iou"],
+        )
+        == expected
+    )
 
 
 def test_fake_phase5b_pipeline_and_resume(tmp_path: Path) -> None:
@@ -508,12 +823,17 @@ def test_fake_phase5b_pipeline_and_resume(tmp_path: Path) -> None:
         (run_dir / "reconstruction/completion/trellis2_generation_manifest.json").read_text()
     )
     assert sam.candidates and trellis.candidates
-    assert {candidate.native_assets[0].format.value for candidate in sam.candidates} == {
-        "gaussian_splat_ply"
-    }
-    assert {candidate.native_assets[0].format.value for candidate in trellis.candidates} == {
-        "pbr_glb"
-    }
+    assert {
+        asset.format.value for candidate in sam.candidates for asset in candidate.native_assets
+    } >= {"gaussian_splat_ply"}
+    assert {
+        asset.format.value for candidate in trellis.candidates for asset in candidate.native_assets
+    } == {"pbr_glb"}
+    for candidate in (*sam.candidates, *trellis.candidates):
+        declared = {asset.asset_id: asset.relative_path for asset in candidate.native_assets}
+        assert declared[candidate.registration_asset_id] == candidate.registration_asset_path
+        assert declared[candidate.evaluation_asset_id] == candidate.evaluation_asset_path
+        assert declared[candidate.selection_asset_id] == candidate.selection_asset_path
     evaluation = CandidateEvaluationManifest.model_validate_json(
         (run_dir / "reconstruction/completion/evaluation_manifest.json").read_text()
     )
@@ -551,12 +871,56 @@ def test_fake_phase5b_keeps_same_label_instances_and_heldout_evidence_separate(
         heldout = set(split_by_id[object_id].heldout_validation_frames)
         assert not heldout & set(inputs["training_masks"])
         assert not heldout & set(inputs["training_dense_maps"])
+        training = json.loads(
+            (
+                phase5b_run / f"reconstruction/completion/evidence/{object_id}/"
+                "training_measured_geometry.json"
+            ).read_text()
+        )
+        assert training["validated_point_count"] > 0
+        assert training["renderer_control_face_count"] > 0
+        assert len(training["point_cloud_sha256"]) == 64
+        assert len(training["normal_sha256"]) == 64
+        assert not heldout & set(training["supporting_fitting_views"])
     generation = CandidateGenerationManifest.model_validate_json(
         (phase5b_run / "reconstruction/completion/trellis2_generation_manifest.json").read_text()
     )
     same_label = [item for item in generation.candidates if item.semantic_label == "table"]
     assert len({item.object_id for item in same_label}) >= 2
     assert len({item.candidate_id for item in same_label}) == len(same_label)
+    measured = CandidateGenerationManifest.model_validate_json(
+        (phase5b_run / "reconstruction/completion/measured_generation_manifest.json").read_text()
+    )
+    for candidate in measured.candidates:
+        assert (
+            candidate.anchor_frame_id
+            == split_by_id[candidate.object_id].generation_anchor_frames[0]
+        )
+
+
+def test_sam_gaussian_first_does_not_override_explicit_visual_glb(
+    phase5b_run: Path,
+) -> None:
+    generation = CandidateGenerationManifest.model_validate_json(
+        (phase5b_run / "reconstruction/completion/sam3d_generation_manifest.json").read_text()
+    )
+    evaluation = CandidateEvaluationManifest.model_validate_json(
+        (phase5b_run / "reconstruction/completion/evaluation_manifest.json").read_text()
+    )
+    evaluated = {item.candidate_id: item for item in evaluation.evaluations}
+    sam_candidates = [
+        candidate
+        for candidate in generation.candidates
+        if candidate.native_assets[0].asset_id == "native_gaussian"
+    ]
+    assert sam_candidates
+    for candidate in sam_candidates:
+        assert candidate.evaluation_asset_id == "official_visual_glb"
+        assert candidate.selection_asset_id == "official_visual_glb"
+        item = evaluated[candidate.candidate_id]
+        assert item.evaluation_asset_id == "official_visual_glb"
+        assert item.selection_asset_id == "official_visual_glb"
+        assert item.evaluation_asset_path == item.selection_asset_path
 
 
 def test_candidate_signature_uses_only_declared_generation_inputs(

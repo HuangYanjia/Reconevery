@@ -82,7 +82,8 @@ def render_mesh_candidate(
             f"{asset_path} with pos={tuple(clip_tensor.shape)}, "
             f"tri={tuple(face_tensor.shape)}, resolution={(height, width)}"
         ) from exc
-    triangle = raster[0, ..., 3] > 0
+    # nvdiffrast framebuffers are bottom-origin; canonical RGB/masks are top-origin.
+    triangle = torch.flip(raster[0, ..., 3] > 0, dims=(0,))
     z_tensor = (
         torch.from_numpy(np.ascontiguousarray(z, dtype=np.float32))
         .to(device=device)
@@ -94,7 +95,7 @@ def render_mesh_candidate(
         raster,
         face_tensor,
     )
-    depth = depth_values[0, ..., 0].detach().cpu().numpy()
+    depth = torch.flip(depth_values[0, ..., 0], dims=(0,)).detach().cpu().numpy()
     valid = triangle.detach().cpu().numpy()
     depth[~valid] = np.nan
     rgba = np.zeros((height, width, 4), dtype=np.uint8)

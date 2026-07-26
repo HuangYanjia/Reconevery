@@ -47,6 +47,18 @@
           "title": "Collision Ready",
           "type": "boolean"
         },
+        "evaluated_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evaluated Asset Id"
+        },
         "geometry_status": {
           "anyOf": [
             {
@@ -94,6 +106,30 @@
           "default": "not_implemented",
           "title": "Physical Validation",
           "type": "string"
+        },
+        "representation_parity_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Representation Parity Path"
+        },
+        "selected_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Asset Id"
         },
         "selected_candidate": {
           "anyOf": [

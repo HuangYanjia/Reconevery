@@ -49,9 +49,270 @@
       "title": "CandidateCompletionGain",
       "type": "object"
     },
+    "CandidateFailureClassification": {
+      "enum": [
+        "backend_export_invalid",
+        "native_render_failed",
+        "empty_candidate_render",
+        "registration_failed",
+        "fitting_view_inconsistent",
+        "fitting_overfit_heldout_failure",
+        "heldout_shape_inconsistent",
+        "negative_space_violation",
+        "depth_inconsistent",
+        "license_blocked",
+        "passed"
+      ],
+      "title": "CandidateFailureClassification",
+      "type": "string"
+    },
+    "CandidateFrameRenderDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "bbox_intersection": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bbox Intersection"
+        },
+        "candidate_area": {
+          "minimum": 0,
+          "title": "Candidate Area",
+          "type": "integer"
+        },
+        "candidate_depth_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Depth Max"
+        },
+        "candidate_depth_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Depth Median"
+        },
+        "candidate_depth_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Depth Min"
+        },
+        "candidate_projected_bbox": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Projected Bbox"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "front_of_scene_pixel_count": {
+          "minimum": 0,
+          "title": "Front Of Scene Pixel Count",
+          "type": "integer"
+        },
+        "mask_area": {
+          "minimum": 0,
+          "title": "Mask Area",
+          "type": "integer"
+        },
+        "mask_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mask Iou",
+          "type": "number"
+        },
+        "mask_precision": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mask Precision",
+          "type": "number"
+        },
+        "mask_recall": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mask Recall",
+          "type": "number"
+        },
+        "negative_space_pixel_count": {
+          "minimum": 0,
+          "title": "Negative Space Pixel Count",
+          "type": "integer"
+        },
+        "occluded_pixel_count": {
+          "minimum": 0,
+          "title": "Occluded Pixel Count",
+          "type": "integer"
+        },
+        "raw_candidate_pixel_count": {
+          "minimum": 0,
+          "title": "Raw Candidate Pixel Count",
+          "type": "integer"
+        },
+        "scene_depth_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Depth Max"
+        },
+        "scene_depth_median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Depth Median"
+        },
+        "scene_depth_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Depth Min"
+        },
+        "target_mask_bbox": {
+          "anyOf": [
+            {
+              "maxItems": 4,
+              "minItems": 4,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Mask Bbox"
+        },
+        "visible_pixel_count": {
+          "minimum": 0,
+          "title": "Visible Pixel Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "frame_id",
+        "raw_candidate_pixel_count",
+        "visible_pixel_count",
+        "occluded_pixel_count",
+        "negative_space_pixel_count",
+        "front_of_scene_pixel_count",
+        "mask_area",
+        "candidate_area",
+        "mask_precision",
+        "mask_recall",
+        "mask_iou"
+      ],
+      "title": "CandidateFrameRenderDiagnostic",
+      "type": "object"
+    },
     "CandidateHeldoutEvaluation": {
       "additionalProperties": false,
       "properties": {
+        "anchor_render_paths": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Anchor Render Paths",
+          "type": "object"
+        },
+        "anchor_sanity": {
+          "$ref": "#/$defs/CandidateSanityMetrics"
+        },
         "backend": {
           "$ref": "#/$defs/CompletionBackend"
         },
@@ -62,6 +323,15 @@
         },
         "completion_gain": {
           "$ref": "#/$defs/CandidateCompletionGain"
+        },
+        "evaluation_asset_id": {
+          "minLength": 1,
+          "title": "Evaluation Asset Id",
+          "type": "string"
+        },
+        "evaluation_asset_path": {
+          "title": "Evaluation Asset Path",
+          "type": "string"
         },
         "evaluation_runtime_seconds": {
           "minimum": 0,
@@ -74,6 +344,19 @@
           },
           "title": "Failed Gates",
           "type": "array"
+        },
+        "failure_classification": {
+          "$ref": "#/$defs/CandidateFailureClassification"
+        },
+        "fitting_metrics": {
+          "$ref": "#/$defs/CandidateSanityMetrics"
+        },
+        "fitting_render_paths": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Fitting Render Paths",
+          "type": "object"
         },
         "heldout_frame_ids": {
           "items": {
@@ -100,12 +383,47 @@
           "title": "Passed Hard Gates",
           "type": "boolean"
         },
+        "registration_asset_id": {
+          "minLength": 1,
+          "title": "Registration Asset Id",
+          "type": "string"
+        },
+        "registration_asset_path": {
+          "title": "Registration Asset Path",
+          "type": "string"
+        },
         "render_paths": {
           "additionalProperties": {
             "type": "string"
           },
           "title": "Render Paths",
           "type": "object"
+        },
+        "representation_parity_accepted": {
+          "default": false,
+          "title": "Representation Parity Accepted",
+          "type": "boolean"
+        },
+        "representation_parity_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Representation Parity Path"
+        },
+        "selection_asset_id": {
+          "minLength": 1,
+          "title": "Selection Asset Id",
+          "type": "string"
+        },
+        "selection_asset_path": {
+          "title": "Selection Asset Path",
+          "type": "string"
         },
         "transform_sha256": {
           "pattern": "^[0-9a-f]{64}$",
@@ -117,7 +435,15 @@
         "candidate_id",
         "object_id",
         "backend",
+        "registration_asset_id",
+        "registration_asset_path",
+        "evaluation_asset_id",
+        "evaluation_asset_path",
+        "selection_asset_id",
+        "selection_asset_path",
         "transform_sha256",
+        "anchor_sanity",
+        "fitting_metrics",
         "heldout_frame_ids",
         "metrics",
         "measured_baseline_metrics",
@@ -125,7 +451,8 @@
         "passed_hard_gates",
         "failed_gates",
         "evaluation_runtime_seconds",
-        "license_record"
+        "license_record",
+        "failure_classification"
       ],
       "title": "CandidateHeldoutEvaluation",
       "type": "object"
@@ -249,6 +576,105 @@
         "front_of_scene_violation_area"
       ],
       "title": "CandidateHeldoutMetrics",
+      "type": "object"
+    },
+    "CandidateSanityMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "dense_depth_relative_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dense Depth Relative Residual"
+        },
+        "depth_inlier_fraction": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Inlier Fraction"
+        },
+        "frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Frame Ids",
+          "type": "array"
+        },
+        "front_of_scene_violation_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Front Of Scene Violation Ratio",
+          "type": "number"
+        },
+        "mask_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mask Iou",
+          "type": "number"
+        },
+        "mask_precision": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mask Precision",
+          "type": "number"
+        },
+        "mask_recall": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mask Recall",
+          "type": "number"
+        },
+        "negative_space_violation_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Negative Space Violation Ratio",
+          "type": "number"
+        },
+        "per_frame": {
+          "items": {
+            "$ref": "#/$defs/CandidateFrameRenderDiagnostic"
+          },
+          "title": "Per Frame",
+          "type": "array"
+        },
+        "transform_source": {
+          "minLength": 1,
+          "title": "Transform Source",
+          "type": "string"
+        },
+        "valid_candidate_pixel_count": {
+          "minimum": 0,
+          "title": "Valid Candidate Pixel Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "frame_ids",
+        "transform_source",
+        "mask_precision",
+        "mask_recall",
+        "mask_iou",
+        "negative_space_violation_ratio",
+        "front_of_scene_violation_ratio",
+        "valid_candidate_pixel_count",
+        "per_frame"
+      ],
+      "title": "CandidateSanityMetrics",
       "type": "object"
     },
     "CompletionBackend": {

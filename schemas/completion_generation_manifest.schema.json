@@ -13,9 +13,104 @@
       "title": "AssetType",
       "type": "string"
     },
+    "CandidateBackendAnchorCamera": {
+      "additionalProperties": false,
+      "properties": {
+        "camera_axes": {
+          "const": "x_right_y_down_z_forward",
+          "title": "Camera Axes",
+          "type": "string"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "normalized_intrinsics": {
+          "maxItems": 9,
+          "minItems": 9,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Normalized Intrinsics",
+          "type": "array"
+        },
+        "pixel_intrinsics": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Pixel Intrinsics",
+          "type": "array"
+        },
+        "source": {
+          "const": "official_pointmap_intrinsics",
+          "title": "Source",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "normalized_intrinsics",
+        "pixel_intrinsics",
+        "camera_axes",
+        "source"
+      ],
+      "title": "CandidateBackendAnchorCamera",
+      "type": "object"
+    },
     "CandidateNativeAsset": {
       "additionalProperties": false,
       "properties": {
+        "asset_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "title": "Asset Id",
+          "type": "string"
+        },
         "format": {
           "$ref": "#/$defs/CandidateNativeFormat"
         },
@@ -40,6 +135,7 @@
         }
       },
       "required": [
+        "asset_id",
         "relative_path",
         "sha256",
         "format",
@@ -240,6 +336,17 @@
         "backend": {
           "$ref": "#/$defs/CompletionBackend"
         },
+        "backend_anchor_camera": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CandidateBackendAnchorCamera"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "backend_predicted_layout": {
           "additionalProperties": true,
           "title": "Backend Predicted Layout",
@@ -248,6 +355,15 @@
         "candidate_id": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
           "title": "Candidate Id",
+          "type": "string"
+        },
+        "evaluation_asset_id": {
+          "minLength": 1,
+          "title": "Evaluation Asset Id",
+          "type": "string"
+        },
+        "evaluation_asset_path": {
+          "title": "Evaluation Asset Path",
           "type": "string"
         },
         "face_count": {
@@ -423,12 +539,30 @@
         "provenance": {
           "$ref": "#/$defs/ProvenanceRecord"
         },
+        "registration_asset_id": {
+          "minLength": 1,
+          "title": "Registration Asset Id",
+          "type": "string"
+        },
+        "registration_asset_path": {
+          "title": "Registration Asset Path",
+          "type": "string"
+        },
         "render_capability": {
           "$ref": "#/$defs/CandidateRenderCapability"
         },
         "sampling_method": {
           "minLength": 1,
           "title": "Sampling Method",
+          "type": "string"
+        },
+        "selection_asset_id": {
+          "minLength": 1,
+          "title": "Selection Asset Id",
+          "type": "string"
+        },
+        "selection_asset_path": {
+          "title": "Selection Asset Path",
           "type": "string"
         },
         "semantic_label": {
@@ -478,6 +612,12 @@
         "anchor_frame_id",
         "generation_seed",
         "native_assets",
+        "registration_asset_id",
+        "registration_asset_path",
+        "evaluation_asset_id",
+        "evaluation_asset_path",
+        "selection_asset_id",
+        "selection_asset_path",
         "native_coordinate_convention",
         "render_capability",
         "sampling_method",

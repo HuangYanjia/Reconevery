@@ -12,6 +12,7 @@ from sam3d_objects_worker.checkpoint_loader import sha256, verify_checkpoint_fil
 from sam3d_objects_worker.commit_verification import verify_checkout
 from sam3d_objects_worker.native_export import (
     export_native,
+    official_anchor_camera,
     ply_vertex_count,
     serializable_layout,
 )
@@ -43,7 +44,29 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> None:
     started = time.monotonic()
     inference_class = load_inference_class(checkout)
     predictor = inference_class(str(pipeline_config), compile=bool(config.get("compile", False)))
-    output = predictor(image, mask, seed=request.generation_seed)
+    pipeline = predictor._pipeline  # noqa: SLF001
+    original_compute_pointmap = pipeline.compute_pointmap
+    captured_intrinsics: list[object] = []
+
+    def compute_pointmap_with_intrinsics(*args: object, **kwargs: object) -> object:
+        result = original_compute_pointmap(*args, **kwargs)
+        if not isinstance(result, dict) or "intrinsics" not in result:
+            raise RuntimeError("official SAM 3D point-map path omitted inferred intrinsics")
+        captured_intrinsics.append(result["intrinsics"])
+        return result
+
+    pipeline.compute_pointmap = compute_pointmap_with_intrinsics
+    try:
+        output = predictor(image, mask, seed=request.generation_seed)
+    finally:
+        pipeline.compute_pointmap = original_compute_pointmap
+    if len(captured_intrinsics) != 1:
+        raise RuntimeError("official SAM 3D inference did not produce exactly one anchor camera")
+    backend_anchor_camera = official_anchor_camera(
+        captured_intrinsics[0],
+        width=crop.width,
+        height=crop.height,
+    )
     assets = export_native(output, output_dir / "native")
     gaussian_count = next(
         ply_vertex_count(path)
@@ -53,6 +76,11 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> None:
     runtime = time.monotonic() - started
     relative_assets = [
         {
+            "asset_id": (
+                "native_gaussian"
+                if native_format == "gaussian_splat_ply"
+                else "official_visual_glb"
+            ),
             "relative_path": path.relative_to(input_root).as_posix(),
             "sha256": sha256(path),
             "format": native_format,
@@ -61,6 +89,17 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> None:
         }
         for path, native_format, role in assets
     ]
+    visual_asset = next(
+        (asset for asset in relative_assets if asset["asset_id"] == "official_visual_glb"),
+        None,
+    )
+    gaussian_asset = next(
+        (asset for asset in relative_assets if asset["asset_id"] == "native_gaussian"),
+        None,
+    )
+    selected_asset = visual_asset or gaussian_asset
+    if selected_asset is None:
+        raise RuntimeError("official SAM 3D output has no supported native representation")
     candidate_id = str(config["candidate_id"])
     provenance = {
         "adapter_name": "sam3d_object_candidates",
@@ -90,6 +129,12 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> None:
         "anchor_frame_id": request.anchor_frame_id,
         "generation_seed": request.generation_seed,
         "native_assets": relative_assets,
+        "registration_asset_id": selected_asset["asset_id"],
+        "registration_asset_path": selected_asset["relative_path"],
+        "evaluation_asset_id": selected_asset["asset_id"],
+        "evaluation_asset_path": selected_asset["relative_path"],
+        "selection_asset_id": selected_asset["asset_id"],
+        "selection_asset_path": selected_asset["relative_path"],
         "native_coordinate_convention": "official_sam3d_object_canonical",
         "native_bounds_min": None,
         "native_bounds_max": None,
@@ -101,8 +146,9 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> None:
         "texture_count": None,
         "gaussian_count": gaussian_count,
         "backend_predicted_layout": serializable_layout(output),
+        "backend_anchor_camera": backend_anchor_camera,
         "render_capability": {
-            "renderer": "official_optional_visual_glb_via_nvdiffrast",
+            "renderer": "official_gaussian_gsplat_and_visual_glb_nvdiffrast",
             "supports_rgba": True,
             "supports_depth": True,
             "supports_normals": False,

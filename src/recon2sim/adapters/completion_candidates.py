@@ -31,6 +31,7 @@ from recon2sim.artifacts import (
     CompletionCropManifest,
     CompletionEligibilityArtifact,
     CompletionEligibilityStatus,
+    CompletionEvidencePackage,
     CompletionEvidenceSplit,
     CompletionLicenseRecord,
     CompletionWorkerManifest,
@@ -204,7 +205,7 @@ class _CandidateGenerationAdapter:
     manifest_name: str
     license_record: CompletionLicenseRecord
     name: str
-    version = "0.1.0"
+    version = "0.1.1"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         crop = CompletionCropManifest.model_validate_json(
@@ -412,6 +413,7 @@ class _CandidateGenerationAdapter:
 
 class Sam3DObjectsCandidateAdapter(_CandidateGenerationAdapter):
     name = "sam3d_object_candidates"
+    version = "0.1.2"
     backend = CompletionBackend.SAM3D_OBJECTS
     config_type = Sam3DObjectsAdapterConfig
     manifest_name = "sam3d_generation_manifest.json"
@@ -428,7 +430,7 @@ class Trellis2ObjectCandidateAdapter(_CandidateGenerationAdapter):
 
 class MeasuredOnlyCandidateAdapter:
     name = "measured_only_candidates"
-    version = "0.1.0"
+    version = "0.1.2"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         measured = MeasuredObjectGeometryArtifact.model_validate_json(
@@ -444,12 +446,33 @@ class MeasuredOnlyCandidateAdapter:
                 "reconstruction/measured_objects/geometry_manifest.json",
                 "measured_object_geometry",
             ),
+            InputSpec(
+                "reconstruction/completion/evidence/evidence_package.json",
+                "completion_evidence_package",
+            ),
         ]
-        for item in measured.hypotheses:
-            if item.point_cloud is not None:
+        evidence = CompletionEvidencePackage.model_validate_json(
+            context.canonical_path(
+                "reconstruction",
+                "completion",
+                "evidence",
+                "evidence_package.json",
+            ).read_text(encoding="utf-8")
+        )
+        for evidence_item in evidence.objects:
+            if evidence_item.renderer_control_mesh_path is not None:
                 specs.append(
                     InputSpec(
-                        item.point_cloud.relative_path,
+                        evidence_item.renderer_control_mesh_path,
+                        "completion_evidence_file",
+                        materialization_mode="reflink_or_copy",
+                    )
+                )
+        for hypothesis in measured.hypotheses:
+            if hypothesis.point_cloud is not None:
+                specs.append(
+                    InputSpec(
+                        hypothesis.point_cloud.relative_path,
                         "measured_object_geometry_file",
                         materialization_mode="reflink_or_copy",
                     )
@@ -484,6 +507,11 @@ class MeasuredOnlyCandidateAdapter:
         split = CompletionEvidenceSplit.model_validate_json(
             (root / "evidence_split.json").read_text(encoding="utf-8")
         )
+        evidence = CompletionEvidencePackage.model_validate_json(
+            (root / "evidence" / "evidence_package.json").read_text(encoding="utf-8")
+        )
+        evidence_by_id = {item.object_id: item for item in evidence.objects}
+        split_by_id = {item.object_id: item for item in split.objects}
         eligible_ids = {item.object_id for item in split.objects}
         license_record = CompletionLicenseRecord(
             backend=CompletionBackend.MEASURED_PARTIAL_BASELINE,
@@ -498,33 +526,65 @@ class MeasuredOnlyCandidateAdapter:
         for item in measured.hypotheses:
             if item.object_id not in eligible_ids or item.point_cloud is None:
                 continue
+            training = evidence_by_id[item.object_id]
+            control_relative = training.renderer_control_mesh_path
+            control_path = (
+                context.path(*Path(control_relative).parts)
+                if control_relative is not None
+                else None
+            )
             asset_path = context.path(*Path(item.point_cloud.relative_path).parts)
+            native_assets = [
+                CandidateNativeAsset(
+                    asset_id="measured_partial_point_cloud",
+                    relative_path=item.point_cloud.relative_path,
+                    sha256=sha256_file(asset_path),
+                    format=CandidateNativeFormat.MESH_PLY,
+                    size_bytes=asset_path.stat().st_size,
+                    role="phase5a_all_view_diagnostic_only",
+                )
+            ]
+            selected_id = "measured_partial_point_cloud"
+            selected_path = item.point_cloud.relative_path
+            renderer = "measured_point_splat"
+            if control_path is not None and control_relative is not None:
+                native_assets.append(
+                    CandidateNativeAsset(
+                        asset_id="fitting_measured_renderer_control",
+                        relative_path=control_relative,
+                        sha256=sha256_file(control_path),
+                        format=CandidateNativeFormat.MESH_PLY,
+                        size_bytes=control_path.stat().st_size,
+                        role="fitting_only_open_surface_renderer_control",
+                    )
+                )
+                selected_id = "fitting_measured_renderer_control"
+                selected_path = control_relative
+                renderer = "nvdiffrast_open_measured_control"
             candidates.append(
                 ObjectCompletionCandidate(
                     candidate_id=f"{item.object_id}__measured_partial_baseline__measured",
                     object_id=item.object_id,
                     semantic_label=item.semantic_label,
                     backend=CompletionBackend.MEASURED_PARTIAL_BASELINE,
-                    anchor_frame_id=item.observations[0].frame_id,
+                    anchor_frame_id=split_by_id[item.object_id].generation_anchor_frames[0],
                     generation_seed=context.seed,
-                    native_assets=[
-                        CandidateNativeAsset(
-                            relative_path=item.point_cloud.relative_path,
-                            sha256=sha256_file(asset_path),
-                            format=CandidateNativeFormat.MESH_PLY,
-                            size_bytes=asset_path.stat().st_size,
-                            role="measured_partial_point_cloud",
-                        )
-                    ],
+                    native_assets=native_assets,
+                    registration_asset_id=selected_id,
+                    registration_asset_path=selected_path,
+                    evaluation_asset_id=selected_id,
+                    evaluation_asset_path=selected_path,
+                    selection_asset_id=selected_id,
+                    selection_asset_path=selected_path,
                     native_coordinate_convention="colmap_arbitrary",
                     vertex_count=item.point_cloud.point_count,
                     render_capability=CandidateRenderCapability(
-                        renderer="measured_point_splat",
+                        renderer=renderer,
                         supports_rgba=True,
                         supports_depth=True,
                         camera_axes="x_right_y_down_z_forward",
                     ),
-                    sampling_method="measured_phase5a_surfels",
+                    sampling_method="fitting_only_measured_open_surface_control",
                     generation_runtime_seconds=0.0,
                     license_record=license_record,
                     provenance=ProvenanceRecord(

@@ -1,6 +1,14 @@
 {
   "additionalProperties": false,
   "properties": {
+    "anchor_inputs": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Anchor Inputs",
+      "type": "object"
+    },
     "camera_reconstruction_path": {
       "const": "camera/reconstruction.json",
       "title": "Camera Reconstruction Path",
@@ -55,6 +63,14 @@
       "pattern": "^[0-9a-f]{64}$",
       "title": "Evidence Split Sha256",
       "type": "string"
+    },
+    "fitting_inputs": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Fitting Inputs",
+      "type": "object"
     },
     "generation_manifest_hashes": {
       "additionalProperties": {
@@ -132,6 +148,8 @@
     "dense_depth_manifest_sha256",
     "dense_undistortion_manifest_path",
     "dense_undistortion_manifest_sha256",
+    "anchor_inputs",
+    "fitting_inputs",
     "heldout_inputs",
     "evaluation_configuration",
     "output_directory",

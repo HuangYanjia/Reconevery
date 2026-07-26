@@ -66,6 +66,7 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> None:
     relative = glb_path.relative_to(input_root).as_posix()
     candidate_id = str(config["candidate_id"])
     asset = {
+        "asset_id": "official_pbr_glb",
         "relative_path": relative,
         "sha256": sha256(glb_path),
         "format": "pbr_glb",
@@ -102,6 +103,12 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> None:
             "anchor_frame_id": request.anchor_frame_id,
             "generation_seed": request.generation_seed,
             "native_assets": [asset],
+            "registration_asset_id": asset["asset_id"],
+            "registration_asset_path": asset["relative_path"],
+            "evaluation_asset_id": asset["asset_id"],
+            "evaluation_asset_path": asset["relative_path"],
+            "selection_asset_id": asset["asset_id"],
+            "selection_asset_path": asset["relative_path"],
             "native_coordinate_convention": "official_trellis2_object_canonical",
             "native_bounds_min": native_bounds_min,
             "native_bounds_max": native_bounds_max,

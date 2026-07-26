@@ -95,6 +95,11 @@
   },
   "additionalProperties": false,
   "properties": {
+    "backprojection_configuration": {
+      "additionalProperties": true,
+      "title": "Backprojection Configuration",
+      "type": "object"
+    },
     "camera_reconstruction_path": {
       "const": "camera/reconstruction.json",
       "title": "Camera Reconstruction Path",
@@ -104,6 +109,11 @@
       "pattern": "^[0-9a-f]{64}$",
       "title": "Camera Reconstruction Sha256",
       "type": "string"
+    },
+    "consistency_configuration": {
+      "additionalProperties": true,
+      "title": "Consistency Configuration",
+      "type": "object"
     },
     "coordinate_convention": {
       "$ref": "#/$defs/CoordinateConvention"
@@ -169,6 +179,16 @@
       "title": "Measured Geometry Path",
       "type": "string"
     },
+    "measured_geometry_request_path": {
+      "const": "reconstruction/measured_objects/request.json",
+      "title": "Measured Geometry Request Path",
+      "type": "string"
+    },
+    "measured_geometry_request_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Measured Geometry Request Sha256",
+      "type": "string"
+    },
     "measured_geometry_sha256": {
       "pattern": "^[0-9a-f]{64}$",
       "title": "Measured Geometry Sha256",
@@ -221,11 +241,15 @@
     "dense_undistortion_manifest_sha256",
     "measured_geometry_path",
     "measured_geometry_sha256",
+    "measured_geometry_request_path",
+    "measured_geometry_request_sha256",
     "evidence_split_path",
     "evidence_split_sha256",
     "crop_manifest_path",
     "crop_manifest_sha256",
     "object_inputs",
+    "backprojection_configuration",
+    "consistency_configuration",
     "coordinate_convention",
     "output_directory",
     "seed"

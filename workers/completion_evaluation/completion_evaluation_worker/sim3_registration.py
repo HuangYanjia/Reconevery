@@ -159,6 +159,7 @@ def register_asymmetric_sim3(
     *,
     iterations: int = 30,
     trimmed_fraction: float = 0.8,
+    extra_initializations: list[tuple[str, np.ndarray]] | None = None,
 ) -> Sim3Result:
     if candidate.shape[1:] != (3,) or measured.shape[1:] != (3,):
         raise ValueError("candidate and measured point sets must be Nx3")
@@ -179,6 +180,25 @@ def register_asymmetric_sim3(
     scored = []
     for name, rotation in initializations:
         scale, translation = _initial_transform(candidate_subset, measured_subset, rotation)
+        distances = _residuals(
+            candidate_subset,
+            measured_subset,
+            scale,
+            rotation,
+            translation,
+        )
+        keep_count = max(3, int(len(distances) * trimmed_fraction))
+        score = float(np.mean(np.partition(distances, keep_count - 1)[:keep_count]))
+        scored.append((score, name, scale, rotation, translation))
+    for name, matrix in extra_initializations or []:
+        linear = np.asarray(matrix[:3, :3], dtype=np.float64)
+        scale = float(np.cbrt(np.linalg.det(linear)))
+        if not np.isfinite(matrix).all() or scale <= 0:
+            continue
+        rotation = linear / scale
+        if np.linalg.det(rotation) <= 0:
+            continue
+        translation = np.asarray(matrix[:3, 3], dtype=np.float64)
         distances = _residuals(
             candidate_subset,
             measured_subset,

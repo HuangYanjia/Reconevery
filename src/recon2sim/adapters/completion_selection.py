@@ -60,7 +60,7 @@ from recon2sim.storage import atomic_write_json
 
 class CompletionSelectionAdapter:
     name = "completion_candidate_selection"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         specs = [
@@ -99,9 +99,13 @@ class CompletionSelectionAdapter:
                     InputSpec(
                         asset.relative_path,
                         (
-                            "measured_object_geometry_file"
-                            if candidate.backend.value == "measured_partial_baseline"
-                            else "completion_candidate_file"
+                            "completion_evidence_file"
+                            if asset.relative_path.startswith("reconstruction/completion/evidence/")
+                            else (
+                                "measured_object_geometry_file"
+                                if candidate.backend.value == "measured_partial_baseline"
+                                else "completion_candidate_file"
+                            )
                         ),
                         materialization_mode="reflink_or_copy",
                     )
@@ -203,8 +207,10 @@ class CompletionSelectionAdapter:
             for item in measured.hypotheses
         }
         evaluations_by_object: dict[str, list[CandidateHeldoutEvaluation]] = {}
+        evaluations_by_candidate: dict[str, CandidateHeldoutEvaluation] = {}
         for item in evaluation.evaluations:
             evaluations_by_object.setdefault(item.object_id, []).append(item)
+            evaluations_by_candidate[item.candidate_id] = item
         selected: list[SelectedVisualCompletion] = []
         for eligibility_record in eligibility.records:
             if eligibility_record.status not in {
@@ -278,6 +284,26 @@ class CompletionSelectionAdapter:
                 )
                 continue
             chosen_candidate = candidates[chosen]
+            chosen_evaluation = evaluations_by_candidate[chosen]
+            declared_assets = {
+                asset.asset_id: asset.relative_path for asset in chosen_candidate.native_assets
+            }
+            if (
+                declared_assets.get(chosen_evaluation.selection_asset_id)
+                != chosen_evaluation.selection_asset_path
+            ):
+                raise RuntimeError("selected evaluation references an undeclared native asset")
+            if (
+                chosen_evaluation.selection_asset_id != chosen_evaluation.evaluation_asset_id
+                and not (
+                    chosen_evaluation.representation_parity_accepted
+                    and chosen_evaluation.representation_parity_path
+                )
+            ):
+                raise RuntimeError(
+                    "selected representation differs from evaluated representation "
+                    "without accepted parity"
+                )
             accepted_status: Literal[
                 "accepted_visual_completion",
                 "ambiguous_multiple_candidates",
@@ -299,7 +325,10 @@ class CompletionSelectionAdapter:
                     best_production_eligible_candidate=production_id,
                     selected_candidate=chosen,
                     measured_anchor_asset_path=measured_paths.get(eligibility_record.object_id),
-                    selected_native_asset_path=chosen_candidate.native_assets[0].relative_path,
+                    selected_native_asset_path=chosen_evaluation.selection_asset_path,
+                    selected_asset_id=chosen_evaluation.selection_asset_id,
+                    evaluated_asset_id=chosen_evaluation.evaluation_asset_id,
+                    representation_parity_path=chosen_evaluation.representation_parity_path,
                     selection_rationale=[
                         "passed hard held-out validity gates",
                         "survived Pareto filtering",
@@ -617,7 +646,7 @@ class CompletionSelectionAdapter:
 
 class Phase5BConsistencyValidationAdapter:
     name = "phase5b_consistency_validation"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         specs = [
@@ -679,9 +708,13 @@ class Phase5BConsistencyValidationAdapter:
                 InputSpec(
                     asset.relative_path,
                     (
-                        "measured_object_geometry_file"
-                        if candidate.backend.value == "measured_partial_baseline"
-                        else "completion_candidate_file"
+                        "completion_evidence_file"
+                        if asset.relative_path.startswith("reconstruction/completion/evidence/")
+                        else (
+                            "measured_object_geometry_file"
+                            if candidate.backend.value == "measured_partial_baseline"
+                            else "completion_candidate_file"
+                        )
                     ),
                     materialization_mode="reflink_or_copy",
                 )
@@ -763,6 +796,7 @@ class Phase5BConsistencyValidationAdapter:
             for candidate in generation.candidates
         }
         registrations = {item.candidate_id: item for item in registration.registrations}
+        evaluations = {item.candidate_id: item for item in evaluation.evaluations}
         checks: list[EndToEndConsistencyCheck] = []
 
         def check(identifier: str, passed: bool, message: str) -> None:
@@ -906,6 +940,48 @@ class Phase5BConsistencyValidationAdapter:
             "every evaluated candidate has a registration record",
         )
         check(
+            "representation_consistency",
+            all(
+                item.candidate_id in candidates
+                and item.candidate_id in registrations
+                and {
+                    asset.asset_id: asset.relative_path
+                    for asset in candidates[item.candidate_id].native_assets
+                }.get(item.registration_asset_id)
+                == item.registration_asset_path
+                and {
+                    asset.asset_id: asset.relative_path
+                    for asset in candidates[item.candidate_id].native_assets
+                }.get(item.evaluation_asset_id)
+                == item.evaluation_asset_path
+                and {
+                    asset.asset_id: asset.relative_path
+                    for asset in candidates[item.candidate_id].native_assets
+                }.get(item.selection_asset_id)
+                == item.selection_asset_path
+                and registrations[item.candidate_id].registration_asset_id
+                == item.registration_asset_id
+                and registrations[item.candidate_id].registration_asset_path
+                == item.registration_asset_path
+                and (
+                    item.registration_asset_id == item.evaluation_asset_id
+                    or (
+                        item.representation_parity_accepted
+                        and item.representation_parity_path is not None
+                    )
+                )
+                and (
+                    item.evaluation_asset_id == item.selection_asset_id
+                    or (
+                        item.representation_parity_accepted
+                        and item.representation_parity_path is not None
+                    )
+                )
+                for item in evaluation.evaluations
+            ),
+            "registration, evaluation, and selection use declared native representations",
+        )
+        check(
             "acceptance_gates",
             all(
                 self._expected_failed_gates(item, evaluation.evaluation_configuration)
@@ -949,6 +1025,13 @@ class Phase5BConsistencyValidationAdapter:
                 item.selected_native_asset_path is None
                 or (
                     item.selected_candidate in candidates
+                    and item.selected_candidate in evaluations
+                    and item.selected_asset_id
+                    == evaluations[item.selected_candidate].selection_asset_id
+                    and item.evaluated_asset_id
+                    == evaluations[item.selected_candidate].evaluation_asset_id
+                    and item.selected_native_asset_path
+                    == evaluations[item.selected_candidate].selection_asset_path
                     and item.selected_native_asset_path in selected_assets
                     and selected_assets[item.selected_native_asset_path].observation_grounded
                     and selected_assets[item.selected_native_asset_path].sim_ready is False

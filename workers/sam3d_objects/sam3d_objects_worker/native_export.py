@@ -6,6 +6,33 @@ from pathlib import Path
 from typing import Any
 
 
+def official_anchor_camera(
+    intrinsics_tensor: Any,
+    *,
+    width: int,
+    height: int,
+) -> dict[str, object]:
+    import numpy as np
+
+    if not hasattr(intrinsics_tensor, "detach"):
+        raise RuntimeError("official SAM 3D point-map path omitted its intrinsics tensor")
+    intrinsics = intrinsics_tensor.detach().cpu().numpy()
+    if intrinsics.shape != (3, 3) or not np.isfinite(intrinsics).all():
+        raise RuntimeError("official SAM 3D point-map intrinsics are not a finite 3x3 matrix")
+    fx, fy = float(intrinsics[0, 0]), float(intrinsics[1, 1])
+    cx, cy = float(intrinsics[0, 2]), float(intrinsics[1, 2])
+    if fx <= 0 or fy <= 0:
+        raise RuntimeError("official SAM 3D point-map focal lengths must be positive")
+    return {
+        "width": width,
+        "height": height,
+        "normalized_intrinsics": tuple(float(value) for value in intrinsics.reshape(-1)),
+        "pixel_intrinsics": (fx * width, fy * height, cx * width, cy * height),
+        "camera_axes": "x_right_y_down_z_forward",
+        "source": "official_pointmap_intrinsics",
+    }
+
+
 def ply_vertex_count(path: Path) -> int:
     with path.open("rb") as file:
         header = file.read(64 * 1024)

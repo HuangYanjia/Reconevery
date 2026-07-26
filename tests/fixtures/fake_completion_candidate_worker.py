@@ -64,9 +64,11 @@ def generate(request_path: Path, output_dir: Path) -> int:
     if backend == "sam3d_objects":
         asset = output_dir / "native" / "gaussians.ply"
         write_gaussians(asset)
+        visual_asset = output_dir / "native" / "visual_asset.ply"
+        write_mesh(visual_asset)
         native_format = "gaussian_splat_ply"
         gaussian_count = 4
-        vertex_count = face_count = None
+        vertex_count = face_count = 4
         renderer = "official_sam3d_gaussian_renderer"
     else:
         asset = output_dir / "native" / "visual_asset.glb"
@@ -100,6 +102,33 @@ def generate(request_path: Path, output_dir: Path) -> int:
         "source": "generated",
     }
     relative_asset = asset.relative_to(output_dir.parents[4]).as_posix()
+    asset_id = "native_gaussian" if backend == "sam3d_objects" else "official_pbr_glb"
+    native_assets = [
+        {
+            "asset_id": asset_id,
+            "relative_path": relative_asset,
+            "sha256": sha256(asset),
+            "format": native_format,
+            "size_bytes": asset.stat().st_size,
+            "role": "official_native_output",
+        }
+    ]
+    selected_asset_id = asset_id
+    selected_asset_path = relative_asset
+    if backend == "sam3d_objects":
+        relative_visual = visual_asset.relative_to(output_dir.parents[4]).as_posix()
+        native_assets.append(
+            {
+                "asset_id": "official_visual_glb",
+                "relative_path": relative_visual,
+                "sha256": sha256(visual_asset),
+                "format": "mesh_ply",
+                "size_bytes": visual_asset.stat().st_size,
+                "role": "official_optional_visual_glb",
+            }
+        )
+        selected_asset_id = "official_visual_glb"
+        selected_asset_path = relative_visual
     candidate = {
         "candidate_id": candidate_id,
         "object_id": request["object_id"],
@@ -107,15 +136,13 @@ def generate(request_path: Path, output_dir: Path) -> int:
         "backend": backend,
         "anchor_frame_id": request["anchor_frame_id"],
         "generation_seed": request["generation_seed"],
-        "native_assets": [
-            {
-                "relative_path": relative_asset,
-                "sha256": sha256(asset),
-                "format": native_format,
-                "size_bytes": asset.stat().st_size,
-                "role": "official_native_output",
-            }
-        ],
+        "native_assets": native_assets,
+        "registration_asset_id": selected_asset_id,
+        "registration_asset_path": selected_asset_path,
+        "evaluation_asset_id": selected_asset_id,
+        "evaluation_asset_path": selected_asset_path,
+        "selection_asset_id": selected_asset_id,
+        "selection_asset_path": selected_asset_path,
         "native_coordinate_convention": "backend_canonical_object",
         "native_bounds_min": [-0.5, -0.5, 0],
         "native_bounds_max": [0.5, 0.5, 1],
@@ -127,6 +154,18 @@ def generate(request_path: Path, output_dir: Path) -> int:
         "texture_count": 1 if backend == "trellis2" else None,
         "gaussian_count": gaussian_count,
         "backend_predicted_layout": {"scale": 1.0, "rotation_xyzw": [0, 0, 0, 1]},
+        "backend_anchor_camera": (
+            {
+                "width": 1024,
+                "height": 1024,
+                "normalized_intrinsics": [1.0, 0.0, 0.5, 0.0, 1.0, 0.5, 0.0, 0.0, 1.0],
+                "pixel_intrinsics": [1024.0, 1024.0, 512.0, 512.0],
+                "camera_axes": "x_right_y_down_z_forward",
+                "source": "official_pointmap_intrinsics",
+            }
+            if backend == "sam3d_objects"
+            else None
+        ),
         "render_capability": {
             "renderer": renderer,
             "supports_rgba": True,
