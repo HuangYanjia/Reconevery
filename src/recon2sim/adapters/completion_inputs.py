@@ -141,7 +141,7 @@ def _crop_rgba(
 
 class CompletionEvidencePackageAdapter:
     name = "completion_evidence_package"
-    version = "0.1.1"
+    version = "0.1.2"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         config = CompletionInputsAdapterConfig.model_validate(context.config.adapter.config)

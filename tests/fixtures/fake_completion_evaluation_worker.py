@@ -107,7 +107,12 @@ def prepare_evidence(request_path: Path, input_root: Path, output_dir: Path) -> 
                 "consistency_rejected_count": 2,
                 "depth_discontinuity_rejected_count": 1,
                 "multi_view_rejected_count": 2,
+                "pre_cap_validated_point_count": 4,
                 "validated_point_count": 4,
+                "maximum_samples_per_object": request["backprojection_configuration"][
+                    "maximum_samples_per_object"
+                ],
+                "sampling_cap_applied": False,
                 "supporting_fitting_views": values["training_frame_ids"],
                 "point_cloud_path": point_path.relative_to(input_root).as_posix(),
                 "point_cloud_sha256": sha256(point_path),

@@ -2872,7 +2872,10 @@ class CompletionTrainingMeasuredGeometry(StrictModel):
     consistency_rejected_count: int = Field(ge=0)
     depth_discontinuity_rejected_count: int = Field(ge=0)
     multi_view_rejected_count: int = Field(ge=0)
+    pre_cap_validated_point_count: int = Field(ge=0)
     validated_point_count: int = Field(ge=0)
+    maximum_samples_per_object: int = Field(gt=0)
+    sampling_cap_applied: bool
     supporting_fitting_views: list[str]
     point_cloud_path: str
     point_cloud_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -2899,12 +2902,19 @@ class CompletionTrainingMeasuredGeometry(StrictModel):
     def fitting_and_heldout_are_disjoint(self) -> Self:
         if set(self.training_frame_ids) & set(self.heldout_frame_ids):
             raise ValueError("training measured geometry contains held-out frames")
-        if (
-            self.validated_point_count
-            != sum(record.validated_point_count for record in self.frame_records)
-            and self.validated_point_count < 200_000
+        frame_total = sum(record.validated_point_count for record in self.frame_records)
+        if self.pre_cap_validated_point_count != frame_total:
+            raise ValueError("pre-cap training point count does not match frame records")
+        expected_count = min(
+            self.pre_cap_validated_point_count,
+            self.maximum_samples_per_object,
+        )
+        if self.validated_point_count != expected_count:
+            raise ValueError("post-cap training point count is inconsistent")
+        if self.sampling_cap_applied != (
+            self.pre_cap_validated_point_count > self.maximum_samples_per_object
         ):
-            raise ValueError("training measured geometry point count is inconsistent")
+            raise ValueError("training point sampling-cap status is inconsistent")
         return self
 
 

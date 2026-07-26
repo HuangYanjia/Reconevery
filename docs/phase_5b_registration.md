@@ -13,6 +13,11 @@ and multi-view mask/depth agreement. The all-view Phase 5A cloud is diagnostic a
 never enters registration when held-out views exist. Its rejection counts and point
 and normal hashes are recorded in
 `evidence/<object_id>/training_measured_geometry.json`.
+When deterministic point-coordinate hashing applies the configured sample cap, the
+artifact separately records the pre-cap count, post-cap count, configured maximum,
+and whether truncation occurred. Schema validation requires those values to agree
+exactly with the per-frame counts; it does not use a size-dependent validation
+exception.
 
 Meshes use area-weighted surface samples; Gaussian candidates retain
 opacity-filtered support semantics. Fitting is asymmetric from partial measured

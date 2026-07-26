@@ -35,6 +35,7 @@ from recon2sim.artifacts import (
     CompletionEligibilityStatus,
     CompletionEvidencePackage,
     CompletionEvidenceSplit,
+    CompletionTrainingMeasuredGeometry,
     CompletionWorkerManifest,
     Phase5BConsistencyReport,
 )
@@ -271,6 +272,64 @@ def test_evidence_split_schema_rejects_leakage() -> None:
                 "seed": 42,
             }
         )
+
+
+def test_training_geometry_sampling_cap_is_exactly_audited() -> None:
+    payload = {
+        "object_id": "cup_0001",
+        "training_frame_ids": ["frame_000001", "frame_000002"],
+        "heldout_frame_ids": ["frame_000003"],
+        "raw_sample_count": 12,
+        "boundary_rejected_count": 1,
+        "invalid_geometry_rejected_count": 1,
+        "sam_score_rejected_count": 0,
+        "consistency_rejected_count": 0,
+        "depth_discontinuity_rejected_count": 1,
+        "multi_view_rejected_count": 1,
+        "pre_cap_validated_point_count": 8,
+        "validated_point_count": 5,
+        "maximum_samples_per_object": 5,
+        "sampling_cap_applied": True,
+        "supporting_fitting_views": ["frame_000001", "frame_000002"],
+        "point_cloud_path": ("reconstruction/completion/evidence/cup_0001/training_points.ply"),
+        "point_cloud_sha256": "1" * 64,
+        "normal_sha256": "2" * 64,
+        "phase5a_all_view_validated_point_count": 10,
+        "frame_records": [
+            {
+                "frame_id": "frame_000001",
+                "raw_sample_count": 6,
+                "backprojected_point_count": 5,
+                "validated_point_count": 4,
+                "maximum_supporting_views": 2,
+                "median_relative_depth_residual": 0.01,
+            },
+            {
+                "frame_id": "frame_000002",
+                "raw_sample_count": 6,
+                "backprojected_point_count": 5,
+                "validated_point_count": 4,
+                "maximum_supporting_views": 2,
+                "median_relative_depth_residual": 0.02,
+            },
+        ],
+        "backprojection_configuration": {"maximum_samples_per_object": 5},
+        "consistency_configuration": {"minimum_supporting_views": 2},
+    }
+    artifact = CompletionTrainingMeasuredGeometry.model_validate(payload)
+    assert artifact.pre_cap_validated_point_count == 8
+    assert artifact.validated_point_count == 5
+    assert artifact.sampling_cap_applied
+
+    inconsistent = dict(payload)
+    inconsistent["validated_point_count"] = 6
+    with pytest.raises(ValueError, match="post-cap"):
+        CompletionTrainingMeasuredGeometry.model_validate(inconsistent)
+
+    wrong_status = dict(payload)
+    wrong_status["sampling_cap_applied"] = False
+    with pytest.raises(ValueError, match="sampling-cap status"):
+        CompletionTrainingMeasuredGeometry.model_validate(wrong_status)
 
 
 def test_candidate_id_is_backend_anchor_and_seed_stable() -> None:

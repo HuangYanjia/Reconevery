@@ -383,8 +383,10 @@ def _prepare_evidence(
         normals = (
             np.concatenate(collected_normals, axis=0) if collected_normals else np.empty((0, 3))
         )
+        pre_cap_validated_point_count = len(points)
         maximum_points = int(request["backprojection_configuration"]["maximum_samples_per_object"])
-        if len(points) > maximum_points:
+        sampling_cap_applied = pre_cap_validated_point_count > maximum_points
+        if sampling_cap_applied:
             hashes = np.asarray(
                 [
                     int.from_bytes(hashlib.sha256(point.tobytes()).digest()[:8], "little")
@@ -421,7 +423,10 @@ def _prepare_evidence(
                 "consistency_rejected_count": consistency_rejected_count,
                 "depth_discontinuity_rejected_count": (depth_discontinuity_rejected_count),
                 "multi_view_rejected_count": multi_view_rejected_count,
+                "pre_cap_validated_point_count": pre_cap_validated_point_count,
                 "validated_point_count": len(points),
+                "maximum_samples_per_object": maximum_points,
+                "sampling_cap_applied": sampling_cap_applied,
                 "supporting_fitting_views": [
                     record["frame_id"]
                     for record in frame_records
