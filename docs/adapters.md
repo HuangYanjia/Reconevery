@@ -18,8 +18,10 @@ An adapter exposes:
 The runner validates and hashes the union of declared and dynamic outputs. Missing files, malformed
 JSON, invalid Scene IR, invalid PNG/OBJ content, and conflicting declarations fail the attempt.
 `InputSpec` declares a safe attempt-relative destination, artifact type, required/optional status,
-expected hash, source artifact or approved external path, and copy/reflink mode. Older adapters
-temporarily retain full-ancestor materialization.
+expected hash, source artifact or approved external path, copy/reflink mode, and whether the
+producer execution signature participates in downstream cache identity. The latter defaults to
+`true`; set it to `false` only when the declared file bytes are the complete semantic input.
+Older adapters temporarily retain full-ancestor materialization.
 
 ## Mock stage contracts
 
@@ -183,3 +185,10 @@ surfels. Only declared attempt-local inputs are visible to either worker.
 
 Automatic VLM inventory, hidden-surface completion, SceneSmith, Blender, and simulator
 integrations remain later, separate phases.
+
+Phase 5B adapters are `completion_evidence_package`,
+`sam3d_object_candidates`, `trellis2_object_candidates`,
+`measured_only_candidates`, `completion_candidate_registration`,
+`completion_candidate_evaluation`, `completion_candidate_selection`, and
+`phase5b_consistency_validation`. Heavy generation, registration, and rendering live
+only under `workers/` or Docker.

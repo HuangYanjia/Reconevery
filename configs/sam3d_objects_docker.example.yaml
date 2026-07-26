@@ -1,0 +1,21 @@
+seed: 42
+stages:
+  sam3d_object_candidates:
+    adapter:
+      name: sam3d_object_candidates
+      timeout_s: 14400
+      env: [PATH, HOME, HF_HOME, HF_TOKEN, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: docker
+        docker_image: reconevery/sam3d-objects:phase5b
+        docker_gpus: device=0
+        docker_model_mounts:
+          /absolute/path/to/sam3d-checkpoints: /models/sam3d
+        checkpoint_hashes:
+          model.ckpt: <exact-sha256>
+        seeds_per_anchor: 1
+        generation_configuration:
+          official_checkout_path: /opt/sam3d-objects
+          checkpoint_root: /models/sam3d
+          pipeline_config: /models/sam3d/pipeline.yaml
+    depends_on: [completion_evidence_package]

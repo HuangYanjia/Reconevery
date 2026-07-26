@@ -1,0 +1,104 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "candidate_count_by_backend": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Candidate Count By Backend",
+      "type": "object"
+    },
+    "deferred_object_count": {
+      "minimum": 0,
+      "title": "Deferred Object Count",
+      "type": "integer"
+    },
+    "eligible_object_count": {
+      "minimum": 0,
+      "title": "Eligible Object Count",
+      "type": "integer"
+    },
+    "evaluated_candidate_count": {
+      "minimum": 0,
+      "title": "Evaluated Candidate Count",
+      "type": "integer"
+    },
+    "passing_candidate_count": {
+      "minimum": 0,
+      "title": "Passing Candidate Count",
+      "type": "integer"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "registered_candidate_count": {
+      "minimum": 0,
+      "title": "Registered Candidate Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_production_count": {
+      "minimum": 0,
+      "title": "Selected Production Count",
+      "type": "integer"
+    },
+    "selected_research_count": {
+      "minimum": 0,
+      "title": "Selected Research Count",
+      "type": "integer"
+    },
+    "total_runtime_seconds": {
+      "minimum": 0,
+      "title": "Total Runtime Seconds",
+      "type": "number"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "eligible_object_count",
+    "deferred_object_count",
+    "candidate_count_by_backend",
+    "registered_candidate_count",
+    "evaluated_candidate_count",
+    "passing_candidate_count",
+    "selected_research_count",
+    "selected_production_count",
+    "total_runtime_seconds"
+  ],
+  "title": "CompletionDiagnostics",
+  "type": "object"
+}

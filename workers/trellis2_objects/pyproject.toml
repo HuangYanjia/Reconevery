@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "reconevery-trellis2-objects-worker"
+version = "0.1.0"
+requires-python = ">=3.10,<3.13"
+dependencies = ["pillow>=10", "pydantic>=2.8", "numpy>=1.26"]
+
+[project.scripts]
+trellis2-objects-worker = "trellis2_objects_worker.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["trellis2_objects_worker"]

@@ -335,6 +335,17 @@
           ],
           "default": null
         },
+        "surfel_spacing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MeasuredSurfelSpacingDiagnostics"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "validated_sample_count": {
           "minimum": 0,
           "title": "Validated Sample Count",
@@ -486,6 +497,63 @@
         "has_colors"
       ],
       "title": "MeasuredPointCloudManifest",
+      "type": "object"
+    },
+    "MeasuredSurfelSpacingDiagnostics": {
+      "additionalProperties": false,
+      "properties": {
+        "coordinate_hash_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Coordinate Hash Digest",
+          "type": "string"
+        },
+        "method": {
+          "const": "coordinate_hash_kdtree_nearest_neighbor_v1",
+          "title": "Method",
+          "type": "string"
+        },
+        "nearest_neighbor_median": {
+          "exclusiveMinimum": 0,
+          "title": "Nearest Neighbor Median",
+          "type": "number"
+        },
+        "nearest_neighbor_p10": {
+          "exclusiveMinimum": 0,
+          "title": "Nearest Neighbor P10",
+          "type": "number"
+        },
+        "nearest_neighbor_p90": {
+          "exclusiveMinimum": 0,
+          "title": "Nearest Neighbor P90",
+          "type": "number"
+        },
+        "sampled_point_count": {
+          "exclusiveMinimum": 0,
+          "title": "Sampled Point Count",
+          "type": "integer"
+        },
+        "source_point_count": {
+          "exclusiveMinimum": 0,
+          "title": "Source Point Count",
+          "type": "integer"
+        },
+        "voxel_size": {
+          "exclusiveMinimum": 0,
+          "title": "Voxel Size",
+          "type": "number"
+        }
+      },
+      "required": [
+        "method",
+        "source_point_count",
+        "sampled_point_count",
+        "nearest_neighbor_p10",
+        "nearest_neighbor_median",
+        "nearest_neighbor_p90",
+        "voxel_size",
+        "coordinate_hash_digest"
+      ],
+      "title": "MeasuredSurfelSpacingDiagnostics",
       "type": "object"
     },
     "ObservedSurfaceMeshManifest": {

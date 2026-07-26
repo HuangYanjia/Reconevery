@@ -1,0 +1,22 @@
+seed: 42
+stages:
+  completion_candidate_registration:
+    adapter:
+      name: completion_candidate_registration
+      timeout_s: 7200
+      env: [PATH, HOME, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: docker
+        docker_image: reconevery/completion-evaluation:phase5b
+        docker_gpus: device=0
+    depends_on: [sam3d_object_candidates, trellis2_object_candidates, measured_only_candidates]
+  completion_candidate_evaluation:
+    adapter:
+      name: completion_candidate_evaluation
+      timeout_s: 7200
+      env: [PATH, HOME, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: docker
+        docker_image: reconevery/completion-evaluation:phase5b
+        docker_gpus: device=0
+    depends_on: [completion_candidate_registration]

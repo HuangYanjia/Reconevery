@@ -1,0 +1,238 @@
+{
+  "$defs": {
+    "CompletionLicenseMode": {
+      "enum": [
+        "research_evaluation",
+        "production_candidate"
+      ],
+      "title": "CompletionLicenseMode",
+      "type": "string"
+    },
+    "SelectedVisualCompletion": {
+      "additionalProperties": false,
+      "properties": {
+        "best_production_eligible_candidate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Best Production Eligible Candidate"
+        },
+        "best_research_candidate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Best Research Candidate"
+        },
+        "canonical_gravity_alignment_known": {
+          "const": false,
+          "default": false,
+          "title": "Canonical Gravity Alignment Known",
+          "type": "boolean"
+        },
+        "collision_ready": {
+          "const": false,
+          "default": false,
+          "title": "Collision Ready",
+          "type": "boolean"
+        },
+        "evaluated_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evaluated Asset Id"
+        },
+        "geometry_status": {
+          "anyOf": [
+            {
+              "const": "complete_visual_candidate",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Geometry Status"
+        },
+        "measured_anchor_asset_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Anchor Asset Path"
+        },
+        "metric_scale_known": {
+          "const": false,
+          "default": false,
+          "title": "Metric Scale Known",
+          "type": "boolean"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "observation_grounded": {
+          "const": true,
+          "default": true,
+          "title": "Observation Grounded",
+          "type": "boolean"
+        },
+        "physical_validation": {
+          "const": "not_implemented",
+          "default": "not_implemented",
+          "title": "Physical Validation",
+          "type": "string"
+        },
+        "representation_parity_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Representation Parity Path"
+        },
+        "selected_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Asset Id"
+        },
+        "selected_candidate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Candidate"
+        },
+        "selected_native_asset_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Native Asset Path"
+        },
+        "selection_rationale": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Selection Rationale",
+          "type": "array"
+        },
+        "sim_ready": {
+          "const": false,
+          "default": false,
+          "title": "Sim Ready",
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "accepted_visual_completion",
+            "ambiguous_multiple_candidates",
+            "symmetry_ambiguous",
+            "rejected_inconsistent",
+            "unresolved_no_candidate",
+            "deferred_object_type",
+            "license_blocked",
+            "backend_failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "object_id",
+        "status",
+        "selection_rationale"
+      ],
+      "title": "SelectedVisualCompletion",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "deterministic_selection_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Deterministic Selection Digest",
+      "type": "string"
+    },
+    "evaluation_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Evaluation Manifest Sha256",
+      "type": "string"
+    },
+    "license_mode": {
+      "$ref": "#/$defs/CompletionLicenseMode"
+    },
+    "objects": {
+      "items": {
+        "$ref": "#/$defs/SelectedVisualCompletion"
+      },
+      "title": "Objects",
+      "type": "array"
+    },
+    "ranking_policy": {
+      "const": "hard_gates_pareto_deterministic_v1",
+      "title": "Ranking Policy",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "evaluation_manifest_sha256",
+    "license_mode",
+    "ranking_policy",
+    "objects",
+    "deterministic_selection_digest"
+  ],
+  "title": "CandidateSelectionArtifact",
+  "type": "object"
+}

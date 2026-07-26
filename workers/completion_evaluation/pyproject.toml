@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "reconevery-completion-evaluation-worker"
+version = "0.1.0"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.12",
+  "pillow>=10",
+  "pydantic>=2.8",
+  "trimesh>=4.0",
+  "opencv-python-headless>=4.9",
+]
+
+[project.scripts]
+completion-evaluation-worker = "completion_evaluation_worker.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["completion_evaluation_worker"]

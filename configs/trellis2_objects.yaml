@@ -1,0 +1,14 @@
+seed: 42
+stages:
+  trellis2_object_candidates:
+    adapter:
+      name: trellis2_object_candidates
+      timeout_s: 14400
+      env: [PATH, HOME, TMPDIR, HF_HOME, HF_TOKEN, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/trellis2-env/bin/python
+        worker_module: trellis2_objects_worker
+        seeds_per_anchor: 2
+        maximum_candidates_per_object: 6
+    depends_on: [completion_evidence_package]

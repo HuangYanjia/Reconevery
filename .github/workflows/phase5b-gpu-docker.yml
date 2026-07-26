@@ -1,0 +1,31 @@
+name: Phase 5B GPU Docker validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Worker image to build
+        required: true
+        default: completion-evaluation
+        type: choice
+        options:
+          - completion-evaluation
+          - sam3d-objects
+          - trellis2-objects
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build selected isolated worker
+        run: |
+          docker build \
+            -f "docker/${{ inputs.image }}/Dockerfile" \
+            -t "reconevery/${{ inputs.image }}:phase5b" .
+      - name: Record image identity
+        run: docker image inspect --format '{{.Id}}' "reconevery/${{ inputs.image }}:phase5b"
+      - name: Verify worker CLI
+        run: docker run --rm "reconevery/${{ inputs.image }}:phase5b" --help
+
+# This workflow is manual. Mandatory CPU CI neither builds GPU images nor downloads models.

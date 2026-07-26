@@ -285,8 +285,22 @@ class GeometryAsset(StrictModel):
     source: GeometrySourceType
     coordinate_convention: CoordinateConvention | None = None
     scale_status: ScaleStatus | None = None
-    geometry_status: Literal["partial_observation_supported", "partial_measured"] | None = None
-    completion_status: Literal["not_completed"] | None = None
+    geometry_status: (
+        Literal[
+            "partial_observation_supported",
+            "partial_measured",
+            "complete_visual_candidate",
+        ]
+        | None
+    ) = None
+    completion_status: Literal["not_completed", "selected_by_observation_validation"] | None = None
+    asset_role: Literal["measured_anchor", "visual_completion_candidate"] | None = None
+    observation_grounded: bool | None = None
+    physical_validation: Literal["not_implemented"] | None = None
+    collision_ready: bool | None = None
+    usage_policy: Literal["research_evaluation", "production_candidate"] | None = None
+    license_record_path: str | None = None
+    production_selectable: bool | None = None
     sim_ready: bool | None = None
     source_asset_id: Identifier | None = None
     alignment_transform_path: str | None = None
@@ -300,7 +314,7 @@ class GeometryAsset(StrictModel):
     ) = None
     provenance: ProvenanceRecord
 
-    @field_validator("uri", "alignment_transform_path")
+    @field_validator("uri", "alignment_transform_path", "license_record_path")
     @classmethod
     def relative_geometry_path(cls, value: str | None) -> str | None:
         return _relative_path(value) if value is not None else None
@@ -412,8 +426,17 @@ class ObjectInstance(StrictModel):
     collision_asset_ids: list[Identifier] = Field(default_factory=list)
     physics: PhysicsProperties = Field(default_factory=PhysicsProperties)
     articulation: Articulation | None = None
-    geometry_status: Literal["partial_observation_supported", "partial_measured"] | None = None
-    completion_status: Literal["not_completed"] | None = None
+    geometry_status: (
+        Literal[
+            "partial_observation_supported",
+            "partial_measured",
+            "complete_visual_candidate",
+        ]
+        | None
+    ) = None
+    completion_status: Literal["not_completed", "selected_by_observation_validation"] | None = None
+    observation_grounded: bool | None = None
+    physical_validation: Literal["not_implemented"] | None = None
     sim_ready: bool | None = None
     provenance: list[ProvenanceRecord] = Field(default_factory=list)
     confidence: ConfidenceRecord
@@ -452,7 +475,7 @@ class ValidationReport(StrictModel):
 
 
 class SceneIR(StrictModel):
-    schema_version: Literal["0.1.0", "0.1.1", "0.1.2", "0.1.3", "0.1.4"] = "0.1.1"
+    schema_version: Literal["0.1.0", "0.1.1", "0.1.2", "0.1.3", "0.1.4", "0.1.5"] = "0.1.1"
     metadata: SceneMetadata
     cameras: list[Camera] = Field(default_factory=list)
     frames: list[FrameObservation] = Field(default_factory=list)

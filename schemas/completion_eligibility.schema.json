@@ -1,0 +1,122 @@
+{
+  "$defs": {
+    "AssetType": {
+      "enum": [
+        "unclassified",
+        "static_structure",
+        "rigid",
+        "articulated",
+        "deformable",
+        "fluid_or_particle",
+        "ignore"
+      ],
+      "title": "AssetType",
+      "type": "string"
+    },
+    "CompletionEligibilityRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_type_hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssetType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "explicitly_overridden": {
+          "default": false,
+          "title": "Explicitly Overridden",
+          "type": "boolean"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "semantic_label": {
+          "minLength": 1,
+          "title": "Semantic Label",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/CompletionEligibilityStatus"
+        }
+      },
+      "required": [
+        "object_id",
+        "semantic_label",
+        "status",
+        "reason"
+      ],
+      "title": "CompletionEligibilityRecord",
+      "type": "object"
+    },
+    "CompletionEligibilityStatus": {
+      "enum": [
+        "eligible_rigid",
+        "eligible_static",
+        "deferred_articulated",
+        "deferred_deformable",
+        "deferred_fluid",
+        "deferred_human",
+        "deferred_unknown"
+      ],
+      "title": "CompletionEligibilityStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "measured_geometry_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Measured Geometry Sha256",
+      "type": "string"
+    },
+    "records": {
+      "items": {
+        "$ref": "#/$defs/CompletionEligibilityRecord"
+      },
+      "title": "Records",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segmentation_tracking_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Segmentation Tracking Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "segmentation_tracking_sha256",
+    "measured_geometry_sha256",
+    "records"
+  ],
+  "title": "CompletionEligibilityArtifact",
+  "type": "object"
+}

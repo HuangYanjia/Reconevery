@@ -1,0 +1,98 @@
+{
+  "$defs": {
+    "CompletionObjectEvidenceSplit": {
+      "additionalProperties": false,
+      "properties": {
+        "degraded_split": {
+          "default": false,
+          "title": "Degraded Split",
+          "type": "boolean"
+        },
+        "generation_anchor_frames": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Generation Anchor Frames",
+          "type": "array"
+        },
+        "heldout_validation_frames": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heldout Validation Frames",
+          "type": "array"
+        },
+        "limitation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limitation"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "registration_fitting_frames": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Registration Fitting Frames",
+          "type": "array"
+        }
+      },
+      "required": [
+        "object_id",
+        "generation_anchor_frames",
+        "registration_fitting_frames",
+        "heldout_validation_frames"
+      ],
+      "title": "CompletionObjectEvidenceSplit",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "objects": {
+      "items": {
+        "$ref": "#/$defs/CompletionObjectEvidenceSplit"
+      },
+      "title": "Objects",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "split_version": {
+      "const": "disjoint_object_views_v1",
+      "default": "disjoint_object_views_v1",
+      "title": "Split Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "frame_sequence_digest",
+    "objects",
+    "seed"
+  ],
+  "title": "CompletionEvidenceSplit",
+  "type": "object"
+}

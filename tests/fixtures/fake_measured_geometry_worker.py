@@ -175,6 +175,7 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> int:
                     "connected_component_count": 0,
                     "measurement_confidence": 0.0,
                     "completeness_confidence": 0.0,
+                    "surfel_spacing": None,
                     "geometry_source": "measured",
                     "geometry_status": "partial_measured",
                     "hidden_surface_completion": "not_implemented",
@@ -257,6 +258,18 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> int:
                 "connected_component_count": 1,
                 "measurement_confidence": 0.78,
                 "completeness_confidence": 0.0,
+                "surfel_spacing": {
+                    "method": "coordinate_hash_kdtree_nearest_neighbor_v1",
+                    "source_point_count": validated,
+                    "sampled_point_count": 4,
+                    "nearest_neighbor_p10": 0.2,
+                    "nearest_neighbor_median": 0.2,
+                    "nearest_neighbor_p90": 0.2,
+                    "voxel_size": 0.3,
+                    "coordinate_hash_digest": hashlib.sha256(
+                        f"{object_id}:spacing".encode()
+                    ).hexdigest(),
+                },
                 "geometry_source": "measured",
                 "geometry_status": "partial_measured",
                 "hidden_surface_completion": "not_implemented",

@@ -71,9 +71,19 @@ A stage signature includes:
 - adapter name and version;
 - pipeline seed;
 - recursive path, size, and SHA-256 snapshots for root input files;
-- current hashes of direct dependency artifacts;
-- upstream execution signatures.
-- hashes for approved external inputs declared by `InputSpec`, such as prompt YAML and seed masks.
+- for legacy adapters, current hashes and execution signatures of direct dependencies;
+- for selective adapters, only the ancestor or approved external files declared by
+  `InputSpec`, including destination, source, size, and SHA-256;
+- the producer execution signature for a declared input when
+  `include_producer_signature=true`.
+
+Producer signatures default to enabled so a semantic upstream configuration change
+still invalidates dependent stages even when a fake or degenerate backend happens to
+reproduce identical bytes. Evidence-split stages may disable that flag for an input
+whose exact bytes are the complete contract. Phase 5B uses this content-only mode to
+keep held-out evidence out of generation and registration signatures. Cache migration
+from the legacy signature layout is allowed only when stage configuration, adapter
+identity, seed, and every newly declared input path/hash/size match exactly.
 
 A cache hit requires the signature and every recorded output hash to match. It leaves the stage
 `succeeded` and sets `last_execution=cache_hit`. Execution signatures are derived from stage
@@ -166,3 +176,11 @@ original face IDs, and records an unaligned/aligned comparison. The final valida
 selected sparse model and registered normalized frames. Measured extraction consumes canonical
 masks and dense maps, never GenRecon. Prompt changes rerun SAM and measured extraction but not
 PatchMatch; GenRecon changes do not invalidate canonical measured geometry.
+
+## Phase 5B completion branches
+
+`completion_evidence_package` produces eligibility, disjoint evidence splits, anchor
+crops, and fitting-only points. SAM 3D Objects and TRELLIS.2 generation run in
+parallel. Registration consumes fitting evidence; only evaluation sees held-out masks
+and dense depth. Lightweight selection applies gates, Pareto ranking, and license
+policy. GenRecon is not a canonical dependency.

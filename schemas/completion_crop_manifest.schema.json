@@ -1,0 +1,240 @@
+{
+  "$defs": {
+    "CompletionAnchorRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "camera_direction": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Camera Direction",
+          "type": "array"
+        },
+        "crop_metadata_path": {
+          "title": "Crop Metadata Path",
+          "type": "string"
+        },
+        "crop_path": {
+          "title": "Crop Path",
+          "type": "string"
+        },
+        "crop_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Crop Sha256",
+          "type": "string"
+        },
+        "crop_to_source_transform": {
+          "maxItems": 9,
+          "minItems": 9,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Crop To Source Transform",
+          "type": "array"
+        },
+        "dense_valid_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Dense Valid Ratio",
+          "type": "number"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "mask_area_ratio": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Mask Area Ratio",
+          "type": "number"
+        },
+        "mask_bbox_xywh": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Mask Bbox Xywh",
+          "type": "array"
+        },
+        "measured_sample_count": {
+          "minimum": 0,
+          "title": "Measured Sample Count",
+          "type": "integer"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "rank": {
+          "exclusiveMinimum": 0,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "selection_reason": {
+          "minLength": 1,
+          "title": "Selection Reason",
+          "type": "string"
+        },
+        "selection_score": {
+          "title": "Selection Score",
+          "type": "number"
+        },
+        "source_frame_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Frame Sha256",
+          "type": "string"
+        },
+        "source_mask_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Mask Sha256",
+          "type": "string"
+        },
+        "source_to_crop_transform": {
+          "maxItems": 9,
+          "minItems": 9,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Source To Crop Transform",
+          "type": "array"
+        }
+      },
+      "required": [
+        "object_id",
+        "frame_id",
+        "rank",
+        "selection_score",
+        "camera_direction",
+        "mask_bbox_xywh",
+        "mask_area_ratio",
+        "dense_valid_ratio",
+        "measured_sample_count",
+        "selection_reason",
+        "crop_path",
+        "crop_metadata_path",
+        "crop_sha256",
+        "source_frame_sha256",
+        "source_mask_sha256",
+        "crop_to_source_transform",
+        "source_to_crop_transform"
+      ],
+      "title": "CompletionAnchorRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "anchors": {
+      "items": {
+        "$ref": "#/$defs/CompletionAnchorRecord"
+      },
+      "title": "Anchors",
+      "type": "array"
+    },
+    "margin_ratio": {
+      "minimum": 0,
+      "title": "Margin Ratio",
+      "type": "number"
+    },
+    "output_size": {
+      "exclusiveMinimum": 0,
+      "title": "Output Size",
+      "type": "integer"
+    },
+    "padding_mode": {
+      "const": "transparent",
+      "default": "transparent",
+      "title": "Padding Mode",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "output_size",
+    "margin_ratio",
+    "anchors"
+  ],
+  "title": "CompletionCropManifest",
+  "type": "object"
+}

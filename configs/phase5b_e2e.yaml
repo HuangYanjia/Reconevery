@@ -1,0 +1,146 @@
+seed: 42
+stages:
+  ingest:
+    adapter:
+      name: ffmpeg_ingest
+      env: [PATH, HOME, TMPDIR]
+      config:
+        input_mode: auto
+        target_fps: 3.0
+        max_frames: 32
+        resize_max_edge: 1600
+        blur_threshold: 0.0
+        duplicate_threshold: 0.0
+    depends_on: []
+  camera_recovery:
+    adapter:
+      name: colmap_camera_recovery
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local
+        executable: /absolute/path/to/colmap-4.0.4/bin/colmap
+        matcher: sequential
+        camera_model: OPENCV
+        single_camera: true
+        use_gpu: true
+        min_registered_frames: 8
+        min_registration_ratio: 0.4
+    depends_on: [ingest]
+  segmentation_tracking:
+    adapter:
+      name: sam3_segmentation_tracking
+      timeout_s: 14400
+      env: [PATH, HOME, TMPDIR, HF_HOME, HF_TOKEN, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/sam3-env/bin/python
+        worker_module: sam3_worker
+        prompt_manifest: configs/prompts/tabletop.yaml
+        checkpoint_repository: facebook/sam3.1
+        checkpoint_revision: daa63191845a41281374e725f4c9e51c7a824460
+        model_mode: sam3.1
+        device: cuda
+        precision: bfloat16
+        strategy: detect_then_track
+        anchor_count: 1
+        tracking_direction: forward_backward
+    depends_on: [ingest, camera_recovery]
+  dense_mvs:
+    adapter:
+      name: dense_mvs
+      timeout_s: 43200
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/dense-mvs-env/bin/python
+        worker_module: dense_mvs_worker
+        executable: /absolute/path/to/colmap-4.0.4/bin/colmap
+        use_gpu: true
+        max_image_size: 1600
+    depends_on: [ingest, camera_recovery]
+  measured_object_geometry:
+    adapter:
+      name: measured_object_geometry
+      timeout_s: 14400
+      env: [PATH, HOME, TMPDIR, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/measured-geometry-env/bin/python
+        worker_module: measured_geometry_worker
+    depends_on: [camera_recovery, segmentation_tracking, dense_mvs]
+  phase5a_consistency_validation:
+    adapter:
+      name: phase5a_consistency_validation
+      config: {}
+    depends_on: [measured_object_geometry]
+  completion_evidence_package:
+    adapter:
+      name: completion_evidence_package
+      timeout_s: 3600
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/completion-evaluation-env/bin/python
+        worker_module: completion_evaluation_worker
+    depends_on: [camera_recovery, segmentation_tracking, dense_mvs, measured_object_geometry]
+  sam3d_object_candidates:
+    adapter:
+      name: sam3d_object_candidates
+      timeout_s: 14400
+      env: [PATH, HOME, HF_HOME, HF_TOKEN, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/sam3d-objects-env/bin/python
+        worker_module: sam3d_objects_worker
+    depends_on: [completion_evidence_package]
+  trellis2_object_candidates:
+    adapter:
+      name: trellis2_object_candidates
+      timeout_s: 14400
+      env: [PATH, HOME, HF_HOME, HF_TOKEN, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/trellis2-env/bin/python
+        worker_module: trellis2_objects_worker
+    depends_on: [completion_evidence_package]
+  measured_only_candidates:
+    adapter:
+      name: measured_only_candidates
+      config: {}
+    depends_on: [completion_evidence_package, measured_object_geometry]
+  completion_candidate_registration:
+    adapter:
+      name: completion_candidate_registration
+      timeout_s: 7200
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/completion-evaluation-env/bin/python
+        worker_module: completion_evaluation_worker
+        maximum_surface_samples: 100000
+        trimmed_fraction: 0.8
+        maximum_iterations: 100
+        fitting_refinement_iterations: 30
+        fitting_refinement_maximum_points: 10000
+    depends_on: [sam3d_object_candidates, trellis2_object_candidates, measured_only_candidates]
+  completion_candidate_evaluation:
+    adapter:
+      name: completion_candidate_evaluation
+      timeout_s: 7200
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/completion-evaluation-env/bin/python
+        worker_module: completion_evaluation_worker
+    depends_on: [completion_candidate_registration]
+  completion_candidate_selection:
+    adapter:
+      name: completion_candidate_selection
+      config:
+        license_mode: research_evaluation
+    depends_on: [completion_candidate_evaluation]
+  phase5b_consistency_validation:
+    adapter:
+      name: phase5b_consistency_validation
+      config: {}
+    depends_on: [completion_candidate_selection]

@@ -1,0 +1,88 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "camera_reconstruction_path": {
+      "const": "camera/reconstruction.json",
+      "title": "Camera Reconstruction Path",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "candidate_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Candidate Ids",
+      "type": "array"
+    },
+    "dense_undistortion_manifest_path": {
+      "const": "reconstruction/dense/undistortion_manifest.json",
+      "title": "Dense Undistortion Manifest Path",
+      "type": "string"
+    },
+    "dense_undistortion_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Dense Undistortion Manifest Sha256",
+      "type": "string"
+    },
+    "evidence_package_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Evidence Package Sha256",
+      "type": "string"
+    },
+    "fitting_inputs": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Fitting Inputs",
+      "type": "object"
+    },
+    "generation_manifest_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Generation Manifest Hashes",
+      "type": "object"
+    },
+    "output_directory": {
+      "const": "reconstruction/completion",
+      "title": "Output Directory",
+      "type": "string"
+    },
+    "registration_configuration": {
+      "additionalProperties": true,
+      "title": "Registration Configuration",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "evidence_package_sha256",
+    "generation_manifest_hashes",
+    "candidate_ids",
+    "camera_reconstruction_path",
+    "camera_reconstruction_sha256",
+    "dense_undistortion_manifest_path",
+    "dense_undistortion_manifest_sha256",
+    "fitting_inputs",
+    "registration_configuration",
+    "output_directory",
+    "seed"
+  ],
+  "title": "CandidateRegistrationRequest",
+  "type": "object"
+}

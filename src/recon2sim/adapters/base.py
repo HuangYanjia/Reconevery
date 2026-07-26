@@ -53,6 +53,7 @@ class InputSpec:
     source_path: Path | None = None
     source_artifact_path: str | None = None
     materialization_mode: InputMaterialization = "reflink_or_copy"
+    include_producer_signature: bool = True
 
 
 @dataclass(frozen=True)

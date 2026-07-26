@@ -13,6 +13,16 @@ from recon2sim.adapters.base import (
 )
 from recon2sim.adapters.colmap import ColmapCameraRecoveryAdapter
 from recon2sim.adapters.command import CommandAdapter, DockerCommandAdapter
+from recon2sim.adapters.completion_candidates import MeasuredOnlyCandidateAdapter
+from recon2sim.adapters.completion_evaluation import CompletionCandidateEvaluationAdapter
+from recon2sim.adapters.completion_inputs import CompletionEvidencePackageAdapter
+from recon2sim.adapters.completion_registration import (
+    CompletionCandidateRegistrationAdapter,
+)
+from recon2sim.adapters.completion_selection import (
+    CompletionSelectionAdapter,
+    Phase5BConsistencyValidationAdapter,
+)
 from recon2sim.adapters.dense_mvs import DenseMVSAdapter
 from recon2sim.adapters.genrecon import (
     GenReconCameraPackageAdapter,
@@ -41,6 +51,8 @@ from recon2sim.adapters.object_lifting import (
     Phase4ConsistencyValidationAdapter,
 )
 from recon2sim.adapters.sam3 import Sam3SegmentationTrackingAdapter
+from recon2sim.adapters.sam3d_objects import Sam3DObjectsCandidateAdapter
+from recon2sim.adapters.trellis2_objects import Trellis2ObjectCandidateAdapter
 
 REGISTRY: dict[str, type[Adapter]] = {
     "mock_ingest": MockIngestAdapter,
@@ -68,6 +80,14 @@ REGISTRY: dict[str, type[Adapter]] = {
     "measured_object_geometry": MeasuredObjectGeometryAdapter,
     "measured_generated_comparison": MeasuredGeneratedComparisonAdapter,
     "phase5a_consistency_validation": Phase5AConsistencyValidationAdapter,
+    "completion_evidence_package": CompletionEvidencePackageAdapter,
+    "sam3d_object_candidates": Sam3DObjectsCandidateAdapter,
+    "trellis2_object_candidates": Trellis2ObjectCandidateAdapter,
+    "measured_only_candidates": MeasuredOnlyCandidateAdapter,
+    "completion_candidate_registration": CompletionCandidateRegistrationAdapter,
+    "completion_candidate_evaluation": CompletionCandidateEvaluationAdapter,
+    "completion_candidate_selection": CompletionSelectionAdapter,
+    "phase5b_consistency_validation": Phase5BConsistencyValidationAdapter,
 }
 
 __all__ = [
@@ -76,6 +96,10 @@ __all__ = [
     "CommandAdapter",
     "CameraMeshAlignmentAdapter",
     "ColmapCameraRecoveryAdapter",
+    "CompletionCandidateEvaluationAdapter",
+    "CompletionCandidateRegistrationAdapter",
+    "CompletionEvidencePackageAdapter",
+    "CompletionSelectionAdapter",
     "DockerCommandAdapter",
     "DenseMVSAdapter",
     "FFmpegIngestAdapter",
@@ -87,12 +111,16 @@ __all__ = [
     "ObjectSurfaceLiftingAdapter",
     "MeasuredObjectGeometryAdapter",
     "MeasuredGeneratedComparisonAdapter",
+    "MeasuredOnlyCandidateAdapter",
     "REGISTRY",
     "Phase3EndToEndConsistencyAdapter",
     "Phase4ConsistencyValidationAdapter",
     "Phase4_2ConsistencyValidationAdapter",
     "Phase5AConsistencyValidationAdapter",
+    "Phase5BConsistencyValidationAdapter",
     "Sam3SegmentationTrackingAdapter",
+    "Sam3DObjectsCandidateAdapter",
     "StageContext",
     "StageResult",
+    "Trellis2ObjectCandidateAdapter",
 ]

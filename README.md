@@ -1,10 +1,12 @@
 # Recon2Sim
 
-Recon2Sim Phase 4.2 is a typed observation pipeline with real video/image ingest, frame QA,
+Recon2Sim Phase 5B is a typed observation pipeline with real video/image ingest, frame QA,
 out-of-process COLMAP sparse camera recovery, prompt-driven SAM 3.1 tracking, and isolated
 official GenRecon global visual reconstruction. It lifts 2D tracks to partial visible surfaces
-and audits a bounded global camera-mesh Sim(3). Heavy runtimes remain outside the lightweight
-core. Hidden-surface completion, physical reconstruction, and simulator export are not implemented.
+and audits a bounded global camera-mesh Sim(3), derives measured object geometry with dense MVS,
+and evaluates independent rigid visual-completion candidates against held-out observations. Heavy
+runtimes remain outside the lightweight core. Articulated completion, physical reconstruction,
+collision generation, and simulator export are not implemented.
 
 ## Quickstart
 
@@ -266,3 +268,14 @@ exact undistorted cameras, and fuses multi-view-consistent measured surfels. Gen
 source for these canonical measurements. Outputs remain partial, non-watertight, unoriented,
 scale-ambiguous, and not simulation-ready. See `docs/phase_5a_dense_mvs.md`,
 `docs/phase_5a_measured_geometry.md`, and `docs/phase_5a_acceptance.md`.
+
+## Phase 5B: rigid visual completion
+
+Phase 5B retains Phase 5A measured geometry as the authoritative anchor, separates
+generation/fitting/held-out evidence, runs official SAM 3D Objects and TRELLIS.2 in
+isolated workers, registers candidates with a proper Sim(3), evaluates held-out
+mask/depth evidence, and selects with an explicit license policy.
+
+Selected assets remain non-simulation-ready. Articulation, collision, physical
+properties, metric scale, gravity alignment, and simulator export are not included.
+See `docs/phase_5b_plan.md` and `docs/phase_5b_acceptance.md`.

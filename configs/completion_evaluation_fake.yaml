@@ -1,0 +1,20 @@
+seed: 42
+stages:
+  completion_candidate_registration:
+    adapter:
+      name: completion_candidate_registration
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_completion_evaluation_worker.py
+        fake_mode: success
+    depends_on: [sam3d_object_candidates, trellis2_object_candidates, measured_only_candidates]
+  completion_candidate_evaluation:
+    adapter:
+      name: completion_candidate_evaluation
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_completion_evaluation_worker.py
+        fake_mode: success
+    depends_on: [completion_candidate_registration]

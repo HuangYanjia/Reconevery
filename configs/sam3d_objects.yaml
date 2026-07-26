@@ -1,0 +1,14 @@
+seed: 42
+stages:
+  sam3d_object_candidates:
+    adapter:
+      name: sam3d_object_candidates
+      timeout_s: 14400
+      env: [PATH, HOME, TMPDIR, HF_HOME, HF_TOKEN, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/sam3d-objects-env/bin/python
+        worker_module: sam3d_objects_worker
+        seeds_per_anchor: 1
+        maximum_candidates_per_object: 6
+    depends_on: [completion_evidence_package]

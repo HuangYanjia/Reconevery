@@ -1,0 +1,11 @@
+seed: 42
+stages:
+  trellis2_object_candidates:
+    adapter:
+      name: trellis2_object_candidates
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_trellis2_objects_worker.py
+        fake_mode: success
+    depends_on: [completion_evidence_package]
