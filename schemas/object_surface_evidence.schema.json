@@ -1,0 +1,1190 @@
+{
+  "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "AssetType": {
+      "enum": [
+        "unclassified",
+        "static_structure",
+        "rigid",
+        "articulated",
+        "deformable",
+        "fluid_or_particle",
+        "ignore"
+      ],
+      "title": "AssetType",
+      "type": "string"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "CameraIntrinsics": {
+      "additionalProperties": false,
+      "properties": {
+        "cx": {
+          "minimum": 0,
+          "title": "Cx",
+          "type": "number"
+        },
+        "cy": {
+          "minimum": 0,
+          "title": "Cy",
+          "type": "number"
+        },
+        "distortion": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Distortion",
+          "type": "array"
+        },
+        "fx": {
+          "exclusiveMinimum": 0,
+          "title": "Fx",
+          "type": "number"
+        },
+        "fy": {
+          "exclusiveMinimum": 0,
+          "title": "Fy",
+          "type": "number"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "fx",
+        "fy",
+        "cx",
+        "cy"
+      ],
+      "title": "CameraIntrinsics",
+      "type": "object"
+    },
+    "CompactFaceIndexManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_order": {
+          "const": "little",
+          "default": "little",
+          "title": "Byte Order",
+          "type": "string"
+        },
+        "content_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "count": {
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "dtype": {
+          "enum": [
+            "uint32",
+            "uint64"
+          ],
+          "title": "Dtype",
+          "type": "string"
+        },
+        "global_mesh_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Global Mesh Sha256",
+          "type": "string"
+        },
+        "maximum_face_id": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Face Id"
+        },
+        "minimum_face_id": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum Face Id"
+        },
+        "relative_path": {
+          "minLength": 1,
+          "title": "Relative Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relative_path",
+        "dtype",
+        "count",
+        "global_mesh_sha256",
+        "content_sha256"
+      ],
+      "title": "CompactFaceIndexManifest",
+      "type": "object"
+    },
+    "ConfidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "minLength": 1,
+          "title": "Method",
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "score",
+        "method"
+      ],
+      "title": "ConfidenceRecord",
+      "type": "object"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "FaceEvidenceArrayRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "content_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "dtype": {
+          "minLength": 1,
+          "title": "Dtype",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "shape": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Shape",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "shape",
+        "dtype",
+        "content_sha256"
+      ],
+      "title": "FaceEvidenceArrayRecord",
+      "type": "object"
+    },
+    "GeometrySourceType": {
+      "enum": [
+        "measured",
+        "radiance_field",
+        "generated",
+        "retrieved",
+        "fused",
+        "mock"
+      ],
+      "title": "GeometrySourceType",
+      "type": "string"
+    },
+    "GlobalFacePartitionSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "ambiguous_face_count_by_object": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Ambiguous Face Count By Object",
+          "type": "object"
+        },
+        "assigned_face_count_by_object": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Assigned Face Count By Object",
+          "type": "object"
+        },
+        "exactly_one_object_face_count": {
+          "minimum": 0,
+          "title": "Exactly One Object Face Count",
+          "type": "integer"
+        },
+        "global_face_count": {
+          "exclusiveMinimum": 0,
+          "title": "Global Face Count",
+          "type": "integer"
+        },
+        "multi_label_face_count": {
+          "minimum": 0,
+          "title": "Multi Label Face Count",
+          "type": "integer"
+        },
+        "same_class_conflict_face_count": {
+          "minimum": 0,
+          "title": "Same Class Conflict Face Count",
+          "type": "integer"
+        },
+        "unassigned_face_count": {
+          "minimum": 0,
+          "title": "Unassigned Face Count",
+          "type": "integer"
+        },
+        "unassigned_face_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Unassigned Face Ratio",
+          "type": "number"
+        }
+      },
+      "required": [
+        "global_face_count",
+        "unassigned_face_count",
+        "exactly_one_object_face_count",
+        "multi_label_face_count",
+        "same_class_conflict_face_count",
+        "assigned_face_count_by_object",
+        "ambiguous_face_count_by_object",
+        "unassigned_face_ratio"
+      ],
+      "title": "GlobalFacePartitionSummary",
+      "type": "object"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "ObjectSurfaceComponent": {
+      "additionalProperties": false,
+      "properties": {
+        "component_id": {
+          "minLength": 1,
+          "title": "Component Id",
+          "type": "string"
+        },
+        "face_count": {
+          "exclusiveMinimum": 0,
+          "title": "Face Count",
+          "type": "integer"
+        },
+        "relative_face_ratio": {
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "title": "Relative Face Ratio",
+          "type": "number"
+        },
+        "removal_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Removal Reason"
+        },
+        "retained": {
+          "title": "Retained",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "component_id",
+        "face_count",
+        "relative_face_ratio",
+        "retained"
+      ],
+      "title": "ObjectSurfaceComponent",
+      "type": "object"
+    },
+    "ObjectSurfaceConflict": {
+      "additionalProperties": false,
+      "properties": {
+        "conflict_type": {
+          "enum": [
+            "same_class_instance",
+            "different_semantic_label"
+          ],
+          "title": "Conflict Type",
+          "type": "string"
+        },
+        "face_count": {
+          "exclusiveMinimum": 0,
+          "title": "Face Count",
+          "type": "integer"
+        },
+        "object_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "title": "Object Ids",
+          "type": "array"
+        },
+        "resolution": {
+          "enum": [
+            "winner_by_support",
+            "ambiguous_below_margin",
+            "multi_label_retained"
+          ],
+          "title": "Resolution",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conflict_type",
+        "object_ids",
+        "face_count",
+        "resolution"
+      ],
+      "title": "ObjectSurfaceConflict",
+      "type": "object"
+    },
+    "ObjectSurfaceHypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_global_face_ids": {
+          "$ref": "#/$defs/CompactFaceIndexManifest"
+        },
+        "ambiguous_global_face_ids": {
+          "$ref": "#/$defs/CompactFaceIndexManifest"
+        },
+        "asset_type_hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssetType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "bbox_extent": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bbox Extent"
+        },
+        "bbox_max": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bbox Max"
+        },
+        "bbox_min": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bbox Min"
+        },
+        "canonical_gravity_alignment_known": {
+          "const": false,
+          "default": false,
+          "title": "Canonical Gravity Alignment Known",
+          "type": "boolean"
+        },
+        "centroid": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Centroid"
+        },
+        "completion_status": {
+          "const": "not_completed",
+          "default": "not_completed",
+          "title": "Completion Status",
+          "type": "string"
+        },
+        "component_count": {
+          "minimum": 0,
+          "title": "Component Count",
+          "type": "integer"
+        },
+        "components": {
+          "items": {
+            "$ref": "#/$defs/ObjectSurfaceComponent"
+          },
+          "title": "Components",
+          "type": "array"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ConfidenceRecord"
+        },
+        "coordinate_convention": {
+          "$ref": "#/$defs/CoordinateConvention"
+        },
+        "face_count": {
+          "minimum": 0,
+          "title": "Face Count",
+          "type": "integer"
+        },
+        "face_evidence_arrays": {
+          "items": {
+            "$ref": "#/$defs/FaceEvidenceArrayRecord"
+          },
+          "title": "Face Evidence Arrays",
+          "type": "array"
+        },
+        "face_evidence_path": {
+          "title": "Face Evidence Path",
+          "type": "string"
+        },
+        "face_evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Face Evidence Sha256",
+          "type": "string"
+        },
+        "geometry_status": {
+          "const": "partial_observation_supported",
+          "default": "partial_observation_supported",
+          "title": "Geometry Status",
+          "type": "string"
+        },
+        "global_face_count": {
+          "exclusiveMinimum": 0,
+          "title": "Global Face Count",
+          "type": "integer"
+        },
+        "global_mesh_path": {
+          "const": "reconstruction/global/mesh.ply",
+          "title": "Global Mesh Path",
+          "type": "string"
+        },
+        "global_mesh_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Global Mesh Sha256",
+          "type": "string"
+        },
+        "hidden_surface_completion": {
+          "const": "not_implemented",
+          "default": "not_implemented",
+          "title": "Hidden Surface Completion",
+          "type": "string"
+        },
+        "mean_face_support_score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mean Face Support Score",
+          "type": "number"
+        },
+        "mean_reprojection_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mean Reprojection Iou",
+          "type": "number"
+        },
+        "median_face_support_score": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Median Face Support Score",
+          "type": "number"
+        },
+        "median_reprojection_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Median Reprojection Iou",
+          "type": "number"
+        },
+        "metric_scale_known": {
+          "const": false,
+          "default": false,
+          "title": "Metric Scale Known",
+          "type": "boolean"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "observation_support": {
+          "items": {
+            "$ref": "#/$defs/ObjectSurfaceObservationSupport"
+          },
+          "title": "Observation Support",
+          "type": "array"
+        },
+        "prompt_id": {
+          "minLength": 1,
+          "title": "Prompt Id",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/ProvenanceRecord"
+        },
+        "scale_status": {
+          "const": "scale_ambiguous",
+          "default": "scale_ambiguous",
+          "title": "Scale Status",
+          "type": "string"
+        },
+        "semantic_label": {
+          "minLength": 1,
+          "title": "Semantic Label",
+          "type": "string"
+        },
+        "sim_ready": {
+          "const": false,
+          "default": false,
+          "title": "Sim Ready",
+          "type": "boolean"
+        },
+        "source_mask_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Mask Paths",
+          "type": "array"
+        },
+        "source_track_path": {
+          "const": "observations/object_tracks.json",
+          "title": "Source Track Path",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "ambiguous",
+            "unresolved"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "supporting_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supporting Frame Ids",
+          "type": "array"
+        },
+        "supporting_registered_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supporting Registered Frame Ids",
+          "type": "array"
+        },
+        "supporting_view_count": {
+          "minimum": 0,
+          "title": "Supporting View Count",
+          "type": "integer"
+        },
+        "surface_mesh_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Surface Mesh Path"
+        },
+        "surface_point_cloud_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Surface Point Cloud Path"
+        },
+        "surface_visual_glb_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Surface Visual Glb Path"
+        },
+        "track_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Track Coverage",
+          "type": "number"
+        },
+        "unresolved_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unresolved Reason"
+        },
+        "vertex_count": {
+          "minimum": 0,
+          "title": "Vertex Count",
+          "type": "integer"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "object_id",
+        "semantic_label",
+        "prompt_id",
+        "status",
+        "source_track_path",
+        "source_mask_paths",
+        "supporting_frame_ids",
+        "supporting_registered_frame_ids",
+        "global_mesh_path",
+        "global_mesh_sha256",
+        "global_face_count",
+        "accepted_global_face_ids",
+        "ambiguous_global_face_ids",
+        "face_evidence_path",
+        "face_evidence_sha256",
+        "face_evidence_arrays",
+        "vertex_count",
+        "face_count",
+        "component_count",
+        "components",
+        "mean_face_support_score",
+        "median_face_support_score",
+        "supporting_view_count",
+        "median_reprojection_iou",
+        "mean_reprojection_iou",
+        "track_coverage",
+        "observation_support",
+        "coordinate_convention",
+        "confidence",
+        "provenance"
+      ],
+      "title": "ObjectSurfaceHypothesis",
+      "type": "object"
+    },
+    "ObjectSurfaceObservationSupport": {
+      "additionalProperties": false,
+      "properties": {
+        "false_negative_area_pixels": {
+          "minimum": 0,
+          "title": "False Negative Area Pixels",
+          "type": "integer"
+        },
+        "false_positive_area_pixels": {
+          "minimum": 0,
+          "title": "False Positive Area Pixels",
+          "type": "integer"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Iou",
+          "type": "number"
+        },
+        "mask_area_pixels": {
+          "minimum": 0,
+          "title": "Mask Area Pixels",
+          "type": "integer"
+        },
+        "precision": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Precision",
+          "type": "number"
+        },
+        "recall": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Recall",
+          "type": "number"
+        },
+        "registered": {
+          "const": true,
+          "default": true,
+          "title": "Registered",
+          "type": "boolean"
+        },
+        "rendered_area_pixels": {
+          "minimum": 0,
+          "title": "Rendered Area Pixels",
+          "type": "integer"
+        },
+        "source_camera_model": {
+          "minLength": 1,
+          "title": "Source Camera Model",
+          "type": "string"
+        },
+        "source_distortion": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Source Distortion",
+          "type": "array"
+        },
+        "supporting_face_count": {
+          "minimum": 0,
+          "title": "Supporting Face Count",
+          "type": "integer"
+        },
+        "undistorted_height": {
+          "exclusiveMinimum": 0,
+          "title": "Undistorted Height",
+          "type": "integer"
+        },
+        "undistorted_intrinsics": {
+          "$ref": "#/$defs/CameraIntrinsics"
+        },
+        "undistorted_width": {
+          "exclusiveMinimum": 0,
+          "title": "Undistorted Width",
+          "type": "integer"
+        },
+        "undistortion_map_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Undistortion Map Hash",
+          "type": "string"
+        },
+        "visible_face_count": {
+          "minimum": 0,
+          "title": "Visible Face Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "frame_id",
+        "source_camera_model",
+        "source_distortion",
+        "undistorted_width",
+        "undistorted_height",
+        "undistorted_intrinsics",
+        "undistortion_map_hash",
+        "visible_face_count",
+        "supporting_face_count",
+        "iou",
+        "precision",
+        "recall",
+        "rendered_area_pixels",
+        "mask_area_pixels",
+        "false_positive_area_pixels",
+        "false_negative_area_pixels"
+      ],
+      "title": "ObjectSurfaceObservationSupport",
+      "type": "object"
+    },
+    "ProvenanceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_name": {
+          "minLength": 1,
+          "title": "Adapter Name",
+          "type": "string"
+        },
+        "adapter_version": {
+          "minLength": 1,
+          "title": "Adapter Version",
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ConfidenceRecord"
+        },
+        "configuration": {
+          "additionalProperties": true,
+          "title": "Configuration",
+          "type": "object"
+        },
+        "input_artifact_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Artifact Paths",
+          "type": "array"
+        },
+        "output_artifact_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Artifact Paths",
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/$defs/GeometrySourceType"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter_name",
+        "adapter_version",
+        "confidence",
+        "source"
+      ],
+      "title": "ProvenanceRecord",
+      "type": "object"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "canonical_gravity_alignment_known": {
+      "const": false,
+      "default": false,
+      "title": "Canonical Gravity Alignment Known",
+      "type": "boolean"
+    },
+    "conflicts": {
+      "items": {
+        "$ref": "#/$defs/ObjectSurfaceConflict"
+      },
+      "title": "Conflicts",
+      "type": "array"
+    },
+    "coordinate_convention": {
+      "$ref": "#/$defs/CoordinateConvention"
+    },
+    "diagnostics_path": {
+      "const": "reconstruction/object_surfaces/diagnostics.json",
+      "default": "reconstruction/object_surfaces/diagnostics.json",
+      "title": "Diagnostics Path",
+      "type": "string"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "geometry_status": {
+      "const": "partial_observation_supported",
+      "default": "partial_observation_supported",
+      "title": "Geometry Status",
+      "type": "string"
+    },
+    "global_mesh_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Mesh Sha256",
+      "type": "string"
+    },
+    "global_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Reconstruction Sha256",
+      "type": "string"
+    },
+    "hidden_surface_completion": {
+      "const": "not_implemented",
+      "default": "not_implemented",
+      "title": "Hidden Surface Completion",
+      "type": "string"
+    },
+    "hypotheses": {
+      "items": {
+        "$ref": "#/$defs/ObjectSurfaceHypothesis"
+      },
+      "title": "Hypotheses",
+      "type": "array"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "metric_scale_known": {
+      "const": false,
+      "default": false,
+      "title": "Metric Scale Known",
+      "type": "boolean"
+    },
+    "partition": {
+      "$ref": "#/$defs/GlobalFacePartitionSummary"
+    },
+    "preview_manifest_path": {
+      "const": "reconstruction/object_surfaces/preview_manifest.json",
+      "default": "reconstruction/object_surfaces/preview_manifest.json",
+      "title": "Preview Manifest Path",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/ProvenanceRecord"
+    },
+    "request_path": {
+      "const": "reconstruction/object_surfaces/request.json",
+      "default": "reconstruction/object_surfaces/request.json",
+      "title": "Request Path",
+      "type": "string"
+    },
+    "scale_status": {
+      "const": "scale_ambiguous",
+      "default": "scale_ambiguous",
+      "title": "Scale Status",
+      "type": "string"
+    },
+    "scene_ir_path": {
+      "const": "scene_ir/phase4_scene.json",
+      "default": "scene_ir/phase4_scene.json",
+      "title": "Scene Ir Path",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segmentation_tracking_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Segmentation Tracking Sha256",
+      "type": "string"
+    },
+    "sim_ready": {
+      "const": false,
+      "default": false,
+      "title": "Sim Ready",
+      "type": "boolean"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "worker_manifest_path": {
+      "const": "reconstruction/object_surfaces/worker_manifest.json",
+      "default": "reconstruction/object_surfaces/worker_manifest.json",
+      "title": "Worker Manifest Path",
+      "type": "string"
+    }
+  },
+  "required": [
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "segmentation_tracking_sha256",
+    "global_reconstruction_sha256",
+    "global_mesh_sha256",
+    "coordinate_convention",
+    "hypotheses",
+    "partition",
+    "conflicts",
+    "provenance"
+  ],
+  "title": "ObjectSurfaceEvidenceArtifact",
+  "type": "object"
+}

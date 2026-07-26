@@ -351,6 +351,19 @@
         "asset_type": {
           "$ref": "#/$defs/AssetType"
         },
+        "completion_status": {
+          "anyOf": [
+            {
+              "const": "not_completed",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completion Status"
+        },
         "coordinate_convention": {
           "anyOf": [
             {
@@ -371,6 +384,19 @@
           "title": "Format",
           "type": "string"
         },
+        "geometry_status": {
+          "anyOf": [
+            {
+              "const": "partial_observation_supported",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Geometry Status"
+        },
         "provenance": {
           "$ref": "#/$defs/ProvenanceRecord"
         },
@@ -384,6 +410,18 @@
             }
           ],
           "default": null
+        },
+        "sim_ready": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sim Ready"
         },
         "source": {
           "$ref": "#/$defs/GeometrySourceType"
@@ -653,6 +691,19 @@
           "title": "Collision Asset Ids",
           "type": "array"
         },
+        "completion_status": {
+          "anyOf": [
+            {
+              "const": "not_completed",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completion Status"
+        },
         "confidence": {
           "$ref": "#/$defs/ConfidenceRecord"
         },
@@ -664,6 +715,19 @@
           },
           "title": "Geometry Asset Ids",
           "type": "array"
+        },
+        "geometry_status": {
+          "anyOf": [
+            {
+              "const": "partial_observation_supported",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Geometry Status"
         },
         "material_asset_ids": {
           "items": {
@@ -694,6 +758,18 @@
           },
           "title": "Provenance",
           "type": "array"
+        },
+        "sim_ready": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sim Ready"
         },
         "transform": {
           "$ref": "#/$defs/Transform"
@@ -1196,7 +1272,8 @@
       "default": "0.1.1",
       "enum": [
         "0.1.0",
-        "0.1.1"
+        "0.1.1",
+        "0.1.2"
       ],
       "title": "Schema Version",
       "type": "string"

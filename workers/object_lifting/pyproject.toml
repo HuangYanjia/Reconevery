@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reconevery-object-lifting-worker"
+version = "0.1.0"
+description = "Isolated GPU worker for observation-grounded mesh face attribution"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "numpy>=2.0,<3",
+  "opencv-python-headless>=4.10,<6",
+  "pillow>=11,<13",
+  "pydantic>=2.11,<3",
+  "trimesh>=4.8,<5",
+]
+
+[project.scripts]
+object-lifting-worker = "object_lifting_worker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["object_lifting_worker*"]

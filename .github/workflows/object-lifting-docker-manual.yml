@@ -1,0 +1,27 @@
+name: Object Lifting Docker Manual
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build object-lifting image
+        run: >-
+          docker build
+          -f docker/object-lifting/Dockerfile
+          -t reconevery/object-lifting:phase4
+          .
+      - name: Inspect image
+        run: docker image inspect reconevery/object-lifting:phase4
+      - name: Verify pinned rasterizer and worker imports
+        run: |
+          docker run --rm --entrypoint python3.10 \
+            reconevery/object-lifting:phase4 -c \
+            "import torch, nvdiffrast.torch, cv2, trimesh, object_lifting_worker"

@@ -8,6 +8,11 @@ from recon2sim.artifacts import (
     GenReconWorkerManifest,
     GlobalSceneDiagnostics,
     GlobalSceneReconstructionArtifact,
+    ObjectSurfaceDiagnostics,
+    ObjectSurfaceEvidenceArtifact,
+    ObjectSurfaceLiftingRequest,
+    ObjectSurfaceWorkerManifest,
+    Phase4ConsistencyReport,
     Sam3InferenceRequest,
     SegmentationPromptManifest,
     SegmentationTrackingArtifact,
@@ -36,5 +41,10 @@ for filename, model in {
     "global_scene_reconstruction.schema.json": GlobalSceneReconstructionArtifact,
     "global_scene_diagnostics.schema.json": GlobalSceneDiagnostics,
     "phase3_e2e_consistency.schema.json": EndToEndConsistencyReport,
+    "object_surface_lifting_request.schema.json": ObjectSurfaceLiftingRequest,
+    "object_surface_worker_manifest.schema.json": ObjectSurfaceWorkerManifest,
+    "object_surface_evidence.schema.json": ObjectSurfaceEvidenceArtifact,
+    "object_surface_diagnostics.schema.json": ObjectSurfaceDiagnostics,
+    "phase4_object_surface_consistency.schema.json": Phase4ConsistencyReport,
 }.items():
     atomic_write_json(Path("schemas") / filename, model.model_json_schema())

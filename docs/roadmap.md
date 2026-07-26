@@ -50,6 +50,22 @@ identity, valid canonical masks, previews, COCO output, and cache hit.
 - cross-stage consistency and selective-materialization validation;
 - real module-level and full COLMAP -> SAM -> GenRecon acceptance gates.
 
+## Phase 4 implementation
+
+- camera-accurate world-from-camera inversion and OpenCV-axis projection;
+- deterministic mask undistortion for supported COLMAP camera models;
+- nvdiffrast nearest-visible original face-ID rasterization with bounded face chunks;
+- multi-view core/boundary/exterior evidence and same-label conflict resolution;
+- cross-label overlap retention, connected components, and compact face-index files;
+- partial object PLY assets, reprojection metrics, typed uncertainty, and previews;
+- Phase 4 Scene IR hypotheses and cross-stage consistency validation;
+- CPU fake protocol, synthetic geometric tests, and real H100 surface-lifting smoke.
+
+Real acceptance produced a non-empty two-face ambiguous surface for one table track and unresolved
+results for three other tracks. The very low reprojection IoU is retained as an explicit quality
+limitation: Phase 4 proves observation-grounded association, not complete or accurate object
+reconstruction.
+
 ## Recommended Phase 2.5
 
 Design optional VLM-assisted scene inventory as a separate prompt-generation stage. It must
@@ -58,7 +74,7 @@ claim exhaustive vocabulary or physical classification without validation.
 
 ## Later phases
 
-- Phase 4: SAM-to-global-scene object association and rigid/articulated object reconstruction.
+- Phase 4.5: separately evaluated hidden-surface completion or object reconstruction.
 - Phase 5: SceneSmith or equivalent scene compiler adapter.
 - Phase 6: physics repair and explicit simulator exports.
 

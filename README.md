@@ -166,6 +166,30 @@ SAM and GenRecon are parallel evidence branches. Prompt changes rerun SAM and th
 validator, not GenRecon. The validator checks ordered frame hashes, registration sets, camera
 hashes, coordinate semantics, selective materialization, and the explicit capability boundary.
 
+## Observation-grounded object surfaces
+
+`object_surface_lifting` projects the canonical GenRecon mesh into registered COLMAP cameras,
+undistorts canonical SAM masks, and accumulates core, boundary, exterior-negative, visibility,
+depth, and supporting-view evidence against original global face IDs. The heavy NumPy/OpenCV/
+PyTorch/nvdiffrast/trimesh implementation remains in `workers/object_lifting`; the core adapter
+validates typed outputs, compact face-ID arrays, extracted PLY meshes, hashes, lineage, coordinate
+semantics, and upstream immutability without importing those packages.
+
+Outputs under `reconstruction/object_surfaces/` are partial observation-supported hypotheses.
+They preserve arbitrary COLMAP units and orientation, may be unresolved, contain no hidden
+surface completion or collision geometry, and are explicitly `sim_ready=false`. Phase 4 writes
+its enriched Scene IR to `scene_ir/phase4_scene.json` so it does not mutate the Phase 3-owned
+`scene_ir/scene.json` and invalidate GenRecon's cache.
+
+```bash
+uv run recon2sim run \
+  --input /path/to/scene \
+  --config configs/phase4_e2e.yaml \
+  --run-dir runs/phase4
+uv run recon2sim objects inspect-surfaces runs/phase4
+uv run recon2sim validation verify-phase4 runs/phase4
+```
+
 ## Coordinate convention
 
 Raw Phase 1 COLMAP output is explicitly `world_frame="colmap_arbitrary"`,
@@ -197,6 +221,6 @@ uv run python scripts/generate_schema.py
 ## Adapter boundary
 
 Core code imports only lightweight dependencies. Official SAM and GenRecon code, PyTorch, CUDA
-packages, and checkpoints exist only in their isolated workers or Docker images. SceneSmith,
-physics, simulators, object reconstruction, MVS, NeRF, and automatic VLM prompt inventory remain
-outside Phase 3.
+packages, checkpoints, and GPU rasterization exist only in isolated workers or Docker images.
+SceneSmith, hidden object completion, physics, simulators, MVS, NeRF, and automatic VLM prompt
+inventory remain outside Phase 4.

@@ -72,6 +72,30 @@ jobs:
       - name: Inspect fake SAM outputs
         run: uv run recon2sim segmentation inspect runs/tabletop_sam3_fake
 
+      - name: Run CPU-only fake Phase 3 DAG
+        run: >-
+          uv run recon2sim run
+          --input examples/tabletop
+          --config configs/phase3_e2e_fake.yaml
+          --run-dir runs/phase3_e2e_fake
+
+      - name: Run CPU-only fake Phase 4 DAG
+        run: >-
+          uv run recon2sim run
+          --input examples/tabletop
+          --config configs/phase4_e2e_fake.yaml
+          --run-dir runs/phase4_e2e_fake
+
+      - name: Verify fake Phase 4 resume and consistency
+        run: |
+          uv run recon2sim run \
+            --input examples/tabletop \
+            --config configs/phase4_e2e_fake.yaml \
+            --run-dir runs/phase4_e2e_fake \
+            --resume
+          uv run python -c "import json; p=json.load(open('runs/phase4_e2e_fake/manifest.json')); assert all(s['last_execution']=='cache_hit' for s in p['stages'].values())"
+          uv run recon2sim validation verify-phase4 runs/phase4_e2e_fake
+
       - name: Upload mock run after failure
         if: failure()
         uses: actions/upload-artifact@v7
