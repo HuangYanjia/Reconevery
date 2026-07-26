@@ -12,6 +12,7 @@ from recon2sim.adapters import REGISTRY
 from recon2sim.adapters.base import StageContext
 from recon2sim.artifacts import (
     CameraDiagnostics,
+    CameraMeshAlignmentArtifact,
     CameraReconstruction,
     EndToEndConsistencyReport,
     FrameQualityReport,
@@ -22,6 +23,7 @@ from recon2sim.artifacts import (
     ObjectSurfaceDiagnostics,
     ObjectSurfaceEvidenceArtifact,
     ObjectSurfaceHypothesis,
+    ObjectSurfaceMethodComparison,
     Phase4ConsistencyReport,
     Sam3WorkerManifest,
     SegmentationDiagnostics,
@@ -738,11 +740,22 @@ def inspect_surfaces(
         "reconstruction/object_surfaces/diagnostics.json",
         ObjectSurfaceDiagnostics,
     )
+    comparison = _artifact_model(
+        run_dir,
+        "reconstruction/object_surfaces/method_comparison.json",
+        ObjectSurfaceMethodComparison,
+    )
+    alignment = _artifact_model(
+        run_dir,
+        "reconstruction/object_surfaces/camera_mesh_alignment.json",
+        CameraMeshAlignmentArtifact,
+    )
     typer.echo(
         json.dumps(
             {
                 "track_count": diagnostics.track_count,
                 "accepted_objects": diagnostics.accepted_object_count,
+                "partial_objects": diagnostics.partial_object_count,
                 "ambiguous_objects": diagnostics.ambiguous_object_count,
                 "unresolved_objects": diagnostics.unresolved_object_count,
                 "global_face_count": diagnostics.global_face_count,
@@ -752,6 +765,13 @@ def inspect_surfaces(
                 "same_class_conflict_count": diagnostics.same_class_conflict_count,
                 "runtime_seconds": diagnostics.runtime_seconds,
                 "peak_gpu_memory_bytes": diagnostics.peak_gpu_memory_bytes,
+                "lifting_method": comparison.selected_method,
+                "method_comparison": comparison.conclusion,
+                "alignment_sufficient_for_lifting": (alignment.alignment_sufficient_for_lifting),
+                "mesh_pixel_coverage_mean": alignment.mesh_pixel_coverage_mean,
+                "sparse_depth_residual_median": alignment.sparse_depth_residual_median,
+                "sparse_depth_inlier_fraction": alignment.sparse_depth_inlier_fraction,
+                "diagnosed_bottleneck": diagnostics.diagnosed_bottleneck,
                 "coordinate_convention": artifact.coordinate_convention.model_dump(mode="json"),
                 "geometry_status": artifact.geometry_status,
                 "hidden_surface_completion": artifact.hidden_surface_completion,
@@ -781,11 +801,18 @@ def inspect_surface(
                 "accepted_faces": hypothesis.accepted_global_face_ids.count,
                 "ambiguous_faces": hypothesis.ambiguous_global_face_ids.count,
                 "components": hypothesis.component_count,
+                "exact_components": hypothesis.exact_component_count,
+                "seam_aware_components": hypothesis.seam_aware_component_count,
                 "bbox_min": hypothesis.bbox_min,
                 "bbox_max": hypothesis.bbox_max,
                 "mean_support_score": hypothesis.mean_face_support_score,
                 "mean_reprojection_iou": hypothesis.mean_reprojection_iou,
-                "confidence": hypothesis.confidence.score,
+                "association_precision": hypothesis.association_precision,
+                "mask_recall": hypothesis.mask_recall,
+                "multiview_support": hypothesis.multiview_support,
+                "observed_surface_coverage": hypothesis.observed_surface_coverage,
+                "association_confidence": hypothesis.association_confidence,
+                "completeness_confidence": hypothesis.completeness_confidence,
                 "status": hypothesis.status,
                 "geometry_status": hypothesis.geometry_status,
                 "sim_ready": hypothesis.sim_ready,

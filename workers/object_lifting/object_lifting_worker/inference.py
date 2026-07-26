@@ -12,6 +12,10 @@ from typing import Any
 
 from PIL import Image
 
+from object_lifting_worker.alignment import (
+    compute_alignment,
+    write_alignment_previews,
+)
 from object_lifting_worker.distortion import undistort_binary_mask
 from object_lifting_worker.face_evidence import (
     FaceStatistics,
@@ -30,9 +34,16 @@ from object_lifting_worker.previews import (
 from object_lifting_worker.rasterization import NvdiffrastRasterizer, RasterResult
 from object_lifting_worker.schema import WorkerRequest, load_request
 from object_lifting_worker.surface_extraction import (
+    connected_face_components,
     extract_surface_assets,
     filter_components,
+    median_edge_length,
+    seam_aware_component_diagnostics,
     write_face_ids,
+)
+from object_lifting_worker.surface_samples import (
+    SurfaceSampleFusion,
+    SurfaceSampleFusionResult,
 )
 from object_lifting_worker.version import __version__
 
@@ -84,7 +95,7 @@ class FrameData:
 def _load_inputs(
     request: WorkerRequest,
     input_root: Path,
-) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], Path]:
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], Path, dict[str, Path]]:
     manifest_path = require_hash(input_root, request.manifest_path, request.manifest_sha256)
     camera_path = require_hash(
         input_root,
@@ -102,12 +113,34 @@ def _load_inputs(
         request.global_reconstruction_sha256,
     )
     mesh_path = require_hash(input_root, request.global_mesh_path, request.global_mesh_sha256)
-    require_hash(input_root, request.global_scene_glb_path, request.global_scene_glb_sha256)
+    package_paths = {
+        "manifest": require_hash(
+            input_root,
+            request.camera_package_manifest_path,
+            request.camera_package_manifest_sha256,
+        ),
+        "images": require_hash(
+            input_root,
+            request.camera_package_images_path,
+            request.camera_package_images_sha256,
+        ),
+        "points3d": require_hash(
+            input_root,
+            request.camera_package_points3d_path,
+            request.camera_package_points3d_sha256,
+        ),
+        "registered_frames": require_hash(
+            input_root,
+            request.camera_package_registered_frames_path,
+            request.camera_package_registered_frames_sha256,
+        ),
+    }
     return (
         json.loads(manifest_path.read_text(encoding="utf-8")),
         json.loads(camera_path.read_text(encoding="utf-8")),
         json.loads(tracks_path.read_text(encoding="utf-8")),
         mesh_path,
+        package_paths,
     )
 
 
@@ -227,12 +260,31 @@ def _prepare_frames(
 def _accumulate(
     request: WorkerRequest,
     frames: list[FrameData],
+    *,
+    vertices: Any,
+    median_edge: float,
 ) -> tuple[
     dict[str, dict[int, FaceStatistics]],
     dict[str, list[int]],
     dict[str, list[int]],
+    dict[str, SurfaceSampleFusionResult],
 ]:
+    import numpy as np
+
     stats_by_object = {track.object_id: {} for track in request.object_tracks}
+    sample_configuration = request.surface_sample_configuration
+    face_configuration = request.face_evidence_configuration
+    voxel_edge = median_edge * float(sample_configuration["sample_voxel_edge_multiplier"])
+    origin = np.asarray(vertices, dtype=np.float64).min(axis=0)
+    fusions = {
+        track.object_id: SurfaceSampleFusion(
+            origin=origin,
+            voxel_edge=voxel_edge,
+            core_weight=float(face_configuration["core_positive_weight"]),
+            boundary_weight=float(face_configuration["boundary_positive_weight"]),
+        )
+        for track in request.object_tracks
+    }
     for frame in frames:
         for object_id, item in frame.objects.items():
             accumulate_positive(
@@ -244,6 +296,16 @@ def _accumulate(
                 frame_index=frame.frame_index,
                 frame_score=item.score,
             )
+            fusions[object_id].accumulate(
+                frame_index=frame.frame_index,
+                face_ids=frame.raster.face_ids,
+                world_points=frame.raster.world_points,
+                barycentric=frame.raster.barycentric,
+                depth=frame.raster.depth,
+                core=item.regions.core,
+                boundary=item.regions.boundary,
+                frame_score=item.score,
+            )
     for frame in frames:
         for object_id, item in frame.objects.items():
             accumulate_visibility_and_negative(
@@ -252,6 +314,13 @@ def _accumulate(
                 exterior=item.regions.exterior,
                 frame_score=item.score,
             )
+            fusions[object_id].accumulate_negative(
+                face_ids=frame.raster.face_ids,
+                world_points=frame.raster.world_points,
+                exterior=item.regions.exterior,
+                frame_score=item.score,
+                negative_weight=float(sample_configuration["sample_negative_margin_multiplier"]),
+            )
     accepted: dict[str, list[int]] = {}
     ambiguous: dict[str, list[int]] = {}
     for object_id, stats in stats_by_object.items():
@@ -259,7 +328,16 @@ def _accumulate(
             stats,
             configuration=request.face_evidence_configuration,
         )
-    return stats_by_object, accepted, ambiguous
+    fusion_results = {
+        object_id: fusion.finalize(
+            min_supporting_views=int(sample_configuration["sample_min_supporting_views"]),
+            min_positive_weight=float(sample_configuration["sample_min_positive_weight"]),
+            accepted_score=float(sample_configuration["accepted_patch_score"]),
+            ambiguous_score=float(sample_configuration["ambiguous_patch_score"]),
+        )
+        for object_id, fusion in fusions.items()
+    }
+    return stats_by_object, accepted, ambiguous, fusion_results
 
 
 def _resolve_overlaps(
@@ -267,6 +345,7 @@ def _resolve_overlaps(
     stats_by_object: dict[str, dict[int, FaceStatistics]],
     accepted: dict[str, list[int]],
     ambiguous: dict[str, list[int]],
+    score_overrides: dict[str, dict[int, float]] | None = None,
 ) -> tuple[list[dict[str, object]], set[int], set[int]]:
     tracks = {track.object_id: track for track in request.object_tracks}
     conflicts: list[dict[str, object]] = []
@@ -276,6 +355,14 @@ def _resolve_overlaps(
     for track in request.object_tracks:
         by_label.setdefault(track.semantic_label.strip().lower(), []).append(track.object_id)
     margin = float(request.face_evidence_configuration["instance_score_margin"])
+
+    def support_score(object_id: str, face_id: int) -> float:
+        if score_overrides is not None:
+            override = score_overrides.get(object_id, {}).get(face_id)
+            if override is not None:
+                return override
+        return stats_by_object.get(object_id, {}).get(face_id, FaceStatistics()).support_score
+
     for object_ids in by_label.values():
         face_owners: dict[int, list[str]] = {}
         for object_id in object_ids:
@@ -287,12 +374,12 @@ def _resolve_overlaps(
             ranked = sorted(
                 owners,
                 key=lambda object_id: (
-                    -stats_by_object[object_id][face_id].support_score,
+                    -support_score(object_id, face_id),
                     object_id,
                 ),
             )
-            best = stats_by_object[ranked[0]][face_id].support_score
-            second = stats_by_object[ranked[1]][face_id].support_score
+            best = support_score(ranked[0], face_id)
+            second = support_score(ranked[1], face_id)
             same_class_conflict_faces.add(face_id)
             if best - second >= margin:
                 for loser in ranked[1:]:
@@ -370,8 +457,9 @@ def _provenance(
 ) -> dict[str, object]:
     return {
         "adapter_name": "object_surface_lifting",
-        "adapter_version": "0.1.0",
+        "adapter_version": "0.1.1",
         "configuration": {
+            "lifting_method": request.lifting_method,
             "rasterization": request.rasterization_configuration,
             "mask_processing": request.mask_processing_configuration,
             "face_evidence": request.face_evidence_configuration,
@@ -383,6 +471,10 @@ def _provenance(
         },
         "input_artifact_paths": [
             request.camera_reconstruction_path,
+            request.camera_package_manifest_path,
+            request.camera_package_images_path,
+            request.camera_package_points3d_path,
+            request.camera_package_registered_frames_path,
             request.segmentation_tracking_path,
             request.global_reconstruction_path,
             request.global_mesh_path,
@@ -391,8 +483,11 @@ def _provenance(
         "timestamp": timestamp,
         "confidence": {
             "score": confidence,
-            "method": "observation_supported_surface_formula",
-            "notes": "Confidence excludes hidden shape, materials, physics, and metric scale",
+            "method": "association_geometric_mean",
+            "notes": (
+                "Association confidence only; completeness is zero and hidden shape, "
+                "materials, physics, and metric scale are excluded"
+            ),
         },
         "source": "fused",
     }
@@ -413,7 +508,7 @@ def run_inference(
     total_start = time.monotonic()
     torch.cuda.reset_peak_memory_stats()
     request = load_request(request_path)
-    manifest, camera, _tracks, mesh_path = _load_inputs(request, input_root)
+    manifest, camera, _tracks, mesh_path, package_paths = _load_inputs(request, input_root)
     load_start = time.monotonic()
     vertices, faces = _load_mesh(mesh_path)
     mesh_load_seconds = time.monotonic() - load_start
@@ -424,6 +519,7 @@ def run_inference(
             "global mesh topology does not match Phase 3 metadata: "
             f"{len(vertices)}/{len(faces)} vs {expected_vertices}/{expected_faces}"
         )
+    global_median_edge = median_edge_length(vertices, faces)
     rasterizer = NvdiffrastRasterizer(
         vertices,
         faces,
@@ -433,14 +529,88 @@ def run_inference(
     frames = _prepare_frames(request, input_root, camera, rasterizer)
     rasterization_seconds = time.monotonic() - raster_start
     evidence_start = time.monotonic()
-    stats_by_object, accepted, ambiguous = _accumulate(request, frames)
-    conflicts, same_conflict_faces, different_overlap_faces = _resolve_overlaps(
+    stats_by_object, exact_accepted, exact_ambiguous, fusion_results = _accumulate(
         request,
-        stats_by_object,
-        accepted,
-        ambiguous,
+        frames,
+        vertices=vertices,
+        median_edge=global_median_edge,
     )
+    methods: dict[str, dict[str, Any]] = {
+        "exact_face_vote_v1": {
+            "accepted": {key: list(value) for key, value in exact_accepted.items()},
+            "ambiguous": {key: list(value) for key, value in exact_ambiguous.items()},
+            "scores": None,
+        },
+        "surface_sample_fusion_v2": {
+            "accepted": {key: list(value.accepted_faces) for key, value in fusion_results.items()},
+            "ambiguous": {
+                key: list(value.ambiguous_faces) for key, value in fusion_results.items()
+            },
+            "scores": {
+                key: {
+                    face_id: support.patch_support
+                    for face_id, support in value.face_support.items()
+                }
+                for key, value in fusion_results.items()
+            },
+        },
+    }
+    for method in methods.values():
+        conflicts, same_conflicts, different_overlaps = _resolve_overlaps(
+            request,
+            stats_by_object,
+            method["accepted"],
+            method["ambiguous"],
+            method["scores"],
+        )
+        method["conflicts"] = conflicts
+        method["same_conflicts"] = same_conflicts
+        method["different_overlaps"] = different_overlaps
+        method["components"] = {}
+        for object_id in sorted(method["accepted"]):
+            before_filter = list(method["accepted"][object_id])
+            retained, components = filter_components(
+                vertices,
+                faces,
+                before_filter,
+                min_faces=int(request.surface_extraction_configuration["min_component_faces"]),
+                min_relative_area=float(
+                    request.surface_extraction_configuration["min_relative_component_area"]
+                ),
+            )
+            removed = set(before_filter) - set(retained)
+            method["accepted"][object_id] = retained
+            method["ambiguous"][object_id] = sorted(
+                (set(method["ambiguous"][object_id]) | removed) - set(retained)
+            )
+            method["components"][object_id] = components
+    selected = methods[request.lifting_method]
+    accepted = selected["accepted"]
+    ambiguous = selected["ambiguous"]
+    conflicts = selected["conflicts"]
+    same_conflict_faces = selected["same_conflicts"]
+    different_overlap_faces = selected["different_overlaps"]
     evidence_accumulation_seconds = time.monotonic() - evidence_start
+
+    alignment, depth_pairs, depth_tiles, edge_tiles = compute_alignment(
+        frames=frames,
+        camera=camera,
+        images_path=package_paths["images"],
+        points3d_path=package_paths["points3d"],
+        registered_frames_path=package_paths["registered_frames"],
+        raster_scale=float(request.rasterization_configuration["raster_scale"]),
+        scene_diagonal=rasterizer.scene_diagonal,
+        inlier_threshold=float(
+            request.surface_extraction_configuration["alignment_depth_inlier_threshold"]
+        ),
+        minimum_inlier_fraction=float(
+            request.surface_extraction_configuration["alignment_min_inlier_fraction"]
+        ),
+        frame_sequence_digest=request.frame_sequence_digest,
+        camera_reconstruction_sha256=request.camera_reconstruction_sha256,
+        global_mesh_sha256=request.global_mesh_sha256,
+    )
+    write_json(output_dir / "camera_mesh_alignment.json", alignment)
 
     extraction_start = time.monotonic()
     hypotheses = []
@@ -453,6 +623,7 @@ def run_inference(
     raw_paths: list[str] = []
     all_supports: list[float] = []
     all_ious: list[float] = []
+    method_metrics: list[dict[str, object]] = []
     timestamp = str(manifest["provenance"]["timestamp"])
     tracks_by_id = {track.object_id: track for track in request.object_tracks}
     camera_model = str(camera["model"])
@@ -460,15 +631,8 @@ def run_inference(
     component_config = request.surface_extraction_configuration
     for object_id in sorted(tracks_by_id):
         track = tracks_by_id[object_id]
-        retained, components = filter_components(
-            faces,
-            accepted[object_id],
-            min_faces=int(component_config["min_component_faces"]),
-            min_relative_area=float(component_config["min_relative_component_area"]),
-        )
-        removed = set(accepted[object_id]) - set(retained)
-        accepted[object_id] = retained
-        ambiguous[object_id] = sorted((set(ambiguous[object_id]) | removed) - set(retained))
+        retained = accepted[object_id]
+        components = selected["components"][object_id]
         accepted_sets[object_id] = set(retained)
         ambiguous_faces_all.update(ambiguous[object_id])
         object_root = output_dir / "objects" / object_id
@@ -492,6 +656,7 @@ def run_inference(
         array_records = write_evidence_npz(
             evidence_path,
             stats_by_object[object_id],
+            sample_face_support=fusion_results[object_id].face_support,
         )
         surface_rel: str | None = None
         points_rel: str | None = None
@@ -517,15 +682,24 @@ def run_inference(
         object_reprojection_tiles: list[tuple[float, Image.Image]] = []
         object_ious: list[float] = []
         supporting_registered: list[str] = []
+        method_frame_metrics: dict[str, list[dict[str, float | int]]] = {
+            method: [] for method in methods
+        }
         for frame in frames:
             item = frame.objects.get(object_id)
             if item is None:
                 continue
-            rendered = np.isin(
-                frame.raster.face_ids,
-                np.asarray(retained, dtype=np.int64),
-            )
-            metrics = _metrics(item.mask, rendered)
+            rendered_by_method = {
+                method: np.isin(
+                    frame.raster.face_ids,
+                    np.asarray(method_data["accepted"][object_id], dtype=np.int64),
+                )
+                for method, method_data in methods.items()
+            }
+            for method, rendered_method in rendered_by_method.items():
+                method_frame_metrics[method].append(_metrics(item.mask, rendered_method))
+            rendered = rendered_by_method[request.lifting_method]
+            metrics = method_frame_metrics[request.lifting_method][-1]
             object_ious.append(float(metrics["iou"]))
             if int(metrics["rendered_area_pixels"]) > 0:
                 supporting_registered.append(frame.frame_id)
@@ -559,27 +733,55 @@ def run_inference(
                     ),
                 )
             )
-        mean_support = (
-            statistics.mean(
-                stats_by_object[object_id][face_id].support_score for face_id in retained
+        selected_scores = selected["scores"]
+        support_values = [
+            (
+                selected_scores[object_id][face_id]
+                if selected_scores is not None
+                else stats_by_object[object_id][face_id].support_score
             )
-            if retained
-            else 0.0
-        )
-        median_support = (
-            statistics.median(
-                stats_by_object[object_id][face_id].support_score for face_id in retained
-            )
-            if retained
-            else 0.0
-        )
+            for face_id in retained
+        ]
+        mean_support = statistics.mean(support_values) if support_values else 0.0
+        median_support = statistics.median(support_values) if support_values else 0.0
         retained_components = [item for item in components if item["retained"]]
         largest_ratio = max(
-            (float(item["relative_face_ratio"]) for item in retained_components),
+            (float(item["relative_surface_area"]) for item in retained_components),
             default=0.0,
         )
+        if bool(component_config["seam_diagnostic_enabled"]):
+            seam_diagnostics = seam_aware_component_diagnostics(
+                vertices,
+                faces,
+                retained,
+                median_edge=global_median_edge,
+                centroid_distance_multiplier=float(
+                    component_config["seam_centroid_distance_multiplier"]
+                ),
+                endpoint_distance_multiplier=float(
+                    component_config["seam_endpoint_distance_multiplier"]
+                ),
+                normal_cosine=float(component_config["seam_normal_cosine"]),
+            )
+        else:
+            exact_component_count = len(connected_face_components(faces, retained))
+            seam_diagnostics = {
+                "exact_component_count": exact_component_count,
+                "seam_aware_component_count": exact_component_count,
+                "potential_chunk_seam_merges": 0,
+            }
         mean_iou = statistics.mean(object_ious) if object_ious else 0.0
         median_iou = _median(object_ious)
+        mean_precision = (
+            statistics.mean(float(item["precision"]) for item in observation_support)
+            if observation_support
+            else 0.0
+        )
+        mean_recall = (
+            statistics.mean(float(item["recall"]) for item in observation_support)
+            if observation_support
+            else 0.0
+        )
         view_norm = min(
             1.0,
             len(set(supporting_registered))
@@ -594,23 +796,77 @@ def run_inference(
             0.2,
             0.2 * object_conflicts / max(len(retained), 1),
         )
-        confidence = max(
-            0.0,
-            min(
-                1.0,
-                0.30 * mean_support
-                + 0.25 * median_iou
-                + 0.20 * view_norm
-                + 0.15 * track.track_coverage
-                + 0.10 * largest_ratio
-                - conflict_penalty,
-            ),
+        confidence = (
+            max(
+                0.0,
+                min(
+                    1.0,
+                    (max(mean_support, 1e-6) * max(mean_precision, 1e-6) * max(view_norm, 1e-6))
+                    ** (1.0 / 3.0)
+                    - conflict_penalty,
+                ),
+            )
+            if retained
+            else 0.0
         )
         confidence_by_object[object_id] = confidence
         unresolved = not retained
-        status = (
-            "unresolved" if unresolved else ("ambiguous" if ambiguous[object_id] else "accepted")
+        ambiguity_ratio = len(ambiguous[object_id]) / max(
+            len(retained) + len(ambiguous[object_id]),
+            1,
         )
+        if unresolved:
+            status = "unresolved"
+        elif (
+            mean_iou >= float(component_config["accepted_min_reprojection_iou"])
+            and ambiguity_ratio <= float(component_config["accepted_max_ambiguity_ratio"])
+            and object_conflicts == 0
+        ):
+            status = "accepted"
+        elif mean_iou >= float(
+            component_config["partial_min_reprojection_iou"]
+        ) and object_conflicts <= len(retained):
+            status = "partial"
+        else:
+            status = "ambiguous"
+        for method, method_data in methods.items():
+            metrics_values = method_frame_metrics[method]
+            method_components = [
+                item for item in method_data["components"][object_id] if item["retained"]
+            ]
+            method_metrics.append(
+                {
+                    "object_id": object_id,
+                    "method": method,
+                    "accepted_faces": len(method_data["accepted"][object_id]),
+                    "ambiguous_faces": len(method_data["ambiguous"][object_id]),
+                    "component_count": len(method_components),
+                    "surface_area_arbitrary_units_squared": sum(
+                        float(item["surface_area_arbitrary_units_squared"])
+                        for item in method_components
+                    ),
+                    "reprojection_iou": (
+                        statistics.mean(float(item["iou"]) for item in metrics_values)
+                        if metrics_values
+                        else 0.0
+                    ),
+                    "precision": (
+                        statistics.mean(float(item["precision"]) for item in metrics_values)
+                        if metrics_values
+                        else 0.0
+                    ),
+                    "recall": (
+                        statistics.mean(float(item["recall"]) for item in metrics_values)
+                        if metrics_values
+                        else 0.0
+                    ),
+                    "supporting_views": sum(
+                        int(item["rendered_area_pixels"]) > 0 for item in metrics_values
+                    ),
+                    "runtime_seconds": evidence_accumulation_seconds / len(methods),
+                    "peak_gpu_memory_bytes": int(torch.cuda.max_memory_allocated()),
+                }
+            )
         outputs = [accepted_rel, ambiguous_rel, evidence_rel]
         if surface_rel and points_rel:
             outputs.extend([surface_rel, points_rel])
@@ -646,6 +902,7 @@ def run_inference(
             "surface_visual_glb_path": None,
             **surface_stats,
             "component_count": len(retained_components),
+            **seam_diagnostics,
             "components": components,
             "mean_face_support_score": mean_support,
             "median_face_support_score": median_support,
@@ -653,6 +910,14 @@ def run_inference(
             "median_reprojection_iou": median_iou,
             "mean_reprojection_iou": mean_iou,
             "track_coverage": track.track_coverage,
+            "association_precision": mean_precision,
+            "mask_recall": mean_recall,
+            "reprojection_iou": mean_iou,
+            "multiview_support": view_norm,
+            "surface_connectedness": largest_ratio,
+            "observed_surface_coverage": mean_recall,
+            "association_confidence": confidence,
+            "completeness_confidence": 0.0,
             "observation_support": observation_support,
             "geometry_status": "partial_observation_supported",
             "completion_status": "not_completed",
@@ -669,9 +934,7 @@ def run_inference(
             ),
         }
         hypotheses.append(hypothesis)
-        all_supports.extend(
-            stats_by_object[object_id][face_id].support_score for face_id in retained
-        )
+        all_supports.extend(support_values)
         all_ious.extend(object_ious)
         if object_reprojection_tiles:
             ranked_tiles = [
@@ -684,7 +947,7 @@ def run_inference(
             object_preview_path = output_dir / "previews" / "objects" / f"{object_id}.png"
             object_preview = add_title(
                 ranked_tiles[0],
-                f"{object_id} partial surface, confidence={confidence:.3f}",
+                f"{object_id} partial surface, association={confidence:.3f}",
             )
             object_preview_path.parent.mkdir(parents=True, exist_ok=True)
             object_preview.save(
@@ -701,6 +964,61 @@ def run_inference(
         raw_paths.extend(outputs)
     surface_extraction_seconds = time.monotonic() - extraction_start
 
+    exact_iou = statistics.mean(
+        item["reprojection_iou"]
+        for item in method_metrics
+        if item["method"] == "exact_face_vote_v1"
+    )
+    fusion_iou = statistics.mean(
+        item["reprojection_iou"]
+        for item in method_metrics
+        if item["method"] == "surface_sample_fusion_v2"
+    )
+    exact_faces = sum(
+        int(item["accepted_faces"])
+        for item in method_metrics
+        if item["method"] == "exact_face_vote_v1"
+    )
+    fusion_faces = sum(
+        int(item["accepted_faces"])
+        for item in method_metrics
+        if item["method"] == "surface_sample_fusion_v2"
+    )
+    if not alignment["alignment_sufficient_for_lifting"]:
+        diagnosed_bottleneck = "camera_mesh_alignment"
+        comparison_conclusion = (
+            "Sparse-point/rendered-depth agreement is insufficient; camera/global-mesh "
+            "alignment limits both lifting methods."
+        )
+    elif fusion_iou > exact_iou * 1.10 or fusion_faces > exact_faces * 1.10:
+        diagnosed_bottleneck = "exact_face_granularity"
+        comparison_conclusion = (
+            "Surface-sample fusion improves supported coverage over exact-face voting; "
+            "fragmented face identity is a material bottleneck."
+        )
+    elif max(exact_iou, fusion_iou) < 0.01:
+        diagnosed_bottleneck = "missing_or_hallucinated_geometry"
+        comparison_conclusion = (
+            "Camera/mesh alignment is usable but neither method explains the masks; "
+            "missing, displaced, or hallucinated global geometry is the likely bottleneck."
+        )
+    else:
+        diagnosed_bottleneck = "mixed_or_inconclusive"
+        comparison_conclusion = (
+            "The comparison does not isolate one dominant bottleneck; alignment, topology, "
+            "and missing geometry may all contribute."
+        )
+    write_json(
+        output_dir / "method_comparison.json",
+        {
+            "schema_version": "0.1.0",
+            "selected_method": request.lifting_method,
+            "metrics": method_metrics,
+            "conclusion": comparison_conclusion,
+            "warnings": [],
+        },
+    )
+
     preview_start = time.monotonic()
     first_raster = frames[0].raster.face_ids
     assignment = assignment_image(
@@ -715,6 +1033,12 @@ def run_inference(
     )
     preview_root = output_dir / "previews"
     preview_root.mkdir(parents=True, exist_ok=True)
+    write_alignment_previews(
+        output_root=preview_root,
+        depth_tiles=depth_tiles,
+        edge_tiles=edge_tiles,
+        depth_pairs=depth_pairs,
+    )
     assignment.save(
         preview_root / "global_face_assignment.png",
         format="PNG",
@@ -742,6 +1066,29 @@ def run_inference(
         "Red: same-class conflict; yellow: different-label overlap",
     ).save(
         preview_root / "conflict_heatmap.png",
+        format="PNG",
+        compress_level=6,
+        optimize=False,
+    )
+    fusion_assignment = assignment_image(
+        first_raster,
+        {
+            object_id: set(methods["surface_sample_fusion_v2"]["accepted"][object_id])
+            for object_id in sorted(tracks_by_id)
+        },
+        set().union(
+            *(
+                set(methods["surface_sample_fusion_v2"]["ambiguous"][object_id])
+                for object_id in sorted(tracks_by_id)
+            )
+        ),
+        methods["surface_sample_fusion_v2"]["same_conflicts"],
+    )
+    add_title(
+        fusion_assignment,
+        "Surface-sample fusion mapped to original global face IDs",
+    ).save(
+        preview_root / "surface_sample_fusion.png",
         format="PNG",
         compress_level=6,
         optimize=False,
@@ -813,6 +1160,18 @@ def run_inference(
             "reconstruction/object_surfaces/previews/reprojection_contact_sheet.png"
         ),
         "conflict_heatmap_path": ("reconstruction/object_surfaces/previews/conflict_heatmap.png"),
+        "global_mesh_depth_contact_sheet_path": (
+            "reconstruction/object_surfaces/previews/global_mesh_depth_contact_sheet.png"
+        ),
+        "global_mesh_edge_overlay_path": (
+            "reconstruction/object_surfaces/previews/global_mesh_edge_overlay.png"
+        ),
+        "sparse_point_vs_mesh_depth_path": (
+            "reconstruction/object_surfaces/previews/sparse_point_vs_mesh_depth.png"
+        ),
+        "surface_sample_fusion_path": (
+            "reconstruction/object_surfaces/previews/surface_sample_fusion.png"
+        ),
         "object_preview_paths": object_preview_paths,
     }
     write_json(output_dir / "preview_manifest.json", preview_manifest)
@@ -821,6 +1180,7 @@ def run_inference(
         "schema_version": "0.1.0",
         "track_count": len(hypotheses),
         "accepted_object_count": sum(item["status"] == "accepted" for item in hypotheses),
+        "partial_object_count": sum(item["status"] == "partial" for item in hypotheses),
         "ambiguous_object_count": sum(item["status"] == "ambiguous" for item in hypotheses),
         "unresolved_object_count": sum(item["status"] == "unresolved" for item in hypotheses),
         "global_vertex_count": len(vertices),
@@ -836,6 +1196,8 @@ def run_inference(
         "median_face_support": _median(all_supports),
         "mean_reprojection_iou": statistics.mean(all_ious) if all_ious else 0.0,
         "median_reprojection_iou": _median(all_ious),
+        "alignment_sufficient_for_lifting": alignment["alignment_sufficient_for_lifting"],
+        "diagnosed_bottleneck": diagnosed_bottleneck,
         "runtime_seconds": total_runtime,
         "peak_gpu_memory_bytes": int(torch.cuda.max_memory_allocated()),
         "timings_seconds": {
@@ -870,12 +1232,18 @@ def run_inference(
         [
             "reconstruction/object_surfaces/evidence_manifest.json",
             "reconstruction/object_surfaces/diagnostics.json",
+            "reconstruction/object_surfaces/method_comparison.json",
+            "reconstruction/object_surfaces/camera_mesh_alignment.json",
             "reconstruction/object_surfaces/preview_manifest.json",
             "reconstruction/object_surfaces/raw/rasterization_manifest.json",
             "reconstruction/object_surfaces/previews/global_face_assignment.png",
             "reconstruction/object_surfaces/previews/object_surface_contact_sheet.png",
             "reconstruction/object_surfaces/previews/reprojection_contact_sheet.png",
             "reconstruction/object_surfaces/previews/conflict_heatmap.png",
+            "reconstruction/object_surfaces/previews/global_mesh_depth_contact_sheet.png",
+            "reconstruction/object_surfaces/previews/global_mesh_edge_overlay.png",
+            "reconstruction/object_surfaces/previews/sparse_point_vs_mesh_depth.png",
+            "reconstruction/object_surfaces/previews/surface_sample_fusion.png",
             *object_preview_paths.values(),
         ]
     )
@@ -901,6 +1269,11 @@ def run_inference(
         "processed_registered_frame_ids": [frame.frame_id for frame in frames],
         "global_vertex_count": len(vertices),
         "global_face_count": len(faces),
+        "lifting_method": request.lifting_method,
+        "median_global_edge_length": global_median_edge,
+        "sample_voxel_edge_length": global_median_edge
+        * float(request.surface_sample_configuration["sample_voxel_edge_multiplier"]),
+        "fused_sample_cell_count": sum(result.cell_count for result in fusion_results.values()),
         "processed_face_count_by_frame": {
             frame.frame_id: frame.raster.processed_face_count for frame in frames
         },

@@ -96,6 +96,32 @@ def project_pinhole(
     return fx * x / z + cx, fy * y / z + cy
 
 
+def homogeneous_clip_coordinates(
+    point_camera: Sequence[float],
+    *,
+    fx: float,
+    fy: float,
+    cx: float,
+    cy: float,
+    width: int,
+    height: int,
+    near: float,
+    far: float,
+) -> tuple[float, float, float, float]:
+    """Map OpenCV camera coordinates directly to OpenGL homogeneous clip space."""
+    if width <= 0 or height <= 0:
+        raise ValueError("raster dimensions must be positive")
+    if not 0 < near < far:
+        raise ValueError("clip planes must satisfy 0 < near < far")
+    x, y, z = point_camera
+    return (
+        (2.0 * fx / width) * x + (2.0 * (cx + 0.5) / width - 1.0) * z,
+        (-2.0 * fy / height) * y + (1.0 - 2.0 * (cy + 0.5) / height) * z,
+        ((far + near) / (far - near)) * z - (2.0 * far * near / (far - near)),
+        z,
+    )
+
+
 def pixel_to_ndc(
     u: float,
     v: float,

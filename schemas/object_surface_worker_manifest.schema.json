@@ -60,6 +60,11 @@
       "title": "Frame Sequence Digest",
       "type": "string"
     },
+    "fused_sample_cell_count": {
+      "minimum": 0,
+      "title": "Fused Sample Cell Count",
+      "type": "integer"
+    },
     "global_face_count": {
       "exclusiveMinimum": 0,
       "title": "Global Face Count",
@@ -80,10 +85,23 @@
       "title": "Global Vertex Count",
       "type": "integer"
     },
+    "lifting_method": {
+      "enum": [
+        "exact_face_vote_v1",
+        "surface_sample_fusion_v2"
+      ],
+      "title": "Lifting Method",
+      "type": "string"
+    },
     "manifest_sha256": {
       "pattern": "^[0-9a-f]{64}$",
       "title": "Manifest Sha256",
       "type": "string"
+    },
+    "median_global_edge_length": {
+      "exclusiveMinimum": 0,
+      "title": "Median Global Edge Length",
+      "type": "number"
     },
     "mesh_load_seconds": {
       "minimum": 0,
@@ -174,6 +192,19 @@
       "title": "Runtime Seconds",
       "type": "number"
     },
+    "sample_voxel_edge_length": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sample Voxel Edge Length"
+    },
     "schema_version": {
       "const": "0.1.0",
       "default": "0.1.0",
@@ -230,6 +261,9 @@
     "processed_registered_frame_ids",
     "global_vertex_count",
     "global_face_count",
+    "lifting_method",
+    "median_global_edge_length",
+    "fused_sample_cell_count",
     "processed_face_count_by_frame",
     "culled_face_count_by_frame",
     "mesh_load_seconds",

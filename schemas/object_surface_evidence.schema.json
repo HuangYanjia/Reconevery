@@ -369,6 +369,12 @@
           "title": "Relative Face Ratio",
           "type": "number"
         },
+        "relative_surface_area": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Relative Surface Area",
+          "type": "number"
+        },
         "removal_reason": {
           "anyOf": [
             {
@@ -384,12 +390,19 @@
         "retained": {
           "title": "Retained",
           "type": "boolean"
+        },
+        "surface_area_arbitrary_units_squared": {
+          "minimum": 0,
+          "title": "Surface Area Arbitrary Units Squared",
+          "type": "number"
         }
       },
       "required": [
         "component_id",
         "face_count",
+        "surface_area_arbitrary_units_squared",
         "relative_face_ratio",
+        "relative_surface_area",
         "retained"
       ],
       "title": "ObjectSurfaceComponent",
@@ -457,6 +470,18 @@
             }
           ],
           "default": null
+        },
+        "association_confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Association Confidence",
+          "type": "number"
+        },
+        "association_precision": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Association Precision",
+          "type": "number"
         },
         "bbox_extent": {
           "anyOf": [
@@ -564,6 +589,13 @@
           "default": null,
           "title": "Centroid"
         },
+        "completeness_confidence": {
+          "default": 0.0,
+          "maximum": 0.0,
+          "minimum": 0.0,
+          "title": "Completeness Confidence",
+          "type": "number"
+        },
         "completion_status": {
           "const": "not_completed",
           "default": "not_completed",
@@ -587,6 +619,11 @@
         },
         "coordinate_convention": {
           "$ref": "#/$defs/CoordinateConvention"
+        },
+        "exact_component_count": {
+          "minimum": 0,
+          "title": "Exact Component Count",
+          "type": "integer"
         },
         "face_count": {
           "minimum": 0,
@@ -636,6 +673,12 @@
           "title": "Hidden Surface Completion",
           "type": "string"
         },
+        "mask_recall": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mask Recall",
+          "type": "number"
+        },
         "mean_face_support_score": {
           "maximum": 1,
           "minimum": 0,
@@ -666,6 +709,12 @@
           "title": "Metric Scale Known",
           "type": "boolean"
         },
+        "multiview_support": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Multiview Support",
+          "type": "number"
+        },
         "object_id": {
           "minLength": 1,
           "title": "Object Id",
@@ -678,6 +727,17 @@
           "title": "Observation Support",
           "type": "array"
         },
+        "observed_surface_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Observed Surface Coverage",
+          "type": "number"
+        },
+        "potential_chunk_seam_merges": {
+          "minimum": 0,
+          "title": "Potential Chunk Seam Merges",
+          "type": "integer"
+        },
         "prompt_id": {
           "minLength": 1,
           "title": "Prompt Id",
@@ -686,11 +746,22 @@
         "provenance": {
           "$ref": "#/$defs/ProvenanceRecord"
         },
+        "reprojection_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Reprojection Iou",
+          "type": "number"
+        },
         "scale_status": {
           "const": "scale_ambiguous",
           "default": "scale_ambiguous",
           "title": "Scale Status",
           "type": "string"
+        },
+        "seam_aware_component_count": {
+          "minimum": 0,
+          "title": "Seam Aware Component Count",
+          "type": "integer"
         },
         "semantic_label": {
           "minLength": 1,
@@ -718,6 +789,7 @@
         "status": {
           "enum": [
             "accepted",
+            "partial",
             "ambiguous",
             "unresolved"
           ],
@@ -742,6 +814,12 @@
           "minimum": 0,
           "title": "Supporting View Count",
           "type": "integer"
+        },
+        "surface_connectedness": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Surface Connectedness",
+          "type": "number"
         },
         "surface_mesh_path": {
           "anyOf": [
@@ -830,6 +908,9 @@
         "vertex_count",
         "face_count",
         "component_count",
+        "exact_component_count",
+        "seam_aware_component_count",
+        "potential_chunk_seam_merges",
         "components",
         "mean_face_support_score",
         "median_face_support_score",
@@ -837,6 +918,13 @@
         "median_reprojection_iou",
         "mean_reprojection_iou",
         "track_coverage",
+        "association_precision",
+        "mask_recall",
+        "reprojection_iou",
+        "multiview_support",
+        "surface_connectedness",
+        "observed_surface_coverage",
+        "association_confidence",
         "observation_support",
         "coordinate_convention",
         "confidence",

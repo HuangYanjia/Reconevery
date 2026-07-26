@@ -169,6 +169,50 @@
   },
   "additionalProperties": false,
   "properties": {
+    "camera_package_images_path": {
+      "const": "camera/genrecon_package/images.txt",
+      "default": "camera/genrecon_package/images.txt",
+      "title": "Camera Package Images Path",
+      "type": "string"
+    },
+    "camera_package_images_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Images Sha256",
+      "type": "string"
+    },
+    "camera_package_manifest_path": {
+      "const": "camera/genrecon_package/package_manifest.json",
+      "default": "camera/genrecon_package/package_manifest.json",
+      "title": "Camera Package Manifest Path",
+      "type": "string"
+    },
+    "camera_package_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Manifest Sha256",
+      "type": "string"
+    },
+    "camera_package_points3d_path": {
+      "const": "camera/genrecon_package/points3D.txt",
+      "default": "camera/genrecon_package/points3D.txt",
+      "title": "Camera Package Points3D Path",
+      "type": "string"
+    },
+    "camera_package_points3d_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Points3D Sha256",
+      "type": "string"
+    },
+    "camera_package_registered_frames_path": {
+      "const": "camera/genrecon_package/registered_frames.json",
+      "default": "camera/genrecon_package/registered_frames.json",
+      "title": "Camera Package Registered Frames Path",
+      "type": "string"
+    },
+    "camera_package_registered_frames_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Registered Frames Sha256",
+      "type": "string"
+    },
     "camera_reconstruction_path": {
       "const": "camera/reconstruction.json",
       "default": "camera/reconstruction.json",
@@ -215,15 +259,12 @@
       "title": "Global Reconstruction Sha256",
       "type": "string"
     },
-    "global_scene_glb_path": {
-      "const": "reconstruction/global/scene.glb",
-      "default": "reconstruction/global/scene.glb",
-      "title": "Global Scene Glb Path",
-      "type": "string"
-    },
-    "global_scene_glb_sha256": {
-      "pattern": "^[0-9a-f]{64}$",
-      "title": "Global Scene Glb Sha256",
+    "lifting_method": {
+      "enum": [
+        "exact_face_vote_v1",
+        "surface_sample_fusion_v2"
+      ],
+      "title": "Lifting Method",
       "type": "string"
     },
     "manifest_path": {
@@ -322,6 +363,11 @@
       "title": "Surface Extraction Configuration",
       "type": "object"
     },
+    "surface_sample_configuration": {
+      "additionalProperties": true,
+      "title": "Surface Sample Configuration",
+      "type": "object"
+    },
     "unregistered_frame_ids": {
       "items": {
         "type": "string"
@@ -338,6 +384,10 @@
     "normalized_frame_paths",
     "normalized_frame_hashes",
     "camera_reconstruction_sha256",
+    "camera_package_manifest_sha256",
+    "camera_package_images_sha256",
+    "camera_package_points3d_sha256",
+    "camera_package_registered_frames_sha256",
     "registered_frame_ids",
     "unregistered_frame_ids",
     "coordinate_convention",
@@ -345,10 +395,11 @@
     "object_tracks",
     "global_reconstruction_sha256",
     "global_mesh_sha256",
-    "global_scene_glb_sha256",
+    "lifting_method",
     "rasterization_configuration",
     "mask_processing_configuration",
     "face_evidence_configuration",
+    "surface_sample_configuration",
     "surface_extraction_configuration",
     "seed"
   ],

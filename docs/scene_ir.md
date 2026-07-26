@@ -79,7 +79,10 @@ Phase 4 adds optional `geometry_status`, `completion_status`, and `sim_ready` fi
 changing older payload requirements. Resolved surface hypotheses use `source=fused`,
 `asset_type=unclassified`, `geometry_status=partial_observation_supported`,
 `completion_status=not_completed`, and `sim_ready=false`. Prompt asset-type hints remain typed
-evidence and are not promoted to measured physical truth. No collision asset is created.
+evidence and are not promoted to measured physical truth. Phase 4.1 splits association precision,
+mask recall, reprojection IoU, multiview support, connectedness, observed coverage, association
+confidence, and completeness confidence in the typed evidence artifact. Completeness confidence
+remains zero and no collision asset is created.
 
 Pydantic v2 generates Scene IR plus segmentation, GenRecon, object-surface, reconstruction, and
 consistency schemas under `schemas/`, including nested `$defs`, enums, required fields, numeric

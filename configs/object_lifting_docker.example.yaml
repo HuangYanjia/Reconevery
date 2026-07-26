@@ -44,8 +44,13 @@ stages:
         docker_image: reconevery/object-lifting:phase4
         docker_executable: docker
         device: cuda
+        lifting_method: surface_sample_fusion_v2
         raster_scale: 0.5
         face_chunk_size: 1000000
+        sample_voxel_edge_multiplier: 4.0
+        sample_min_supporting_views: 2
+        sample_min_positive_weight: 2.0
+        sample_negative_margin_multiplier: 2.0
     depends_on: [camera_recovery, segmentation_tracking, global_reconstruction]
 
   phase4_consistency_validation:

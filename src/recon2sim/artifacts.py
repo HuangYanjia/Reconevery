@@ -1012,6 +1012,22 @@ class ObjectSurfaceLiftingRequest(StrictModel):
     normalized_frame_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
     camera_reconstruction_path: Literal["camera/reconstruction.json"] = "camera/reconstruction.json"
     camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_package_manifest_path: Literal["camera/genrecon_package/package_manifest.json"] = (
+        "camera/genrecon_package/package_manifest.json"
+    )
+    camera_package_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_package_images_path: Literal["camera/genrecon_package/images.txt"] = (
+        "camera/genrecon_package/images.txt"
+    )
+    camera_package_images_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_package_points3d_path: Literal["camera/genrecon_package/points3D.txt"] = (
+        "camera/genrecon_package/points3D.txt"
+    )
+    camera_package_points3d_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_package_registered_frames_path: Literal[
+        "camera/genrecon_package/registered_frames.json"
+    ] = "camera/genrecon_package/registered_frames.json"
+    camera_package_registered_frames_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     registered_frame_ids: Annotated[list[str], Field(min_length=1)]
     unregistered_frame_ids: list[str]
     coordinate_convention: CoordinateConvention
@@ -1026,13 +1042,11 @@ class ObjectSurfaceLiftingRequest(StrictModel):
     global_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     global_mesh_path: Literal["reconstruction/global/mesh.ply"] = "reconstruction/global/mesh.ply"
     global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-    global_scene_glb_path: Literal["reconstruction/global/scene.glb"] = (
-        "reconstruction/global/scene.glb"
-    )
-    global_scene_glb_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    lifting_method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"]
     rasterization_configuration: dict[str, object]
     mask_processing_configuration: dict[str, object]
     face_evidence_configuration: dict[str, object]
+    surface_sample_configuration: dict[str, object]
     surface_extraction_configuration: dict[str, object]
     output_directory: Literal["reconstruction/object_surfaces/raw"] = (
         "reconstruction/object_surfaces/raw"
@@ -1091,7 +1105,9 @@ class ObjectSurfaceObservationSupport(StrictModel):
 class ObjectSurfaceComponent(StrictModel):
     component_id: Annotated[str, Field(min_length=1)]
     face_count: int = Field(gt=0)
+    surface_area_arbitrary_units_squared: float = Field(ge=0)
     relative_face_ratio: float = Field(gt=0, le=1)
+    relative_surface_area: float = Field(ge=0, le=1)
     retained: bool
     removal_reason: str | None = None
 
@@ -1119,7 +1135,7 @@ class ObjectSurfaceHypothesis(StrictModel):
     semantic_label: Annotated[str, Field(min_length=1)]
     prompt_id: Annotated[str, Field(min_length=1)]
     asset_type_hint: AssetType | None = None
-    status: Literal["accepted", "ambiguous", "unresolved"]
+    status: Literal["accepted", "partial", "ambiguous", "unresolved"]
     unresolved_reason: str | None = None
     source_track_path: Literal["observations/object_tracks.json"]
     source_mask_paths: list[str]
@@ -1139,6 +1155,9 @@ class ObjectSurfaceHypothesis(StrictModel):
     vertex_count: int = Field(ge=0)
     face_count: int = Field(ge=0)
     component_count: int = Field(ge=0)
+    exact_component_count: int = Field(ge=0)
+    seam_aware_component_count: int = Field(ge=0)
+    potential_chunk_seam_merges: int = Field(ge=0)
     components: list[ObjectSurfaceComponent]
     bbox_min: tuple[float, float, float] | None = None
     bbox_max: tuple[float, float, float] | None = None
@@ -1150,6 +1169,14 @@ class ObjectSurfaceHypothesis(StrictModel):
     median_reprojection_iou: float = Field(ge=0, le=1)
     mean_reprojection_iou: float = Field(ge=0, le=1)
     track_coverage: float = Field(ge=0, le=1)
+    association_precision: float = Field(ge=0, le=1)
+    mask_recall: float = Field(ge=0, le=1)
+    reprojection_iou: float = Field(ge=0, le=1)
+    multiview_support: float = Field(ge=0, le=1)
+    surface_connectedness: float = Field(ge=0, le=1)
+    observed_surface_coverage: float = Field(ge=0, le=1)
+    association_confidence: float = Field(ge=0, le=1)
+    completeness_confidence: float = Field(default=0.0, ge=0.0, le=0.0)
     observation_support: list[ObjectSurfaceObservationSupport]
     geometry_status: Literal["partial_observation_supported"] = "partial_observation_supported"
     completion_status: Literal["not_completed"] = "not_completed"
@@ -1212,6 +1239,10 @@ class ObjectSurfaceWorkerManifest(StrictModel):
     processed_registered_frame_ids: list[str]
     global_vertex_count: int = Field(gt=0)
     global_face_count: int = Field(gt=0)
+    lifting_method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"]
+    median_global_edge_length: float = Field(gt=0)
+    sample_voxel_edge_length: float | None = Field(default=None, gt=0)
+    fused_sample_cell_count: int = Field(ge=0)
     processed_face_count_by_frame: dict[str, int]
     culled_face_count_by_frame: dict[str, int]
     mesh_load_seconds: float = Field(ge=0)
@@ -1288,6 +1319,7 @@ class ObjectSurfaceDiagnostics(StrictModel):
     schema_version: Literal["0.1.0"] = "0.1.0"
     track_count: int = Field(ge=0)
     accepted_object_count: int = Field(ge=0)
+    partial_object_count: int = Field(ge=0)
     ambiguous_object_count: int = Field(ge=0)
     unresolved_object_count: int = Field(ge=0)
     global_vertex_count: int = Field(gt=0)
@@ -1303,6 +1335,13 @@ class ObjectSurfaceDiagnostics(StrictModel):
     median_face_support: float = Field(ge=0, le=1)
     mean_reprojection_iou: float = Field(ge=0, le=1)
     median_reprojection_iou: float = Field(ge=0, le=1)
+    alignment_sufficient_for_lifting: bool
+    diagnosed_bottleneck: Literal[
+        "camera_mesh_alignment",
+        "exact_face_granularity",
+        "missing_or_hallucinated_geometry",
+        "mixed_or_inconclusive",
+    ]
     runtime_seconds: float = Field(ge=0)
     peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
     timings_seconds: dict[str, float]
@@ -1320,12 +1359,74 @@ class ObjectSurfacePreviewManifest(StrictModel):
         "reconstruction/object_surfaces/previews/reprojection_contact_sheet.png"
     ]
     conflict_heatmap_path: Literal["reconstruction/object_surfaces/previews/conflict_heatmap.png"]
+    global_mesh_depth_contact_sheet_path: Literal[
+        "reconstruction/object_surfaces/previews/global_mesh_depth_contact_sheet.png"
+    ]
+    global_mesh_edge_overlay_path: Literal[
+        "reconstruction/object_surfaces/previews/global_mesh_edge_overlay.png"
+    ]
+    sparse_point_vs_mesh_depth_path: Literal[
+        "reconstruction/object_surfaces/previews/sparse_point_vs_mesh_depth.png"
+    ]
+    surface_sample_fusion_path: Literal[
+        "reconstruction/object_surfaces/previews/surface_sample_fusion.png"
+    ]
     object_preview_paths: dict[str, str]
 
     @field_validator("object_preview_paths")
     @classmethod
     def relative_object_previews(cls, values: dict[str, str]) -> dict[str, str]:
         return {object_id: _relative_artifact_path(path) for object_id, path in values.items()}
+
+
+class ObjectSurfaceMethodMetrics(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"]
+    accepted_faces: int = Field(ge=0)
+    ambiguous_faces: int = Field(ge=0)
+    component_count: int = Field(ge=0)
+    surface_area_arbitrary_units_squared: float = Field(ge=0)
+    reprojection_iou: float = Field(ge=0, le=1)
+    precision: float = Field(ge=0, le=1)
+    recall: float = Field(ge=0, le=1)
+    supporting_views: int = Field(ge=0)
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+
+
+class ObjectSurfaceMethodComparison(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    selected_method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"]
+    metrics: list[ObjectSurfaceMethodMetrics]
+    conclusion: Annotated[str, Field(min_length=1)]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CameraMeshFrameAlignment(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    mesh_pixel_coverage: float = Field(ge=0, le=1)
+    depth_finite_ratio: float = Field(ge=0, le=1)
+    visible_global_face_count: int = Field(ge=0)
+    depth_percentiles: dict[str, float]
+    sparse_observation_count: int = Field(ge=0)
+    normalized_depth_residual_median: float | None = Field(default=None, ge=0)
+    normalized_depth_residual_p90: float | None = Field(default=None, ge=0)
+    depth_inlier_fraction: float | None = Field(default=None, ge=0, le=1)
+
+
+class CameraMeshAlignmentArtifact(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frames: list[CameraMeshFrameAlignment]
+    mesh_pixel_coverage_mean: float = Field(ge=0, le=1)
+    sparse_depth_residual_median: float | None = Field(default=None, ge=0)
+    sparse_depth_residual_p90: float | None = Field(default=None, ge=0)
+    sparse_depth_inlier_fraction: float | None = Field(default=None, ge=0, le=1)
+    alignment_sufficient_for_lifting: bool
+    diagnosis: Annotated[str, Field(min_length=1)]
+    warnings: list[str] = Field(default_factory=list)
 
 
 class Phase4ConsistencyCheck(StrictModel):

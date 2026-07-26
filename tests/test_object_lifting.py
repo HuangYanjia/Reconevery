@@ -11,14 +11,17 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
+import recon2sim.adapters.object_lifting as object_lifting_adapter_module
 from recon2sim.adapters.base import StageContext
 from recon2sim.adapters.object_lifting import (
     ObjectLiftingAdapterConfig,
     ObjectSurfaceLiftingAdapter,
 )
 from recon2sim.artifacts import (
+    CameraMeshAlignmentArtifact,
     ObjectSurfaceEvidenceArtifact,
     ObjectSurfaceLiftingRequest,
+    ObjectSurfaceMethodComparison,
     Phase4ConsistencyReport,
 )
 from recon2sim.cli import app
@@ -40,6 +43,7 @@ sys.path.insert(0, str(WORKER_ROOT))
 
 from object_lifting_worker.camera_projection import (  # noqa: E402
     camera_from_world,
+    homogeneous_clip_coordinates,
     ndc_to_pixel,
     pixel_to_ndc,
     project_pinhole,
@@ -51,7 +55,10 @@ from object_lifting_worker.distortion import (  # noqa: E402
 )
 from object_lifting_worker.face_evidence import FaceStatistics  # noqa: E402
 from object_lifting_worker.inference import _resolve_overlaps  # noqa: E402
-from object_lifting_worker.rasterization import cpu_rasterize_face_ids  # noqa: E402
+from object_lifting_worker.rasterization import (  # noqa: E402
+    cpu_rasterize_face_ids,
+    triangle_outside_clip,
+)
 from object_lifting_worker.schema import WorkerRequest  # noqa: E402
 from object_lifting_worker.surface_extraction import (  # noqa: E402
     connected_face_components,
@@ -91,6 +98,12 @@ def test_fake_phase4_dag_and_consistency_report(tmp_path: Path) -> None:
     evidence = ObjectSurfaceEvidenceArtifact.model_validate_json(
         (run_dir / "reconstruction/object_surfaces/evidence_manifest.json").read_text()
     )
+    comparison = ObjectSurfaceMethodComparison.model_validate_json(
+        (run_dir / "reconstruction/object_surfaces/method_comparison.json").read_text()
+    )
+    alignment = CameraMeshAlignmentArtifact.model_validate_json(
+        (run_dir / "reconstruction/object_surfaces/camera_mesh_alignment.json").read_text()
+    )
     report = Phase4ConsistencyReport.model_validate_json(
         (run_dir / "validation/phase4_object_surface_consistency.json").read_text()
     )
@@ -99,6 +112,12 @@ def test_fake_phase4_dag_and_consistency_report(tmp_path: Path) -> None:
     assert not report.hidden_surface_completion_implemented
     assert not report.sim_ready_scene_implemented
     assert evidence.hypotheses
+    assert comparison.selected_method == "surface_sample_fusion_v2"
+    assert {item.method for item in comparison.metrics} == {
+        "exact_face_vote_v1",
+        "surface_sample_fusion_v2",
+    }
+    assert alignment.frame_sequence_digest == evidence.frame_sequence_digest
     assert all(
         item.geometry_status == "partial_observation_supported" for item in evidence.hypotheses
     )
@@ -153,6 +172,10 @@ def test_selective_materialization_excludes_raw_workspaces(tmp_path: Path) -> No
     assert "observations/object_tracks.json" in materialized
     assert "reconstruction/global/metadata.json" in materialized
     assert "reconstruction/global/mesh.ply" in materialized
+    assert "camera/genrecon_package/package_manifest.json" in materialized
+    assert "camera/genrecon_package/images.txt" in materialized
+    assert "camera/genrecon_package/points3D.txt" in materialized
+    assert "camera/genrecon_package/registered_frames.json" in materialized
     assert any(path.startswith("observations/masks/") for path in materialized)
     assert "camera/colmap/database.db" not in materialized
     assert not any(path.startswith("camera/colmap/") for path in materialized)
@@ -161,8 +184,82 @@ def test_selective_materialization_excludes_raw_workspaces(tmp_path: Path) -> No
     attempt_root = (
         run_dir / "work" / "object_surface_lifting" / f"attempt_{attempts[-1]['attempt']}"
     )
-    assert not (attempt_root / "reconstruction/global/mesh.ply").exists()
+    attempt_mesh = attempt_root / "reconstruction/global/mesh.ply"
+    assert attempt_mesh.is_file()
+    assert _sha(attempt_mesh) == mesh_hash_before
+    assert not (attempt_root / "reconstruction/global/scene.glb").exists()
+    for forbidden in (
+        "camera/colmap/database.db",
+        "camera/colmap/sparse",
+        "camera/colmap/logs",
+        "observations/raw",
+        "reconstruction/global/raw",
+    ):
+        assert not (attempt_root / forbidden).exists()
+    mesh_record = next(
+        item
+        for item in attempts[-1]["materialized_inputs"]
+        if item["relative_path"] == "reconstruction/global/mesh.ply"
+    )
+    assert mesh_record["materialization_mode"] == "reflink_or_copy"
     assert _sha(mesh_path) == mesh_hash_before
+
+
+def test_faulty_worker_cannot_modify_canonical_mesh(tmp_path: Path) -> None:
+    run_dir = tmp_path / "upstream-immutability"
+    PipelineRunner(_config(), INPUT, run_dir).run(until_stage="global_reconstruction")
+    mesh_path = run_dir / "reconstruction/global/mesh.ply"
+    before = mesh_path.read_bytes()
+    PipelineRunner(_config("modify_upstream"), INPUT, run_dir).run(
+        from_stage="object_surface_lifting"
+    )
+    assert mesh_path.read_bytes() == before
+
+
+def test_local_and_docker_workers_receive_only_attempt_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt = tmp_path / "work/object_surface_lifting/attempt_1"
+    canonical = tmp_path / "canonical"
+    attempt.mkdir(parents=True)
+    canonical.mkdir()
+    stage_config = _config().stages["object_surface_lifting"]
+    context = StageContext(
+        stage_name="object_surface_lifting",
+        input_dir=INPUT,
+        run_dir=attempt,
+        canonical_run_dir=canonical,
+        config=stage_config,
+        seed=42,
+    )
+    adapter = ObjectSurfaceLiftingAdapter()
+    local = adapter._inference_command(
+        context,
+        ObjectLiftingAdapterConfig.model_validate(stage_config.adapter.config),
+    )
+    assert local[local.index("--input-root") + 1] == str(attempt.resolve())
+    assert str(canonical.resolve()) not in local
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "0")
+    monkeypatch.setattr(
+        object_lifting_adapter_module,
+        "resolve_executable",
+        lambda _name: "/usr/bin/docker",
+    )
+    docker = adapter._inference_command(
+        context,
+        ObjectLiftingAdapterConfig.model_validate(
+            {
+                "execution_mode": "docker",
+                "docker_image": "reconevery/object-lifting:test",
+                "device": "cuda",
+            }
+        ),
+    )
+    mounts = [docker[index + 1] for index, value in enumerate(docker) if value == "-v"]
+    assert mounts == [f"{attempt.resolve()}:/workspace:rw"]
+    assert str(canonical.resolve()) not in docker
 
 
 def test_compact_face_ids_round_trip_and_bounds(tmp_path: Path) -> None:
@@ -268,6 +365,84 @@ def test_projection_roundtrip_offsets_non_square_and_behind() -> None:
     assert project_pinhole((0, 0, 0), fx=1, fy=1, cx=0, cy=0) is None
 
 
+def test_homogeneous_projection_exact_pixel_contract() -> None:
+    clip = homogeneous_clip_coordinates(
+        (1.0, 2.0, 4.0),
+        fx=200.0,
+        fy=300.0,
+        cx=23.0,
+        cy=17.0,
+        width=640,
+        height=360,
+        near=0.1,
+        far=100.0,
+    )
+    pixel = ndc_to_pixel(clip[0] / clip[3], clip[1] / clip[3], 640, 360)
+    assert pixel == pytest.approx((73.0, 167.0))
+    assert clip[3] == 4.0
+
+
+@pytest.mark.parametrize(
+    "triangle,expected",
+    [
+        ([(-0.5, -0.5, 0.0, 1.0), (0.5, -0.5, 0.0, 1.0), (0.0, 0.5, 0.0, 1.0)], False),
+        ([(-0.5, -0.5, 0.0, -1.0), (0.5, -0.5, 0.0, -1.0), (0.0, 0.5, 0.0, -1.0)], True),
+        ([(-2.0, 0.0, 0.0, 1.0), (-3.0, 0.5, 0.0, 1.0), (-4.0, -0.5, 0.0, 1.0)], True),
+        ([(2.0, 0.0, 0.0, 1.0), (3.0, 0.5, 0.0, 1.0), (4.0, -0.5, 0.0, 1.0)], True),
+        ([(0.0, 2.0, 0.0, 1.0), (0.5, 3.0, 0.0, 1.0), (-0.5, 4.0, 0.0, 1.0)], True),
+        ([(0.0, -2.0, 0.0, 1.0), (0.5, -3.0, 0.0, 1.0), (-0.5, -4.0, 0.0, 1.0)], True),
+        ([(-2.0, 0.0, 0.0, 1.0), (0.0, 0.5, 0.0, 1.0), (0.0, -0.5, 0.0, 1.0)], False),
+        ([(-4.0, -4.0, 0.0, 1.0), (4.0, -4.0, 0.0, 1.0), (0.0, 4.0, 0.0, 1.0)], False),
+    ],
+)
+def test_conservative_clip_culling(
+    triangle: list[tuple[float, float, float, float]],
+    expected: bool,
+) -> None:
+    assert triangle_outside_clip(triangle) is expected
+
+
+def test_reference_rasterizer_clips_near_and_camera_planes() -> None:
+    intrinsics = {
+        "width": 40,
+        "height": 24,
+        "fx": 20,
+        "fy": 20,
+        "cx": 19.5,
+        "cy": 11.5,
+    }
+    near_crossing = cpu_rasterize_face_ids(
+        [(-0.5, -0.5, 0.05), (0.5, -0.5, 1.0), (0.0, 0.5, 1.0)],
+        [(0, 1, 2)],
+        translation_world_from_camera=(0, 0, 0),
+        rotation_xyzw_world_from_camera=(0, 0, 0, 1),
+        intrinsics=intrinsics,
+        near_plane=0.1,
+        far_plane=10.0,
+    )
+    assert 0 in {value for row in near_crossing for value in row}
+    camera_crossing = cpu_rasterize_face_ids(
+        [(-0.2, -0.2, -0.1), (0.5, -0.5, 1.0), (0.0, 0.5, 1.0)],
+        [(0, 1, 2)],
+        translation_world_from_camera=(0, 0, 0),
+        rotation_xyzw_world_from_camera=(0, 0, 0, 1),
+        intrinsics=intrinsics,
+        near_plane=0.1,
+        far_plane=10.0,
+    )
+    assert 0 in {value for row in camera_crossing for value in row}
+    behind = cpu_rasterize_face_ids(
+        [(-0.5, -0.5, -1.0), (0.5, -0.5, -1.0), (0.0, 0.5, -1.0)],
+        [(0, 1, 2)],
+        translation_world_from_camera=(0, 0, 0),
+        rotation_xyzw_world_from_camera=(0, 0, 0, 1),
+        intrinsics=intrinsics,
+        near_plane=0.1,
+        far_plane=10.0,
+    )
+    assert 0 not in {value for row in behind for value in row}
+
+
 def test_distortion_camera_models() -> None:
     assert distortion_coefficients("PINHOLE", [1.0]) == (0, 0, 0, 0, 0)
     assert distortion_coefficients("SIMPLE_RADIAL", [0.1]) == (0.1, 0, 0, 0, 0)
@@ -318,9 +493,19 @@ def test_reference_rasterizer_preserves_face_ids_under_world_rotation() -> None:
 
 
 def test_connected_components_and_tiny_component_filtering() -> None:
-    faces = [(0, 1, 2), (2, 1, 3), (10, 11, 12)]
+    vertices = [
+        (0.0, 0.0, 0.0),
+        (2.0, 0.0, 0.0),
+        (0.0, 2.0, 0.0),
+        (2.0, 2.0, 0.0),
+        (10.0, 0.0, 0.0),
+        (10.1, 0.0, 0.0),
+        (10.0, 0.1, 0.0),
+    ]
+    faces = [(0, 1, 2), (2, 1, 3), (4, 5, 6)]
     assert connected_face_components(faces, [0, 1, 2]) == [[0, 1], [2]]
     retained, diagnostics = filter_components(
+        vertices,
         faces,
         [0, 1, 2],
         min_faces=2,
@@ -329,6 +514,8 @@ def test_connected_components_and_tiny_component_filtering() -> None:
     assert retained == [0, 1]
     assert diagnostics[0]["retained"]
     assert not diagnostics[1]["retained"]
+    assert diagnostics[0]["relative_face_ratio"] == pytest.approx(2 / 3)
+    assert diagnostics[0]["relative_surface_area"] > 0.99
 
 
 def test_same_label_exclusivity_and_cross_label_overlap() -> None:

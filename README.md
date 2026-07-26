@@ -170,16 +170,24 @@ hashes, coordinate semantics, selective materialization, and the explicit capabi
 
 `object_surface_lifting` projects the canonical GenRecon mesh into registered COLMAP cameras,
 undistorts canonical SAM masks, and accumulates core, boundary, exterior-negative, visibility,
-depth, and supporting-view evidence against original global face IDs. The heavy NumPy/OpenCV/
-PyTorch/nvdiffrast/trimesh implementation remains in `workers/object_lifting`; the core adapter
-validates typed outputs, compact face-ID arrays, extracted PLY meshes, hashes, lineage, coordinate
-semantics, and upstream immutability without importing those packages.
+depth, and supporting-view evidence against original global face IDs. Phase 4.1 compares exact
+face voting with scene-relative surface-sample fusion and diagnoses camera/global-mesh depth
+alignment from the minimal selected COLMAP text package. Exact homogeneous clipping handles
+near-plane and behind-camera triangles without moving them in front of the camera. The heavy
+NumPy/OpenCV/PyTorch/nvdiffrast/trimesh implementation remains in
+`workers/object_lifting`; the core adapter validates typed outputs, compact face-ID arrays,
+extracted PLY meshes, hashes, lineage, coordinate semantics, and upstream immutability without
+importing those packages.
 
 Outputs under `reconstruction/object_surfaces/` are partial observation-supported hypotheses.
 They preserve arbitrary COLMAP units and orientation, may be unresolved, contain no hidden
 surface completion or collision geometry, and are explicitly `sim_ready=false`. Phase 4 writes
 its enriched Scene IR to `scene_ir/phase4_scene.json` so it does not mutate the Phase 3-owned
 `scene_ir/scene.json` and invalidate GenRecon's cache.
+
+Local and Docker workers see only the isolated attempt workspace. The global PLY is reflinked or
+copied into that workspace; the canonical run, unused GLB, raw COLMAP workspace, SAM raw output,
+and GenRecon tensors are not mounted or materialized.
 
 ```bash
 uv run recon2sim run \

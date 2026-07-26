@@ -25,12 +25,14 @@ from recon2sim.adapters.ingest import (
     run_process,
 )
 from recon2sim.artifacts import (
+    CameraMeshAlignmentArtifact,
     CameraReconstruction,
     GlobalSceneReconstructionArtifact,
     IngestManifest,
     ObjectSurfaceDiagnostics,
     ObjectSurfaceEvidenceArtifact,
     ObjectSurfaceLiftingRequest,
+    ObjectSurfaceMethodComparison,
     ObjectSurfacePreviewManifest,
     ObjectSurfaceTrackRequest,
     ObjectSurfaceWorkerManifest,
@@ -55,7 +57,7 @@ from recon2sim.object_lifting import (
 )
 from recon2sim.storage import atomic_write_json
 
-OBJECT_LIFTING_WORKER_VERSION = "0.1.0"
+OBJECT_LIFTING_WORKER_VERSION = "0.1.1"
 
 
 def _resolve_python(value: str) -> str | None:
@@ -73,10 +75,11 @@ class ObjectLiftingAdapterConfig(StrictModel):
     docker_executable: str = "docker"
     docker_image: str = "reconevery/object-lifting:phase4"
     device: Literal["cuda", "cpu"] = "cuda"
+    lifting_method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"] = (
+        "surface_sample_fusion_v2"
+    )
     raster_scale: float = Field(default=0.5, gt=0, le=1)
-    camera_batch_size: int = Field(default=1, gt=0)
     face_chunk_size: int = Field(default=1_000_000, gt=0)
-    max_objects_per_batch: int = Field(default=8, gt=0)
     near_plane_strategy: Literal["camera_relative"] = "camera_relative"
     far_plane_strategy: Literal["scene_bounds"] = "scene_bounds"
     mask_core_erosion_pixels: int = Field(default=2, ge=0)
@@ -91,8 +94,21 @@ class ObjectLiftingAdapterConfig(StrictModel):
     accepted_face_score: float = Field(default=0.65, ge=0, le=1)
     ambiguous_face_score: float = Field(default=0.40, ge=0, le=1)
     instance_score_margin: float = Field(default=0.05, ge=0, le=1)
+    sample_voxel_edge_multiplier: float = Field(default=4.0, gt=0)
+    sample_min_supporting_views: int = Field(default=2, gt=0)
+    sample_min_positive_weight: float = Field(default=2.0, gt=0)
+    sample_negative_margin_multiplier: float = Field(default=2.0, ge=0)
     min_component_faces: int = Field(default=4, gt=0)
     min_relative_component_area: float = Field(default=0.01, ge=0, le=1)
+    seam_diagnostic_enabled: bool = True
+    seam_centroid_distance_multiplier: float = Field(default=3.0, gt=0)
+    seam_endpoint_distance_multiplier: float = Field(default=2.0, gt=0)
+    seam_normal_cosine: float = Field(default=0.95, ge=-1, le=1)
+    accepted_min_reprojection_iou: float = Field(default=0.10, ge=0, le=1)
+    partial_min_reprojection_iou: float = Field(default=0.01, ge=0, le=1)
+    accepted_max_ambiguity_ratio: float = Field(default=0.50, ge=0, le=1)
+    alignment_depth_inlier_threshold: float = Field(default=0.10, gt=0)
+    alignment_min_inlier_fraction: float = Field(default=0.30, ge=0, le=1)
     seed: int = 42
     fake_mode: str = "success"
 
@@ -100,6 +116,10 @@ class ObjectLiftingAdapterConfig(StrictModel):
     def validate_execution(self) -> ObjectLiftingAdapterConfig:
         if self.accepted_face_score < self.ambiguous_face_score:
             raise ValueError("accepted_face_score must be at least ambiguous_face_score")
+        if self.accepted_min_reprojection_iou < self.partial_min_reprojection_iou:
+            raise ValueError(
+                "accepted_min_reprojection_iou must be at least partial_min_reprojection_iou"
+            )
         if self.execution_mode == "fake_worker":
             if self.worker_script is None:
                 raise ValueError("fake_worker execution requires worker_script")
@@ -128,7 +148,7 @@ class ObjectLiftingAdapterConfig(StrictModel):
 
 class ObjectSurfaceLiftingAdapter:
     name = "object_surface_lifting"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         tracks_path = context.canonical_path("observations", "object_tracks.json")
@@ -140,6 +160,22 @@ class ObjectSurfaceLiftingAdapter:
         specs = [
             InputSpec("inputs/manifest.json", "ingest_manifest"),
             InputSpec("camera/reconstruction.json", "camera_reconstruction"),
+            InputSpec(
+                "camera/genrecon_package/package_manifest.json",
+                "genrecon_camera_package_manifest",
+            ),
+            InputSpec(
+                "camera/genrecon_package/images.txt",
+                "genrecon_colmap_text",
+            ),
+            InputSpec(
+                "camera/genrecon_package/points3D.txt",
+                "genrecon_colmap_text",
+            ),
+            InputSpec(
+                "camera/genrecon_package/registered_frames.json",
+                "genrecon_registered_frames",
+            ),
             InputSpec("observations/object_tracks.json", "segmentation_tracking"),
             InputSpec(
                 "reconstruction/global/metadata.json",
@@ -148,12 +184,7 @@ class ObjectSurfaceLiftingAdapter:
             InputSpec(
                 "reconstruction/global/mesh.ply",
                 "global_scene_mesh",
-                materialization_mode="reference_only",
-            ),
-            InputSpec(
-                "reconstruction/global/scene.glb",
-                "global_pbr_scene",
-                materialization_mode="reference_only",
+                materialization_mode="reflink_or_copy",
             ),
             InputSpec("scene_ir/scene.json", "scene_ir"),
         ]
@@ -316,6 +347,24 @@ class ObjectSurfaceLiftingAdapter:
                 model=ObjectSurfaceDiagnostics,
             ),
             OutputSpec(
+                f"{root}/method_comparison.json",
+                "object_surface_method_comparison",
+                "application/json",
+                "object_lifting",
+                validation="json",
+                schema_identifier="recon2sim/object-surface-method-comparison/0.1.0",
+                model=ObjectSurfaceMethodComparison,
+            ),
+            OutputSpec(
+                f"{root}/camera_mesh_alignment.json",
+                "camera_mesh_alignment",
+                "application/json",
+                "object_lifting",
+                validation="json",
+                schema_identifier="recon2sim/camera-mesh-alignment/0.1.0",
+                model=CameraMeshAlignmentArtifact,
+            ),
+            OutputSpec(
                 f"{root}/preview_manifest.json",
                 "object_surface_preview_manifest",
                 "application/json",
@@ -336,6 +385,10 @@ class ObjectSurfaceLiftingAdapter:
                     "object_surface_contact_sheet",
                     "reprojection_contact_sheet",
                     "conflict_heatmap",
+                    "global_mesh_depth_contact_sheet",
+                    "global_mesh_edge_overlay",
+                    "sparse_point_vs_mesh_depth",
+                    "surface_sample_fusion",
                 )
             ],
             OutputSpec(
@@ -355,8 +408,10 @@ class ObjectSurfaceLiftingAdapter:
         camera_path = context.path("camera", "reconstruction.json")
         tracks_path = context.path("observations", "object_tracks.json")
         global_path = context.path("reconstruction", "global", "metadata.json")
-        mesh_path = context.canonical_path("reconstruction", "global", "mesh.ply")
+        mesh_path = context.path("reconstruction", "global", "mesh.ply")
         glb_path = context.canonical_path("reconstruction", "global", "scene.glb")
+        if not glb_path.is_file():
+            raise FileNotFoundError("canonical Phase 3 scene.glb is missing")
         manifest = IngestManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
         camera = CameraReconstruction.model_validate_json(camera_path.read_text(encoding="utf-8"))
         tracks = SegmentationTrackingArtifact.model_validate_json(
@@ -378,7 +433,6 @@ class ObjectSurfaceLiftingAdapter:
             tracks_path,
             global_path,
             mesh_path,
-            glb_path,
         )
         request_path = context.path("reconstruction", "object_surfaces", "request.json")
         atomic_write_json(request_path, request)
@@ -408,12 +462,31 @@ class ObjectSurfaceLiftingAdapter:
             ObjectSurfaceDiagnostics,
             "object-surface diagnostics",
         )
+        comparison = self._load_model(
+            root / "method_comparison.json",
+            ObjectSurfaceMethodComparison,
+            "object-surface method comparison",
+        )
+        alignment = self._load_model(
+            root / "camera_mesh_alignment.json",
+            CameraMeshAlignmentArtifact,
+            "camera/mesh alignment diagnostics",
+        )
         previews = self._load_model(
             root / "preview_manifest.json",
             ObjectSurfacePreviewManifest,
             "object-surface previews",
         )
-        self._validate_worker_output(context, config, request, worker, evidence, previews)
+        self._validate_worker_output(
+            context,
+            config,
+            request,
+            worker,
+            evidence,
+            previews,
+            comparison,
+            alignment,
+        )
         if diagnostics.track_count != len(tracks.tracks):
             raise RuntimeError("object-lifting diagnostics track count is inconsistent")
         shutil.copy2(root / "evidence_manifest.json", root / "face_assignment_manifest.json")
@@ -441,11 +514,17 @@ class ObjectSurfaceLiftingAdapter:
                 "evidence_manifest.json",
                 "face_assignment_manifest.json",
                 "diagnostics.json",
+                "method_comparison.json",
+                "camera_mesh_alignment.json",
                 "preview_manifest.json",
                 "previews/global_face_assignment.png",
                 "previews/object_surface_contact_sheet.png",
                 "previews/reprojection_contact_sheet.png",
                 "previews/conflict_heatmap.png",
+                "previews/global_mesh_depth_contact_sheet.png",
+                "previews/global_mesh_edge_overlay.png",
+                "previews/sparse_point_vs_mesh_depth.png",
+                "previews/surface_sample_fusion.png",
             }
         ]
         return StageResult(
@@ -511,8 +590,8 @@ class ObjectSurfaceLiftingAdapter:
         tracks_path: Path,
         global_path: Path,
         mesh_path: Path,
-        glb_path: Path,
     ) -> ObjectSurfaceLiftingRequest:
+        camera_package_root = context.path("camera", "genrecon_package")
         return ObjectSurfaceLiftingRequest(
             run_id=context.canonical_run_dir.name,
             manifest_sha256=sha256_file(manifest_path),
@@ -523,6 +602,14 @@ class ObjectSurfaceLiftingAdapter:
             },
             normalized_frame_hashes={frame.frame_id: frame.sha256 for frame in manifest.frames},
             camera_reconstruction_sha256=sha256_file(camera_path),
+            camera_package_manifest_sha256=sha256_file(
+                camera_package_root / "package_manifest.json"
+            ),
+            camera_package_images_sha256=sha256_file(camera_package_root / "images.txt"),
+            camera_package_points3d_sha256=sha256_file(camera_package_root / "points3D.txt"),
+            camera_package_registered_frames_sha256=sha256_file(
+                camera_package_root / "registered_frames.json"
+            ),
             registered_frame_ids=camera.registered_frame_ids,
             unregistered_frame_ids=camera.unregistered_frame_ids,
             coordinate_convention=camera.coordinate_convention,
@@ -547,13 +634,11 @@ class ObjectSurfaceLiftingAdapter:
             ],
             global_reconstruction_sha256=sha256_file(global_path),
             global_mesh_sha256=sha256_file(mesh_path),
-            global_scene_glb_sha256=sha256_file(glb_path),
+            lifting_method=config.lifting_method,
             rasterization_configuration={
                 "backend": "fake" if config.execution_mode == "fake_worker" else "nvdiffrast",
                 "raster_scale": config.raster_scale,
-                "camera_batch_size": config.camera_batch_size,
                 "face_chunk_size": config.face_chunk_size,
-                "max_objects_per_batch": config.max_objects_per_batch,
                 "near_plane_strategy": config.near_plane_strategy,
                 "far_plane_strategy": config.far_plane_strategy,
                 "global_vertex_count": global_scene.mesh.vertex_count,
@@ -577,9 +662,27 @@ class ObjectSurfaceLiftingAdapter:
                 "instance_score_margin": config.instance_score_margin,
                 "formula": "positive/(positive+negative+epsilon)",
             },
+            surface_sample_configuration={
+                "sample_voxel_edge_multiplier": config.sample_voxel_edge_multiplier,
+                "sample_min_supporting_views": config.sample_min_supporting_views,
+                "sample_min_positive_weight": config.sample_min_positive_weight,
+                "sample_negative_margin_multiplier": config.sample_negative_margin_multiplier,
+                "accepted_patch_score": config.accepted_face_score,
+                "ambiguous_patch_score": config.ambiguous_face_score,
+                "mapping": "direct_samples_to_original_global_faces",
+            },
             surface_extraction_configuration={
                 "min_component_faces": config.min_component_faces,
                 "min_relative_component_area": config.min_relative_component_area,
+                "seam_diagnostic_enabled": config.seam_diagnostic_enabled,
+                "seam_centroid_distance_multiplier": config.seam_centroid_distance_multiplier,
+                "seam_endpoint_distance_multiplier": config.seam_endpoint_distance_multiplier,
+                "seam_normal_cosine": config.seam_normal_cosine,
+                "accepted_min_reprojection_iou": config.accepted_min_reprojection_iou,
+                "partial_min_reprojection_iou": config.partial_min_reprojection_iou,
+                "accepted_max_ambiguity_ratio": config.accepted_max_ambiguity_ratio,
+                "alignment_depth_inlier_threshold": config.alignment_depth_inlier_threshold,
+                "alignment_min_inlier_fraction": config.alignment_min_inlier_fraction,
                 "preserve_original_global_face_ids": True,
                 "fake_mode": config.fake_mode,
             },
@@ -599,7 +702,7 @@ class ObjectSurfaceLiftingAdapter:
             command.extend(
                 [
                     "--input-root",
-                    str(context.canonical_run_dir.resolve()),
+                    str(context.run_dir.resolve()),
                     "--output-dir",
                     "reconstruction/object_surfaces",
                 ]
@@ -617,8 +720,6 @@ class ObjectSurfaceLiftingAdapter:
             *self._docker_user_arguments(),
             "-v",
             f"{context.run_dir.resolve()}:/workspace:rw",
-            "-v",
-            f"{context.canonical_run_dir.resolve()}:/inputs:ro",
             "-w",
             "/workspace",
             "--entrypoint",
@@ -630,7 +731,7 @@ class ObjectSurfaceLiftingAdapter:
             "--request",
             "/workspace/reconstruction/object_surfaces/request.json",
             "--input-root",
-            "/inputs",
+            "/workspace",
             "--output-dir",
             "/workspace/reconstruction/object_surfaces",
         ]
@@ -667,7 +768,7 @@ class ObjectSurfaceLiftingAdapter:
         if "out of memory" in stderr or "cuda oom" in stderr:
             return RuntimeError(
                 "object-lifting rasterization ran out of GPU memory; lower raster_scale, "
-                "face_chunk_size, or max_objects_per_batch"
+                "or face_chunk_size"
             )
         if "unsupported camera model" in stderr:
             return RuntimeError(exc.result.stderr.strip())
@@ -685,6 +786,8 @@ class ObjectSurfaceLiftingAdapter:
         worker: ObjectSurfaceWorkerManifest,
         evidence: ObjectSurfaceEvidenceArtifact,
         previews: ObjectSurfacePreviewManifest,
+        comparison: ObjectSurfaceMethodComparison,
+        alignment: CameraMeshAlignmentArtifact,
     ) -> None:
         expected = {
             "request_sha256": sha256_file(
@@ -709,6 +812,25 @@ class ObjectSurfaceLiftingAdapter:
             raise RuntimeError("object-surface output does not retain raw COLMAP semantics")
         if evidence.partition.global_face_count != worker.global_face_count:
             raise RuntimeError("global face counts disagree across object-lifting outputs")
+        if comparison.selected_method != request.lifting_method:
+            raise RuntimeError("method comparison selected method does not match request")
+        expected_method_metrics = {
+            (track.object_id, method)
+            for track in request.object_tracks
+            for method in ("exact_face_vote_v1", "surface_sample_fusion_v2")
+        }
+        actual_method_metrics = {(item.object_id, item.method) for item in comparison.metrics}
+        if actual_method_metrics != expected_method_metrics:
+            raise RuntimeError(
+                "method comparison must contain exact-face and surface-sample metrics "
+                "for every object"
+            )
+        if alignment.frame_sequence_digest != request.frame_sequence_digest:
+            raise RuntimeError("camera/mesh alignment frame lineage does not match request")
+        if alignment.camera_reconstruction_sha256 != request.camera_reconstruction_sha256:
+            raise RuntimeError("camera/mesh alignment references the wrong cameras")
+        if alignment.global_mesh_sha256 != request.global_mesh_sha256:
+            raise RuntimeError("camera/mesh alignment references the wrong mesh")
         object_ids = {track.object_id for track in request.object_tracks}
         if {hypothesis.object_id for hypothesis in evidence.hypotheses} != object_ids:
             raise RuntimeError("worker hypotheses do not exactly cover canonical SAM tracks")
@@ -726,6 +848,10 @@ class ObjectSurfaceLiftingAdapter:
             previews.object_surface_contact_sheet_path,
             previews.reprojection_contact_sheet_path,
             previews.conflict_heatmap_path,
+            previews.global_mesh_depth_contact_sheet_path,
+            previews.global_mesh_edge_overlay_path,
+            previews.sparse_point_vs_mesh_depth_path,
+            previews.surface_sample_fusion_path,
             *previews.object_preview_paths.values(),
         ]
         for relative_path in preview_paths:

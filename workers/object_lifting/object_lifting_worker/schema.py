@@ -49,6 +49,14 @@ class WorkerRequest(StrictModel):
     normalized_frame_hashes: dict[str, str]
     camera_reconstruction_path: str
     camera_reconstruction_sha256: str
+    camera_package_manifest_path: str
+    camera_package_manifest_sha256: str
+    camera_package_images_path: str
+    camera_package_images_sha256: str
+    camera_package_points3d_path: str
+    camera_package_points3d_sha256: str
+    camera_package_registered_frames_path: str
+    camera_package_registered_frames_sha256: str
     registered_frame_ids: list[str]
     unregistered_frame_ids: list[str]
     coordinate_convention: dict[str, Any]
@@ -59,11 +67,11 @@ class WorkerRequest(StrictModel):
     global_reconstruction_sha256: str
     global_mesh_path: str
     global_mesh_sha256: str
-    global_scene_glb_path: str
-    global_scene_glb_sha256: str
+    lifting_method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"]
     rasterization_configuration: dict[str, Any]
     mask_processing_configuration: dict[str, Any]
     face_evidence_configuration: dict[str, Any]
+    surface_sample_configuration: dict[str, Any]
     surface_extraction_configuration: dict[str, Any]
     output_directory: str
     seed: int
@@ -71,10 +79,13 @@ class WorkerRequest(StrictModel):
     @field_validator(
         "manifest_path",
         "camera_reconstruction_path",
+        "camera_package_manifest_path",
+        "camera_package_images_path",
+        "camera_package_points3d_path",
+        "camera_package_registered_frames_path",
         "segmentation_tracking_path",
         "global_reconstruction_path",
         "global_mesh_path",
-        "global_scene_glb_path",
         "output_directory",
     )
     @classmethod

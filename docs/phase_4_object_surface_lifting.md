@@ -33,17 +33,19 @@ The core adapter declares only:
 ```text
 inputs/manifest.json
 camera/reconstruction.json
+camera/genrecon_package/{package_manifest.json,images.txt,points3D.txt,registered_frames.json}
 observations/object_tracks.json
 observations/masks/<retained-track>/<frame>.png
 reconstruction/global/metadata.json
-reconstruction/global/mesh.ply       # reference_only
-reconstruction/global/scene.glb      # reference_only, previews only
+reconstruction/global/mesh.ply       # reflink_or_copy into the attempt
 scene_ir/scene.json
 ```
 
 It excludes raw COLMAP databases/models/logs, SAM raw files/checkpoints, GenRecon checkpoints,
-chunk tensors, and unrelated outputs. The runner checks reference hashes before and after worker
-execution. The lightweight core imports no NumPy, OpenCV, trimesh, torch, CUDA, or nvdiffrast.
+chunk tensors, the unused global GLB, and unrelated outputs. Local execution passes the attempt
+as `--input-root`; Docker mounts only the attempt at `/workspace`. The runner verifies canonical
+hashes before and after worker execution. The lightweight core imports no NumPy, OpenCV, trimesh,
+torch, CUDA, or nvdiffrast.
 
 The isolated worker is in `workers/object_lifting`. It can share the Phase 3 GenRecon environment
 but never imports GenRecon or initializes a generative model. `docker/object-lifting` provides a
@@ -60,8 +62,8 @@ For each registered frame the worker:
 
 1. inverts `transform_world_from_camera`;
 2. transforms global vertices into OpenCV camera axes;
-3. computes scene-relative near/far planes;
-4. culls global faces in `face_chunk_size` batches;
+3. constructs exact homogeneous clip coordinates without clamping camera depth;
+4. conservatively culls global faces in `face_chunk_size` batches;
 5. rasterizes candidates with nvdiffrast;
 6. maps local raster triangle IDs back to original global face IDs;
 7. retains only the nearest visible surface.
@@ -82,14 +84,25 @@ score = positive / (positive + negative + epsilon)
 ```
 
 Weights are deterministic heuristics, not learned probabilities. A face must satisfy configured
-visible-pixel, positive-pixel, supporting-view, and score thresholds.
+visible-pixel, positive-pixel, supporting-view, and score thresholds. The v1 result remains the
+exact-face baseline.
+
+`surface_sample_fusion_v2` additionally maps every positive visible pixel to its world-space
+surface point and a scene-relative voxel derived from median global edge length. Positive and
+exterior-negative samples accumulate in the same spatial cells across views. Supported cells map
+only their directly sampled faces back to original GenRecon face IDs; no adjacency propagation or
+new geometry is introduced. `face_evidence.npz` distinguishes direct sample, patch, and propagated
+support, with propagated support currently fixed to zero.
 
 Distinct instances of the same normalized semantic label are exclusive. The higher score wins
 when the margin is sufficient; otherwise the face becomes ambiguous for both. Different labels
 may overlap, so `cabinet`, `drawer`, and `handle` are not suppressed merely due to overlap.
 
-Connected components use shared global mesh vertex-index edges. Small components are removed
-using face-count and relative-size thresholds. No generated geometry connects separated pieces.
+Connected components use shared global mesh vertex-index edges. Triangle areas are computed in
+the original arbitrary COLMAP coordinates. `min_component_faces` filters by count while
+`min_relative_component_area` uses true surface-area ratio, not face-count ratio. A seam-aware
+diagnostic may group likely duplicated boundary vertices by scale-normalized distance and normal
+similarity, but it never changes face IDs or generates bridging triangles.
 
 ## Outputs
 
@@ -100,6 +113,8 @@ reconstruction/object_surfaces/
   evidence_manifest.json
   face_assignment_manifest.json
   diagnostics.json
+  method_comparison.json
+  camera_mesh_alignment.json
   preview_manifest.json
   objects/<object_id>/
     accepted_face_ids.bin
@@ -129,18 +144,24 @@ registered object observation. Per-frame metrics are IoU, precision, recall, ren
 area, false-positive area, and false-negative area. Unregistered masks remain valid 2D evidence
 but never contribute to lifting or reprojection.
 
-Confidence describes observation support only:
+Quality is split into association precision, mask recall, reprojection IoU, multiview support,
+surface connectedness, observed-surface coverage, association confidence, and completeness
+confidence. Association confidence is:
 
 ```text
-0.30 * mean face support
-+ 0.25 * median reprojection IoU
-+ 0.20 * normalized supporting views
-+ 0.15 * track coverage
-+ 0.10 * largest component ratio
+geometric_mean(face_or_patch_support, reprojection_precision, multiview_support)
 - conflict penalty
 ```
 
-It says nothing about complete shape, hidden surfaces, material, physics, or metric accuracy.
+`completeness_confidence` is always zero. Status is `accepted`, `partial`, `ambiguous`, or
+`unresolved` using explicit reprojection and ambiguity thresholds. These values describe
+association only, never complete shape, hidden surfaces, material, physics, or metric accuracy.
+
+Camera/mesh alignment diagnostics report per-frame mesh coverage, finite depth, visible faces,
+depth percentiles, and normalized residuals between selected COLMAP sparse points and rendered
+mesh depth. `global_mesh_depth_contact_sheet.png`, `global_mesh_edge_overlay.png`, and
+`sparse_point_vs_mesh_depth.png` distinguish projection/alignment failure from exact-face
+granularity or missing geometry.
 
 ## Commands
 

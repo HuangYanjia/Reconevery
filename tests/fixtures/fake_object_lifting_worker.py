@@ -140,7 +140,7 @@ def preview(path: Path, title: str, color: str) -> None:
 def provenance(object_id: str, outputs: list[str]) -> dict[str, object]:
     return {
         "adapter_name": "object_surface_lifting",
-        "adapter_version": "0.1.0",
+        "adapter_version": "0.1.1",
         "configuration": {"backend": "fake"},
         "input_artifact_paths": [
             "camera/reconstruction.json",
@@ -165,7 +165,7 @@ def healthcheck(config_path: Path) -> int:
             {
                 "available": True,
                 "backend": payload.get("backend", "fake"),
-                "worker_version": "0.1.0",
+                "worker_version": "0.1.1",
             },
             sort_keys=True,
         )
@@ -176,6 +176,20 @@ def healthcheck(config_path: Path) -> int:
 def infer(request_path: Path, input_root: Path, output_dir: Path) -> int:
     request = json.loads(request_path.read_text(encoding="utf-8"))
     mode = request["surface_extraction_configuration"].get("fake_mode", "success")
+    forbidden = [
+        "camera/colmap/database.db",
+        "camera/colmap/sparse",
+        "camera/colmap/logs",
+        "observations/raw",
+        "reconstruction/global/raw",
+    ]
+    visible_forbidden = [path for path in forbidden if (input_root / path).exists()]
+    if visible_forbidden:
+        print(
+            f"worker input isolation failed; forbidden paths are visible: {visible_forbidden}",
+            file=sys.stderr,
+        )
+        return 21
     if mode == "nonzero_exit":
         print("simulated object-lifting failure", file=sys.stderr)
         return 17
@@ -194,6 +208,9 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> int:
         os.kill(os.getpid(), signal.SIGINT)
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    if mode == "modify_upstream":
+        with (input_root / request["global_mesh_path"]).open("ab") as file:
+            file.write(b"\n# modified attempt-local copy\n")
     camera = json.loads((input_root / request["camera_reconstruction_path"]).read_text())
     mesh_hash = request["global_mesh_sha256"]
     if mode == "wrong_mesh_hash":
@@ -346,12 +363,17 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> int:
             "vertex_count": vertex_count,
             "face_count": len(face_ids),
             "component_count": 1 if face_ids else 0,
+            "exact_component_count": 1 if face_ids else 0,
+            "seam_aware_component_count": 1 if face_ids else 0,
+            "potential_chunk_seam_merges": 0,
             "components": (
                 [
                     {
                         "component_id": "component_0001",
                         "face_count": len(face_ids),
+                        "surface_area_arbitrary_units_squared": float(len(face_ids)) * 0.5,
                         "relative_face_ratio": 1.0,
+                        "relative_surface_area": 1.0,
                         "retained": True,
                         "removal_reason": None,
                     }
@@ -369,6 +391,14 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> int:
             "median_reprojection_iou": reprojection,
             "mean_reprojection_iou": reprojection,
             "track_coverage": track["track_coverage"],
+            "association_precision": 0.80 if face_ids else 0.0,
+            "mask_recall": 0.76 if face_ids else 0.0,
+            "reprojection_iou": reprojection,
+            "multiview_support": 1.0 if face_ids else 0.0,
+            "surface_connectedness": 1.0 if face_ids else 0.0,
+            "observed_surface_coverage": 0.76 if face_ids else 0.0,
+            "association_confidence": 0.78 if face_ids else 0.0,
+            "completeness_confidence": 0.0,
             "observation_support": observations,
             "geometry_status": "partial_observation_supported",
             "completion_status": "not_completed",
@@ -402,6 +432,10 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> int:
         "object_surface_contact_sheet": ("Object partial surfaces", "#377eb8"),
         "reprojection_contact_sheet": ("Mask / render reprojection", "#984ea3"),
         "conflict_heatmap": ("Face conflicts and overlaps", "#ffbf00"),
+        "global_mesh_depth_contact_sheet": ("Global mesh depth", "#4f81bd"),
+        "global_mesh_edge_overlay": ("Global mesh edges", "#00a6a6"),
+        "sparse_point_vs_mesh_depth": ("Sparse vs mesh depth", "#8c6bb1"),
+        "surface_sample_fusion": ("Surface sample fusion", "#2ca25f"),
     }
     for name, (title, color) in preview_specs.items():
         preview(output_dir / "previews" / f"{name}.png", title, color)
@@ -481,7 +515,79 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> int:
             "conflict_heatmap_path": (
                 "reconstruction/object_surfaces/previews/conflict_heatmap.png"
             ),
+            "global_mesh_depth_contact_sheet_path": (
+                "reconstruction/object_surfaces/previews/global_mesh_depth_contact_sheet.png"
+            ),
+            "global_mesh_edge_overlay_path": (
+                "reconstruction/object_surfaces/previews/global_mesh_edge_overlay.png"
+            ),
+            "sparse_point_vs_mesh_depth_path": (
+                "reconstruction/object_surfaces/previews/sparse_point_vs_mesh_depth.png"
+            ),
+            "surface_sample_fusion_path": (
+                "reconstruction/object_surfaces/previews/surface_sample_fusion.png"
+            ),
             "object_preview_paths": object_preview_paths,
+        },
+    )
+    comparison_metrics = []
+    for hypothesis in hypotheses:
+        for method in ("exact_face_vote_v1", "surface_sample_fusion_v2"):
+            comparison_metrics.append(
+                {
+                    "object_id": hypothesis["object_id"],
+                    "method": method,
+                    "accepted_faces": hypothesis["face_count"],
+                    "ambiguous_faces": hypothesis["ambiguous_global_face_ids"]["count"],
+                    "component_count": hypothesis["component_count"],
+                    "surface_area_arbitrary_units_squared": float(hypothesis["face_count"]) * 0.5,
+                    "reprojection_iou": hypothesis["mean_reprojection_iou"],
+                    "precision": hypothesis["association_precision"],
+                    "recall": hypothesis["mask_recall"],
+                    "supporting_views": hypothesis["supporting_view_count"],
+                    "runtime_seconds": 0.02,
+                    "peak_gpu_memory_bytes": None,
+                }
+            )
+    write_json(
+        output_dir / "method_comparison.json",
+        {
+            "schema_version": "0.1.0",
+            "selected_method": request["lifting_method"],
+            "metrics": comparison_metrics,
+            "conclusion": "Fake methods agree deterministically.",
+            "warnings": [],
+        },
+    )
+    alignment_frames = [
+        {
+            "frame_id": frame_id,
+            "mesh_pixel_coverage": 0.75,
+            "depth_finite_ratio": 0.75,
+            "visible_global_face_count": min(global_face_count, 12),
+            "depth_percentiles": {"p05": 1.0, "p50": 2.0, "p95": 3.0},
+            "sparse_observation_count": 3,
+            "normalized_depth_residual_median": 0.02,
+            "normalized_depth_residual_p90": 0.04,
+            "depth_inlier_fraction": 1.0,
+        }
+        for frame_id in request["registered_frame_ids"]
+    ]
+    write_json(
+        output_dir / "camera_mesh_alignment.json",
+        {
+            "schema_version": "0.1.0",
+            "frame_sequence_digest": request["frame_sequence_digest"],
+            "camera_reconstruction_sha256": camera_hash,
+            "global_mesh_sha256": mesh_hash,
+            "frames": alignment_frames,
+            "mesh_pixel_coverage_mean": 0.75,
+            "sparse_depth_residual_median": 0.02,
+            "sparse_depth_residual_p90": 0.04,
+            "sparse_depth_inlier_fraction": 1.0,
+            "alignment_sufficient_for_lifting": True,
+            "diagnosis": "Fake camera and mesh are aligned.",
+            "warnings": [],
         },
     )
     accepted_objects = sum(item["status"] == "accepted" for item in hypotheses)
@@ -493,6 +599,7 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> int:
             "schema_version": "0.1.0",
             "track_count": len(hypotheses),
             "accepted_object_count": accepted_objects,
+            "partial_object_count": 0,
             "ambiguous_object_count": ambiguous_objects,
             "unresolved_object_count": unresolved_objects,
             "global_vertex_count": int(
@@ -514,6 +621,8 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> int:
             "median_reprojection_iou": (
                 sorted(reprojections)[len(reprojections) // 2] if reprojections else 0.0
             ),
+            "alignment_sufficient_for_lifting": True,
+            "diagnosed_bottleneck": "mixed_or_inconclusive",
             "runtime_seconds": 0.25,
             "peak_gpu_memory_bytes": None,
             "timings_seconds": {
@@ -530,13 +639,15 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> int:
         [
             "reconstruction/object_surfaces/evidence_manifest.json",
             "reconstruction/object_surfaces/diagnostics.json",
+            "reconstruction/object_surfaces/method_comparison.json",
+            "reconstruction/object_surfaces/camera_mesh_alignment.json",
             "reconstruction/object_surfaces/preview_manifest.json",
             *[f"reconstruction/object_surfaces/previews/{name}.png" for name in preview_specs],
         ]
     )
     worker_manifest = {
         "schema_version": "0.1.0",
-        "worker_version": "0.1.0",
+        "worker_version": "0.1.1",
         "backend": "fake",
         "python_version": sys.version.split()[0],
         "torch_version": None,
@@ -554,6 +665,12 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> int:
         "processed_registered_frame_ids": request["registered_frame_ids"],
         "global_vertex_count": int(request["rasterization_configuration"]["global_vertex_count"]),
         "global_face_count": global_face_count,
+        "lifting_method": request["lifting_method"],
+        "median_global_edge_length": 1.0,
+        "sample_voxel_edge_length": float(
+            request["surface_sample_configuration"]["sample_voxel_edge_multiplier"]
+        ),
+        "fused_sample_cell_count": sum(int(item["face_count"]) for item in hypotheses),
         "processed_face_count_by_frame": {
             frame_id: min(global_face_count, 12) for frame_id in request["registered_frame_ids"]
         },

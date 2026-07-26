@@ -156,3 +156,48 @@ def undistort_binary_mask(
         intrinsics=output_intrinsics,
         map_hash=digest.hexdigest(),
     )
+
+
+def undistort_points(
+    points_xy: Any,
+    *,
+    camera_model: str,
+    intrinsics: dict[str, Any],
+    raster_scale: float,
+) -> Any:
+    """Map distorted source pixels into the exact mask/raster projection space."""
+    import cv2
+    import numpy as np
+
+    width = int(intrinsics["width"])
+    height = int(intrinsics["height"])
+    camera_matrix = np.asarray(
+        [
+            [float(intrinsics["fx"]), 0.0, float(intrinsics["cx"])],
+            [0.0, float(intrinsics["fy"]), float(intrinsics["cy"])],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+    coefficients = np.asarray(
+        distortion_coefficients(camera_model, intrinsics.get("distortion", [])),
+        dtype=np.float64,
+    )
+    new_matrix, _ = cv2.getOptimalNewCameraMatrix(
+        camera_matrix,
+        coefficients,
+        (width, height),
+        0.0,
+        (width, height),
+        centerPrincipalPoint=False,
+    )
+    points = np.asarray(points_xy, dtype=np.float64).reshape(-1, 1, 2)
+    mapped = cv2.undistortPoints(
+        points,
+        camera_matrix,
+        coefficients,
+        P=new_matrix,
+    ).reshape(-1, 2)
+    mapped[:, 0] *= max(1, int(round(width * raster_scale))) / width
+    mapped[:, 1] *= max(1, int(round(height * raster_scale))) / height
+    return mapped

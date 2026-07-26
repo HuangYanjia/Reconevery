@@ -11,6 +11,10 @@
       "title": "Accepted Object Count",
       "type": "integer"
     },
+    "alignment_sufficient_for_lifting": {
+      "title": "Alignment Sufficient For Lifting",
+      "type": "boolean"
+    },
     "ambiguous_face_count": {
       "minimum": 0,
       "title": "Ambiguous Face Count",
@@ -25,6 +29,16 @@
       "minimum": 0,
       "title": "Canonical Mask Count",
       "type": "integer"
+    },
+    "diagnosed_bottleneck": {
+      "enum": [
+        "camera_mesh_alignment",
+        "exact_face_granularity",
+        "missing_or_hallucinated_geometry",
+        "mixed_or_inconclusive"
+      ],
+      "title": "Diagnosed Bottleneck",
+      "type": "string"
     },
     "different_label_overlap_count": {
       "minimum": 0,
@@ -64,6 +78,11 @@
       "minimum": 0,
       "title": "Median Reprojection Iou",
       "type": "number"
+    },
+    "partial_object_count": {
+      "minimum": 0,
+      "title": "Partial Object Count",
+      "type": "integer"
     },
     "peak_gpu_memory_bytes": {
       "anyOf": [
@@ -133,6 +152,7 @@
   "required": [
     "track_count",
     "accepted_object_count",
+    "partial_object_count",
     "ambiguous_object_count",
     "unresolved_object_count",
     "global_vertex_count",
@@ -148,6 +168,8 @@
     "median_face_support",
     "mean_reprojection_iou",
     "median_reprojection_iou",
+    "alignment_sufficient_for_lifting",
+    "diagnosed_bottleneck",
     "runtime_seconds",
     "timings_seconds"
   ],

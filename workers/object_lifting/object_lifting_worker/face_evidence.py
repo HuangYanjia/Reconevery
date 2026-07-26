@@ -18,8 +18,6 @@ class FaceStatistics:
     last_frame_index: int = -1
     depth_sum: float = 0.0
     depth_pixels: int = 0
-    view_angle_sum: float = 0.0
-    view_angle_views: int = 0
     support_score: float = 0.0
 
 
@@ -122,11 +120,16 @@ def score_faces(
 def write_evidence_npz(
     path: Path,
     stats: dict[int, FaceStatistics],
+    *,
+    sample_face_support: dict[int, Any] | None = None,
 ) -> list[dict[str, object]]:
     import numpy as np
 
-    face_ids = np.asarray(sorted(stats), dtype=np.uint64)
-    ordered = [stats[int(face_id)] for face_id in face_ids]
+    all_face_ids = set(stats)
+    if sample_face_support:
+        all_face_ids.update(sample_face_support)
+    face_ids = np.asarray(sorted(all_face_ids), dtype=np.uint64)
+    ordered = [stats.get(int(face_id), FaceStatistics()) for face_id in face_ids]
     arrays = {
         "global_face_ids": face_ids,
         "visible_pixel_count": np.asarray(
@@ -157,15 +160,41 @@ def write_evidence_npz(
             [item.depth_sum / item.depth_pixels if item.depth_pixels else 0.0 for item in ordered],
             dtype=np.float64,
         ),
-        "mean_view_angle_weight": np.asarray(
-            [
-                item.view_angle_sum / item.view_angle_views if item.view_angle_views else 0.0
-                for item in ordered
-            ],
-            dtype=np.float64,
-        ),
         "support_score": np.asarray([item.support_score for item in ordered], dtype=np.float64),
     }
+    if sample_face_support is not None:
+        arrays.update(
+            {
+                "direct_sample_support": np.asarray(
+                    [
+                        getattr(sample_face_support.get(int(face_id)), "direct_sample_support", 0.0)
+                        for face_id in face_ids
+                    ],
+                    dtype=np.float64,
+                ),
+                "patch_support": np.asarray(
+                    [
+                        getattr(sample_face_support.get(int(face_id)), "patch_support", 0.0)
+                        for face_id in face_ids
+                    ],
+                    dtype=np.float64,
+                ),
+                "propagated_support": np.asarray(
+                    [
+                        getattr(sample_face_support.get(int(face_id)), "propagated_support", 0.0)
+                        for face_id in face_ids
+                    ],
+                    dtype=np.float64,
+                ),
+                "sample_supporting_view_count": np.asarray(
+                    [
+                        getattr(sample_face_support.get(int(face_id)), "supporting_views", 0)
+                        for face_id in face_ids
+                    ],
+                    dtype=np.uint32,
+                ),
+            }
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path, **arrays)
     records = []

@@ -45,16 +45,26 @@ y_ndc = 1 - 2 * (v + 0.5) / height
 The Y sign change is explicit because OpenCV image Y points down while raster NDC Y points up.
 NDC conversion has a tested inverse.
 
-For positive camera Z and scene-relative near/far:
+Homogeneous coordinates are built directly from camera-space `(X,Y,Z)`:
 
 ```text
-A = (far + near) / (far - near)
-B = -2 * far * near / (far - near)
-clip = [x_ndc*z, y_ndc*z, A*z+B, z]
+x_clip = (2*fx/width)*X + (2*(cx+0.5)/width - 1)*Z
+y_clip = (-2*fy/height)*Y + (1 - 2*(cy+0.5)/height)*Z
+z_clip = ((far+near)/(far-near))*Z - 2*far*near/(far-near)
+w_clip = Z
 ```
+
+No depth clamp moves a behind-camera or near-plane vertex in front of the camera. nvdiffrast
+performs homogeneous clipping. CPU reference tests use the same clip coordinates and
+Sutherland-Hodgman clipping.
 
 Near and far use the global scene diagonal and positive camera-depth quantiles. They are arbitrary
 COLMAP units, never meters.
+
+Frustum culling is conservative. A triangle is rejected only when all three vertices are outside
+the same `x`, `y`, `z`, or positive-`w` clip half-space. Triangles crossing the camera plane, near
+plane, image edges, or the whole frame remain candidates. An H100 parity test requires exact
+CPU/nvdiffrast face-ID agreement away from a one-pixel triangle boundary.
 
 ## Distortion
 
@@ -84,6 +94,6 @@ nvdiffrast returns a local candidate-triangle index at each nearest visible pixe
 maps it through the frustum-candidate array to the original GenRecon global face ID. It never
 uses a decimated proxy for canonical attribution.
 
-Synthetic reference tests use a pure-Python barycentric Z-buffer. Two overlapping triangles
-prove that the front triangle wins and the hidden back face receives no evidence. Whole-scene
-rotation tests preserve face identity while retaining the `colmap_arbitrary` label.
+Synthetic reference tests use a clipped pure-Python barycentric Z-buffer. Two overlapping
+triangles prove that the front triangle wins and the hidden back face receives no evidence.
+Whole-scene rotation tests preserve face identity while retaining the `colmap_arbitrary` label.

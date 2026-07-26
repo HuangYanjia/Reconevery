@@ -119,12 +119,15 @@ ingest, camera, SAM, GenRecon, and consistency artifacts. The Phase 3 validator 
 attempt materialization lists and coordinate metadata.
 
 Object lifting is a downstream fusion stage over canonical camera, mask, and global mesh
-artifacts. The global PLY and GLB are `reference_only`; retained mask PNGs are the only
-segmentation files materialized. The worker rasterizes nearest-visible global faces, writes
-compact original face IDs and partial PLY assets, and returns typed evidence. The core rechecks
-all hashes, face bounds, surface counts, coordinate metadata, and Scene IR references before
-transactional promotion. Its enriched IR is stage-owned at `scene_ir/phase4_scene.json`, avoiding
-cross-stage output ownership and preserving Phase 3 cache validity.
+artifacts. The runner reflinks or copies the global PLY into the isolated attempt; the unused GLB
+is not a worker input. Local and Docker workers see only that attempt root, never the canonical
+run. Retained mask PNGs and the minimal COLMAP text package are the only other large evidence
+inputs. The worker rasterizes nearest-visible global faces, compares exact-face and spatial
+surface-sample evidence, writes compact original face IDs and partial PLY assets, and returns
+typed evidence. The core rechecks all hashes, face bounds, surface counts, coordinate metadata,
+and Scene IR references before transactional promotion. Its enriched IR is stage-owned at
+`scene_ir/phase4_scene.json`, avoiding cross-stage output ownership and preserving Phase 3 cache
+validity.
 
 ## Coordinate convention
 

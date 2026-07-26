@@ -93,10 +93,9 @@ stages:
         worker_python: /absolute/path/to/genrecon-env/bin/python
         worker_module: object_lifting_worker
         device: cuda
+        lifting_method: surface_sample_fusion_v2
         raster_scale: 0.5
-        camera_batch_size: 1
         face_chunk_size: 1000000
-        max_objects_per_batch: 8
         min_visible_pixels_per_face: 2
         min_positive_pixels_per_face: 2
         min_supporting_views: 2
@@ -104,6 +103,10 @@ stages:
         ambiguous_face_score: 0.40
         min_component_faces: 4
         min_relative_component_area: 0.01
+        sample_voxel_edge_multiplier: 4.0
+        sample_min_supporting_views: 2
+        sample_min_positive_weight: 2.0
+        sample_negative_margin_multiplier: 2.0
     depends_on:
       - camera_recovery
       - segmentation_tracking

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from recon2sim.artifacts import (
+    CameraMeshAlignmentArtifact,
     EndToEndConsistencyReport,
     GenReconCameraPackageManifest,
     GenReconCheckpointManifest,
@@ -11,6 +12,7 @@ from recon2sim.artifacts import (
     ObjectSurfaceDiagnostics,
     ObjectSurfaceEvidenceArtifact,
     ObjectSurfaceLiftingRequest,
+    ObjectSurfaceMethodComparison,
     ObjectSurfaceWorkerManifest,
     Phase4ConsistencyReport,
     Sam3InferenceRequest,
@@ -45,6 +47,8 @@ for filename, model in {
     "object_surface_worker_manifest.schema.json": ObjectSurfaceWorkerManifest,
     "object_surface_evidence.schema.json": ObjectSurfaceEvidenceArtifact,
     "object_surface_diagnostics.schema.json": ObjectSurfaceDiagnostics,
+    "object_surface_method_comparison.schema.json": ObjectSurfaceMethodComparison,
+    "camera_mesh_alignment.schema.json": CameraMeshAlignmentArtifact,
     "phase4_object_surface_consistency.schema.json": Phase4ConsistencyReport,
 }.items():
     atomic_write_json(Path("schemas") / filename, model.model_json_schema())

@@ -1,0 +1,197 @@
+{
+  "$defs": {
+    "CameraMeshFrameAlignment": {
+      "additionalProperties": false,
+      "properties": {
+        "depth_finite_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Depth Finite Ratio",
+          "type": "number"
+        },
+        "depth_inlier_fraction": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Inlier Fraction"
+        },
+        "depth_percentiles": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Depth Percentiles",
+          "type": "object"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "mesh_pixel_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mesh Pixel Coverage",
+          "type": "number"
+        },
+        "normalized_depth_residual_median": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Normalized Depth Residual Median"
+        },
+        "normalized_depth_residual_p90": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Normalized Depth Residual P90"
+        },
+        "sparse_observation_count": {
+          "minimum": 0,
+          "title": "Sparse Observation Count",
+          "type": "integer"
+        },
+        "visible_global_face_count": {
+          "minimum": 0,
+          "title": "Visible Global Face Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "frame_id",
+        "mesh_pixel_coverage",
+        "depth_finite_ratio",
+        "visible_global_face_count",
+        "depth_percentiles",
+        "sparse_observation_count"
+      ],
+      "title": "CameraMeshFrameAlignment",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "alignment_sufficient_for_lifting": {
+      "title": "Alignment Sufficient For Lifting",
+      "type": "boolean"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "diagnosis": {
+      "minLength": 1,
+      "title": "Diagnosis",
+      "type": "string"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "frames": {
+      "items": {
+        "$ref": "#/$defs/CameraMeshFrameAlignment"
+      },
+      "title": "Frames",
+      "type": "array"
+    },
+    "global_mesh_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Mesh Sha256",
+      "type": "string"
+    },
+    "mesh_pixel_coverage_mean": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Mesh Pixel Coverage Mean",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sparse_depth_inlier_fraction": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sparse Depth Inlier Fraction"
+    },
+    "sparse_depth_residual_median": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sparse Depth Residual Median"
+    },
+    "sparse_depth_residual_p90": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sparse Depth Residual P90"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "global_mesh_sha256",
+    "frames",
+    "mesh_pixel_coverage_mean",
+    "alignment_sufficient_for_lifting",
+    "diagnosis"
+  ],
+  "title": "CameraMeshAlignmentArtifact",
+  "type": "object"
+}

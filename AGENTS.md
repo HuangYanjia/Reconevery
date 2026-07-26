@@ -85,6 +85,12 @@ uv run mypy src
 - Object lifting uses only registered cameras for 3D evidence. It preserves original global face
   IDs, allows cross-label overlap, resolves same-label instance conflicts deterministically, and
   never materializes raw COLMAP/SAM/GenRecon model workspaces.
+- Object-lifting workers receive only their attempt root. The canonical run must not be mounted;
+  the global mesh is an attempt-local reflink/copy and the unused GLB is not a worker input.
+- Rasterization uses exact homogeneous clip coordinates. Never clamp nonpositive camera depth to
+  make vertices renderable. Component area thresholds use true triangle surface area.
+- Keep `exact_face_vote_v1` as a measured baseline beside `surface_sample_fusion_v2`. Surface
+  samples may map only to original global face IDs and may not create bridging or hidden geometry.
 - Phase 4 geometry is `partial_observation_supported`, `not_completed`, and `sim_ready=false`.
   It uses `GeometrySourceType.FUSED`, creates no collisions, and keeps unregistered SAM masks as
   valid 2D evidence only.

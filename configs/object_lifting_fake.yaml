@@ -46,6 +46,7 @@ stages:
         worker_python: python
         worker_script: tests/fixtures/fake_object_lifting_worker.py
         device: cpu
+        lifting_method: surface_sample_fusion_v2
         fake_mode: success
     depends_on:
       - camera_recovery

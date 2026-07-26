@@ -53,18 +53,21 @@ identity, valid canonical masks, previews, COCO output, and cache hit.
 ## Phase 4 implementation
 
 - camera-accurate world-from-camera inversion and OpenCV-axis projection;
+- exact homogeneous clipping and conservative frustum culling;
 - deterministic mask undistortion for supported COLMAP camera models;
 - nvdiffrast nearest-visible original face-ID rasterization with bounded face chunks;
-- multi-view core/boundary/exterior evidence and same-label conflict resolution;
-- cross-label overlap retention, connected components, and compact face-index files;
+- exact-face and spatial surface-sample multi-view evidence;
+- cross-label overlap retention, true-area connected components, seam diagnostics, and compact
+  face-index files;
+- COLMAP sparse-point versus global-mesh depth alignment diagnostics;
 - partial object PLY assets, reprojection metrics, typed uncertainty, and previews;
 - Phase 4 Scene IR hypotheses and cross-stage consistency validation;
 - CPU fake protocol, synthetic geometric tests, and real H100 surface-lifting smoke.
 
-Real acceptance produced a non-empty two-face ambiguous surface for one table track and unresolved
-results for three other tracks. The very low reprojection IoU is retained as an explicit quality
-limitation: Phase 4 proves observation-grounded association, not complete or accurate object
-reconstruction.
+Real Phase 4.1 comparison retained a non-empty four-face v2 table surface and unresolved results
+for three tracks. V2 did not improve the v1 IoU. Sparse-point/rendered-depth residuals identify
+camera/global-mesh alignment as the dominant current bottleneck. The low quality remains explicit:
+Phase 4 proves observation-grounded association, not complete or accurate object reconstruction.
 
 ## Recommended Phase 2.5
 
