@@ -1,0 +1,277 @@
+{
+  "$defs": {
+    "ArticulatedAssetIndexRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "minLength": 1,
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "candidate_bundle_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Bundle Path"
+        },
+        "candidate_bundle_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Bundle Sha256"
+        },
+        "category": {
+          "minLength": 1,
+          "title": "Category",
+          "type": "string"
+        },
+        "file_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "File Hashes",
+          "type": "object"
+        },
+        "joint_count": {
+          "minimum": 0,
+          "title": "Joint Count",
+          "type": "integer"
+        },
+        "joint_types": {
+          "items": {
+            "$ref": "#/$defs/ArticulatedJointType"
+          },
+          "title": "Joint Types",
+          "type": "array"
+        },
+        "license_record": {
+          "$ref": "#/$defs/ArticulatedLicenseRecord"
+        },
+        "link_bounds": {
+          "additionalProperties": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Link Bounds",
+          "type": "object"
+        },
+        "link_count": {
+          "exclusiveMinimum": 0,
+          "title": "Link Count",
+          "type": "integer"
+        },
+        "native_units": {
+          "minLength": 1,
+          "title": "Native Units",
+          "type": "string"
+        },
+        "native_up_axis": {
+          "enum": [
+            "+X",
+            "-X",
+            "+Y",
+            "-Y",
+            "+Z",
+            "-Z"
+          ],
+          "title": "Native Up Axis",
+          "type": "string"
+        },
+        "visual_asset_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Visual Asset Paths",
+          "type": "array"
+        },
+        "visual_bounds": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Visual Bounds",
+          "type": "array"
+        }
+      },
+      "required": [
+        "asset_id",
+        "category",
+        "link_count",
+        "joint_count",
+        "joint_types",
+        "visual_bounds",
+        "link_bounds",
+        "native_units",
+        "native_up_axis",
+        "visual_asset_paths",
+        "file_hashes",
+        "license_record"
+      ],
+      "title": "ArticulatedAssetIndexRecord",
+      "type": "object"
+    },
+    "ArticulatedJointType": {
+      "enum": [
+        "fixed",
+        "prismatic",
+        "revolute",
+        "continuous_candidate",
+        "unknown"
+      ],
+      "title": "ArticulatedJointType",
+      "type": "string"
+    },
+    "ArticulatedLicenseRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_license": {
+          "minLength": 1,
+          "title": "Asset License",
+          "type": "string"
+        },
+        "checkpoint_license": {
+          "minLength": 1,
+          "title": "Checkpoint License",
+          "type": "string"
+        },
+        "code_license": {
+          "minLength": 1,
+          "title": "Code License",
+          "type": "string"
+        },
+        "commercial_review_status": {
+          "enum": [
+            "not_reviewed",
+            "research_only",
+            "approved_by_project_policy"
+          ],
+          "title": "Commercial Review Status",
+          "type": "string"
+        },
+        "dependency_licenses": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Dependency Licenses",
+          "type": "object"
+        },
+        "production_selectable": {
+          "title": "Production Selectable",
+          "type": "boolean"
+        },
+        "research_evaluation_allowed": {
+          "title": "Research Evaluation Allowed",
+          "type": "boolean"
+        },
+        "source_family": {
+          "$ref": "#/$defs/ArticulatedSourceFamily"
+        },
+        "training_data_notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Training Data Notes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_family",
+        "code_license",
+        "checkpoint_license",
+        "asset_license",
+        "commercial_review_status",
+        "research_evaluation_allowed",
+        "production_selectable"
+      ],
+      "title": "ArticulatedLicenseRecord",
+      "type": "object"
+    },
+    "ArticulatedSourceFamily": {
+      "enum": [
+        "measured_motion_analytic",
+        "artvip",
+        "partnet_mobility",
+        "particulate"
+      ],
+      "title": "ArticulatedSourceFamily",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "content_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Content Sha256",
+      "type": "string"
+    },
+    "index_revision": {
+      "minLength": 1,
+      "title": "Index Revision",
+      "type": "string"
+    },
+    "records": {
+      "items": {
+        "$ref": "#/$defs/ArticulatedAssetIndexRecord"
+      },
+      "title": "Records",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_family": {
+      "enum": [
+        "artvip",
+        "partnet_mobility"
+      ],
+      "title": "Source Family",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source_family",
+    "index_revision",
+    "records",
+    "content_sha256"
+  ],
+  "title": "ArticulatedAssetIndex",
+  "type": "object"
+}

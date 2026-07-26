@@ -184,3 +184,16 @@ crops, and fitting-only points. SAM 3D Objects and TRELLIS.2 generation run in
 parallel. Registration consumes fitting evidence; only evaluation sees held-out masks
 and dense depth. Lightweight selection applies gates, Pareto ranking, and license
 policy. GenRecon is not a canonical dependency.
+
+## Phase 5C multi-state branches
+
+`articulation_capture` imports only typed artifacts from independently valid Phase 5A
+state runs. `articulation_state_alignment` sees all state base geometry but explicitly
+excludes movable parts. `articulation_motion` and `articulation_fitting` receive only
+the generation/fitting state subset. Held-out state geometry is materialized only for
+`articulation_evaluation`.
+
+ArtVIP and PartNet retrieval consume immutable local indices without network access.
+Official Particulate is a parallel research candidate source. Selection retains the
+measured links and adds validated visual links separately. The canonical result is a
+typed kinematic bundle plus `scene_ir/phase5c_scene.json`, not a simulation asset.

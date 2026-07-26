@@ -192,3 +192,11 @@ Phase 5B adapters are `completion_evidence_package`,
 `completion_candidate_evaluation`, `completion_candidate_selection`, and
 `phase5b_consistency_validation`. Heavy generation, registration, and rendering live
 only under `workers/` or Docker.
+
+Phase 5C adapters are `articulation_capture`, `articulation_state_alignment`,
+`articulation_motion`, `artvip_retrieval`, `partnet_retrieval`,
+`particulate_candidates`, `articulation_fitting`, `articulation_evaluation`,
+`articulation_selection`, and `phase5c_consistency_validation`. Heavy Sim(3), point
+registration, official Particulate inference, and rendering are isolated in worker
+packages. Local and Docker workers receive only attempt workspaces. Articulated
+retrieval performs no runtime downloads.

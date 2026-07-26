@@ -1,0 +1,16 @@
+seed: 42
+stages:
+  particulate_candidates:
+    adapter:
+      name: particulate_candidates
+      env: [PATH, HOME, TMPDIR]
+      timeout_s: 60
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_module: particulate_worker
+        worker_script: tests/fixtures/fake_articulation_worker.py
+        docker_image: reconevery/particulate:phase5c
+        maximum_candidates: 4
+        fake_mode: success
+    depends_on: [articulation_motion, artvip_retrieval, partnet_retrieval]

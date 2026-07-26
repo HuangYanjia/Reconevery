@@ -1,0 +1,560 @@
+{
+  "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "ArticulatedJointType": {
+      "enum": [
+        "fixed",
+        "prismatic",
+        "revolute",
+        "continuous_candidate",
+        "unknown"
+      ],
+      "title": "ArticulatedJointType",
+      "type": "string"
+    },
+    "ArticulatedPartStateGeometry": {
+      "additionalProperties": false,
+      "properties": {
+        "articulated_object_id": {
+          "minLength": 1,
+          "title": "Articulated Object Id",
+          "type": "string"
+        },
+        "coordinate_convention": {
+          "$ref": "#/$defs/CoordinateConvention"
+        },
+        "mask_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Mask Paths",
+          "type": "array"
+        },
+        "measured_point_cloud_path": {
+          "title": "Measured Point Cloud Path",
+          "type": "string"
+        },
+        "measured_point_cloud_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Measured Point Cloud Sha256",
+          "type": "string"
+        },
+        "measured_surfel_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Surfel Path"
+        },
+        "measured_surfel_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Surfel Sha256"
+        },
+        "normal_count": {
+          "minimum": 0,
+          "title": "Normal Count",
+          "type": "integer"
+        },
+        "part_id": {
+          "minLength": 1,
+          "title": "Part Id",
+          "type": "string"
+        },
+        "point_count": {
+          "minimum": 0,
+          "title": "Point Count",
+          "type": "integer"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus"
+        },
+        "semantic_label": {
+          "minLength": 1,
+          "title": "Semantic Label",
+          "type": "string"
+        },
+        "state_alignment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "State Alignment Sha256",
+          "type": "string"
+        },
+        "state_id": {
+          "minLength": 1,
+          "title": "State Id",
+          "type": "string"
+        },
+        "supporting_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supporting Frame Ids",
+          "type": "array"
+        },
+        "transformed_to_reference_frame": {
+          "title": "Transformed To Reference Frame",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "state_id",
+        "articulated_object_id",
+        "part_id",
+        "semantic_label",
+        "measured_point_cloud_path",
+        "measured_point_cloud_sha256",
+        "point_count",
+        "normal_count",
+        "supporting_frame_ids",
+        "mask_paths",
+        "state_alignment_sha256",
+        "transformed_to_reference_frame",
+        "coordinate_convention",
+        "scale_status"
+      ],
+      "title": "ArticulatedPartStateGeometry",
+      "type": "object"
+    },
+    "ArticulationEvidenceLevel": {
+      "enum": [
+        "single_state_prior_only",
+        "two_state_motion_supported",
+        "multi_state_heldout_validated"
+      ],
+      "title": "ArticulationEvidenceLevel",
+      "type": "string"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "MeasuredJointHypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "axis": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Axis"
+        },
+        "axis_consistency_degrees": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Axis Consistency Degrees"
+        },
+        "candidate_limit_lower": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Limit Lower"
+        },
+        "candidate_limit_upper": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Limit Upper"
+        },
+        "child_part_id": {
+          "minLength": 1,
+          "title": "Child Part Id",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "joint_id": {
+          "minLength": 1,
+          "title": "Joint Id",
+          "type": "string"
+        },
+        "joint_type": {
+          "$ref": "#/$defs/ArticulatedJointType"
+        },
+        "limit_source": {
+          "default": "observed_range",
+          "enum": [
+            "observed_range",
+            "candidate_prior",
+            "unknown"
+          ],
+          "title": "Limit Source",
+          "type": "string"
+        },
+        "observed_position_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Position Max"
+        },
+        "observed_position_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Position Min"
+        },
+        "orthogonal_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Orthogonal Residual"
+        },
+        "parent_part_id": {
+          "minLength": 1,
+          "title": "Parent Part Id",
+          "type": "string"
+        },
+        "pivot": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pivot"
+        },
+        "pivot_residual_part_diagonals": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pivot Residual Part Diagonals"
+        },
+        "rotation_leakage_degrees": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rotation Leakage Degrees"
+        },
+        "states": {
+          "items": {
+            "$ref": "#/$defs/MeasuredJointState"
+          },
+          "title": "States",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "joint_id",
+        "parent_part_id",
+        "child_part_id",
+        "joint_type",
+        "states",
+        "confidence"
+      ],
+      "title": "MeasuredJointHypothesis",
+      "type": "object"
+    },
+    "MeasuredJointState": {
+      "additionalProperties": false,
+      "properties": {
+        "part_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Part Coverage",
+          "type": "number"
+        },
+        "part_registration_median_residual": {
+          "minimum": 0,
+          "title": "Part Registration Median Residual",
+          "type": "number"
+        },
+        "position": {
+          "title": "Position",
+          "type": "number"
+        },
+        "state_confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "State Confidence",
+          "type": "number"
+        },
+        "state_id": {
+          "minLength": 1,
+          "title": "State Id",
+          "type": "string"
+        },
+        "supporting_point_count": {
+          "minimum": 0,
+          "title": "Supporting Point Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "state_id",
+        "position",
+        "part_registration_median_residual",
+        "part_coverage",
+        "supporting_point_count",
+        "state_confidence"
+      ],
+      "title": "MeasuredJointState",
+      "type": "object"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "articulated_object_id": {
+      "minLength": 1,
+      "title": "Articulated Object Id",
+      "type": "string"
+    },
+    "base_link_fixed": {
+      "title": "Base Link Fixed",
+      "type": "boolean"
+    },
+    "capture_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Capture Manifest Sha256",
+      "type": "string"
+    },
+    "evidence_level": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
+    "joint_hypotheses": {
+      "items": {
+        "$ref": "#/$defs/MeasuredJointHypothesis"
+      },
+      "title": "Joint Hypotheses",
+      "type": "array"
+    },
+    "part_geometries": {
+      "items": {
+        "$ref": "#/$defs/ArticulatedPartStateGeometry"
+      },
+      "title": "Part Geometries",
+      "type": "array"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "state_alignment_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "State Alignment Sha256",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "capture_manifest_sha256",
+    "state_alignment_sha256",
+    "articulated_object_id",
+    "evidence_level",
+    "part_geometries",
+    "joint_hypotheses",
+    "base_link_fixed",
+    "runtime_seconds"
+  ],
+  "title": "MeasuredPartMotionArtifact",
+  "type": "object"
+}

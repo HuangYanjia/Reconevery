@@ -125,3 +125,13 @@ evidence disjoint, and keep torch, NumPy, SAM 3D Objects, TRELLIS.2, and CUDA ou
 the core package. Model code/revision/hash and license policy are mandatory. A
 research-only candidate must not become production-selected. Do not add articulated
 completion, collision, physics, metric/gravity claims, or simulator export.
+
+Phase 5C articulation requires explicit object/part prompts and independent
+static-state runs. State alignment uses static base/environment geometry only.
+Generation, kinematic fitting, and held-out states are filesystem-isolated; a
+held-out state may fit only its scalar joint position after graph, link assignment,
+base transform, axis, and pivot are frozen. Single-state evidence is prior-only and
+two-state evidence is only partially validated. ArtVIP and PartNet indices are local
+and immutable. Particulate and PartField remain isolated; the current PartField
+checkpoint is research-only. Never add collision, inertial, dynamics, metric,
+gravity, or simulation-ready claims.

@@ -290,11 +290,26 @@ class GeometryAsset(StrictModel):
             "partial_observation_supported",
             "partial_measured",
             "complete_visual_candidate",
+            "articulated_visual_candidate",
         ]
         | None
     ) = None
-    completion_status: Literal["not_completed", "selected_by_observation_validation"] | None = None
-    asset_role: Literal["measured_anchor", "visual_completion_candidate"] | None = None
+    completion_status: (
+        Literal[
+            "not_completed",
+            "selected_by_observation_validation",
+            "selected_by_multi_state_validation",
+        ]
+        | None
+    ) = None
+    asset_role: (
+        Literal[
+            "measured_anchor",
+            "visual_completion_candidate",
+            "articulated_visual_link",
+        ]
+        | None
+    ) = None
     observation_grounded: bool | None = None
     physical_validation: Literal["not_implemented"] | None = None
     collision_ready: bool | None = None
@@ -373,7 +388,11 @@ class Joint(StrictModel):
     child_link_id: Identifier
     joint_type: Literal["fixed", "revolute", "prismatic"]
     axis_xyz: tuple[float, float, float] = (1.0, 0.0, 0.0)
+    origin_xyz: tuple[float, float, float] | None = None
     limits: tuple[float, float] | None = None
+    observed_position_range: tuple[float, float] | None = None
+    observed_state_positions: dict[str, float] = Field(default_factory=dict)
+    limit_source: Literal["observed_range", "candidate_prior", "unknown"] | None = None
 
     @field_validator("axis_xyz")
     @classmethod
@@ -382,7 +401,7 @@ class Joint(StrictModel):
             raise ValueError("joint axis must be non-zero")
         return value
 
-    @field_validator("limits")
+    @field_validator("limits", "observed_position_range")
     @classmethod
     def ordered_limits(cls, value: tuple[float, float] | None) -> tuple[float, float] | None:
         if value is not None and value[0] > value[1]:
@@ -394,6 +413,23 @@ class Articulation(StrictModel):
     articulation_id: Identifier
     links: Annotated[list[Link], Field(min_length=1)]
     joints: list[Joint] = Field(default_factory=list)
+    evidence_level: (
+        Literal[
+            "single_state_prior_only",
+            "two_state_motion_supported",
+            "multi_state_heldout_validated",
+        ]
+        | None
+    ) = None
+    validation_artifact_path: str | None = None
+    physical_validation: Literal["not_implemented"] | None = None
+    collision_ready: bool | None = None
+    sim_ready: bool | None = None
+
+    @field_validator("validation_artifact_path")
+    @classmethod
+    def relative_articulation_validation_path(cls, value: str | None) -> str | None:
+        return _relative_path(value) if value is not None else None
 
     @model_validator(mode="after")
     def valid_link_graph(self) -> Self:
@@ -431,10 +467,18 @@ class ObjectInstance(StrictModel):
             "partial_observation_supported",
             "partial_measured",
             "complete_visual_candidate",
+            "articulated_visual_candidate",
         ]
         | None
     ) = None
-    completion_status: Literal["not_completed", "selected_by_observation_validation"] | None = None
+    completion_status: (
+        Literal[
+            "not_completed",
+            "selected_by_observation_validation",
+            "selected_by_multi_state_validation",
+        ]
+        | None
+    ) = None
     observation_grounded: bool | None = None
     physical_validation: Literal["not_implemented"] | None = None
     sim_ready: bool | None = None
@@ -475,7 +519,15 @@ class ValidationReport(StrictModel):
 
 
 class SceneIR(StrictModel):
-    schema_version: Literal["0.1.0", "0.1.1", "0.1.2", "0.1.3", "0.1.4", "0.1.5"] = "0.1.1"
+    schema_version: Literal[
+        "0.1.0",
+        "0.1.1",
+        "0.1.2",
+        "0.1.3",
+        "0.1.4",
+        "0.1.5",
+        "0.1.6",
+    ] = "0.1.1"
     metadata: SceneMetadata
     cameras: list[Camera] = Field(default_factory=list)
     frames: list[FrameObservation] = Field(default_factory=list)

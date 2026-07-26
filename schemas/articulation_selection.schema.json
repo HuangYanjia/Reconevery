@@ -1,0 +1,215 @@
+{
+  "$defs": {
+    "ArticulatedCandidateStatus": {
+      "enum": [
+        "accepted_articulated_visual_candidate",
+        "ambiguous_joint_type",
+        "ambiguous_link_assignment",
+        "prior_only_unvalidated",
+        "two_state_partially_validated",
+        "multi_state_validated",
+        "rejected_state_alignment",
+        "rejected_geometry_mismatch",
+        "rejected_joint_constraint",
+        "rejected_heldout_state",
+        "license_blocked",
+        "unresolved_no_candidate",
+        "backend_failed"
+      ],
+      "title": "ArticulatedCandidateStatus",
+      "type": "string"
+    },
+    "ArticulatedLicenseMode": {
+      "enum": [
+        "research_evaluation",
+        "production_candidate"
+      ],
+      "title": "ArticulatedLicenseMode",
+      "type": "string"
+    },
+    "ArticulatedObjectSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "articulated_object_id": {
+          "minLength": 1,
+          "title": "Articulated Object Id",
+          "type": "string"
+        },
+        "best_production_eligible_articulated_candidate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Best Production Eligible Articulated Candidate"
+        },
+        "best_research_articulated_candidate": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Best Research Articulated Candidate"
+        },
+        "canonical_gravity_alignment_known": {
+          "const": false,
+          "default": false,
+          "title": "Canonical Gravity Alignment Known",
+          "type": "boolean"
+        },
+        "collision_ready": {
+          "const": false,
+          "default": false,
+          "title": "Collision Ready",
+          "type": "boolean"
+        },
+        "completion_status": {
+          "anyOf": [
+            {
+              "const": "selected_by_multi_state_validation",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completion Status"
+        },
+        "evidence_level": {
+          "$ref": "#/$defs/ArticulationEvidenceLevel"
+        },
+        "geometry_status": {
+          "anyOf": [
+            {
+              "enum": [
+                "articulated_visual_candidate",
+                "partial_measured"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Geometry Status"
+        },
+        "measured_geometry_retained": {
+          "const": true,
+          "default": true,
+          "title": "Measured Geometry Retained",
+          "type": "boolean"
+        },
+        "metric_scale_known": {
+          "const": false,
+          "default": false,
+          "title": "Metric Scale Known",
+          "type": "boolean"
+        },
+        "observation_grounded": {
+          "const": true,
+          "default": true,
+          "title": "Observation Grounded",
+          "type": "boolean"
+        },
+        "physical_validation": {
+          "const": "not_implemented",
+          "default": "not_implemented",
+          "title": "Physical Validation",
+          "type": "string"
+        },
+        "selected_candidate_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Candidate Id"
+        },
+        "selection_rationale": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Selection Rationale",
+          "type": "array"
+        },
+        "sim_ready": {
+          "const": false,
+          "default": false,
+          "title": "Sim Ready",
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/$defs/ArticulatedCandidateStatus"
+        }
+      },
+      "required": [
+        "articulated_object_id",
+        "status",
+        "evidence_level",
+        "selection_rationale"
+      ],
+      "title": "ArticulatedObjectSelection",
+      "type": "object"
+    },
+    "ArticulationEvidenceLevel": {
+      "enum": [
+        "single_state_prior_only",
+        "two_state_motion_supported",
+        "multi_state_heldout_validated"
+      ],
+      "title": "ArticulationEvidenceLevel",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "deterministic_selection_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Deterministic Selection Digest",
+      "type": "string"
+    },
+    "license_mode": {
+      "$ref": "#/$defs/ArticulatedLicenseMode"
+    },
+    "objects": {
+      "items": {
+        "$ref": "#/$defs/ArticulatedObjectSelection"
+      },
+      "title": "Objects",
+      "type": "array"
+    },
+    "ranking_policy": {
+      "const": "hard_gates_heldout_pareto_deterministic_v1",
+      "title": "Ranking Policy",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "license_mode",
+    "ranking_policy",
+    "objects",
+    "deterministic_selection_digest"
+  ],
+  "title": "ArticulatedCandidateSelection",
+  "type": "object"
+}

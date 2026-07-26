@@ -1,0 +1,293 @@
+{
+  "$defs": {
+    "ArticulatedCandidateEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "failed_gates": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failed Gates",
+          "type": "array"
+        },
+        "fitting_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Fitting Sha256",
+          "type": "string"
+        },
+        "heldout_state_validation_used": {
+          "title": "Heldout State Validation Used",
+          "type": "boolean"
+        },
+        "link_assignment_confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Link Assignment Confidence",
+          "type": "number"
+        },
+        "passed_hard_gates": {
+          "title": "Passed Hard Gates",
+          "type": "boolean"
+        },
+        "runtime_seconds": {
+          "minimum": 0,
+          "title": "Runtime Seconds",
+          "type": "number"
+        },
+        "state_evaluations": {
+          "items": {
+            "$ref": "#/$defs/ArticulationStateEvaluation"
+          },
+          "title": "State Evaluations",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/ArticulatedCandidateStatus"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "status",
+        "fitting_sha256",
+        "state_evaluations",
+        "passed_hard_gates",
+        "failed_gates",
+        "heldout_state_validation_used",
+        "link_assignment_confidence",
+        "runtime_seconds"
+      ],
+      "title": "ArticulatedCandidateEvaluation",
+      "type": "object"
+    },
+    "ArticulatedCandidateStatus": {
+      "enum": [
+        "accepted_articulated_visual_candidate",
+        "ambiguous_joint_type",
+        "ambiguous_link_assignment",
+        "prior_only_unvalidated",
+        "two_state_partially_validated",
+        "multi_state_validated",
+        "rejected_state_alignment",
+        "rejected_geometry_mismatch",
+        "rejected_joint_constraint",
+        "rejected_heldout_state",
+        "license_blocked",
+        "unresolved_no_candidate",
+        "backend_failed"
+      ],
+      "title": "ArticulatedCandidateStatus",
+      "type": "string"
+    },
+    "ArticulationStateEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "axis_error_degrees": {
+          "anyOf": [
+            {
+              "maximum": 180,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Axis Error Degrees"
+        },
+        "base_mask_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Base Mask Iou",
+          "type": "number"
+        },
+        "base_motion_scene_diagonals": {
+          "minimum": 0,
+          "title": "Base Motion Scene Diagonals",
+          "type": "number"
+        },
+        "depth_inlier_fraction": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Depth Inlier Fraction",
+          "type": "number"
+        },
+        "front_of_scene_violation_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Front Of Scene Violation Ratio",
+          "type": "number"
+        },
+        "heldout": {
+          "title": "Heldout",
+          "type": "boolean"
+        },
+        "inferred_joint_positions": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Inferred Joint Positions",
+          "type": "object"
+        },
+        "joint_constraint_residual": {
+          "minimum": 0,
+          "title": "Joint Constraint Residual",
+          "type": "number"
+        },
+        "joint_position_source": {
+          "enum": [
+            "measured_geometry",
+            "interpolated",
+            "discrete_state"
+          ],
+          "title": "Joint Position Source",
+          "type": "string"
+        },
+        "movable_part_mask_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Movable Part Mask Iou",
+          "type": "number"
+        },
+        "negative_space_violation_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Negative Space Violation Ratio",
+          "type": "number"
+        },
+        "per_link_depth_residual": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Per Link Depth Residual",
+          "type": "object"
+        },
+        "pivot_residual_part_diagonals": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pivot Residual Part Diagonals"
+        },
+        "render_paths": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Render Paths",
+          "type": "object"
+        },
+        "state_id": {
+          "minLength": 1,
+          "title": "State Id",
+          "type": "string"
+        },
+        "whole_object_mask_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Whole Object Mask Iou",
+          "type": "number"
+        }
+      },
+      "required": [
+        "state_id",
+        "heldout",
+        "base_mask_iou",
+        "movable_part_mask_iou",
+        "whole_object_mask_iou",
+        "per_link_depth_residual",
+        "depth_inlier_fraction",
+        "negative_space_violation_ratio",
+        "front_of_scene_violation_ratio",
+        "base_motion_scene_diagonals",
+        "joint_constraint_residual",
+        "inferred_joint_positions",
+        "joint_position_source"
+      ],
+      "title": "ArticulationStateEvaluation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "candidate_structures_frozen_before_heldout": {
+      "const": true,
+      "default": true,
+      "title": "Candidate Structures Frozen Before Heldout",
+      "type": "boolean"
+    },
+    "evaluations": {
+      "items": {
+        "$ref": "#/$defs/ArticulatedCandidateEvaluation"
+      },
+      "title": "Evaluations",
+      "type": "array"
+    },
+    "fitting_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Fitting Manifest Sha256",
+      "type": "string"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fitting_manifest_sha256",
+    "evaluations",
+    "runtime_seconds"
+  ],
+  "title": "ArticulatedEvaluationManifest",
+  "type": "object"
+}

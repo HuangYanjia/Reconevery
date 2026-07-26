@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reconevery-articulation-alignment-worker"
+version = "0.1.0"
+description = "Isolated multi-state Sim(3) alignment and measured articulation inference"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "numpy>=2.0,<3",
+  "scipy>=1.15,<2",
+  "trimesh>=4.8,<5",
+  "pillow>=11,<13",
+]
+
+[project.scripts]
+articulation-alignment-worker = "articulation_alignment_worker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["articulation_alignment_worker*"]

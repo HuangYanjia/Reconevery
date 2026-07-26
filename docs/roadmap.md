@@ -103,9 +103,17 @@ Design optional VLM-assisted scene inventory as a separate prompt-generation sta
 produce a reviewable prompt manifest rather than bypass Phase 2 prompt contracts, and must not
 claim exhaustive vocabulary or physical classification without validation.
 
+## Phase 5C articulated reconstruction
+
+Phase 5C implements observation-grounded visual kinematic hypotheses for fixed,
+prismatic, and revolute mechanisms from multiple static states. It includes local
+license-aware retrieval, official Particulate research candidates, constrained
+fitting, and held-out-state evaluation. It does not include deformables, collision,
+dynamics, or production simulator export.
+
 ## Later phases
 
-- Phase 5C: articulated, deformable, or otherwise non-rigid object reconstruction.
+- A separately reviewed deformable-object phase.
 - Phase 6: SceneSmith or equivalent scene compiler adapter.
 - A later simulation phase: collision generation, physics repair, and explicit simulator exports.
 
@@ -114,5 +122,5 @@ the CPU-only mock quality gate depend on GPUs, checkpoints, Docker, or network m
 
 Phase 5B now covers ordinary rigid/static visual candidates from official SAM 3D
 Objects and TRELLIS.2 with measured registration, held-out evaluation, and
-license-aware selection. Articulated completion, collision generation, physical
-validation, SceneSmith, and simulator compilation remain future work.
+license-aware selection. Collision generation, physical validation, SceneSmith, and
+simulator compilation remain future work.

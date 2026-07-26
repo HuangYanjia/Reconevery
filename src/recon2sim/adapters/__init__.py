@@ -2,6 +2,21 @@ from recon2sim.adapters.alignment import (
     CameraMeshAlignmentAdapter,
     Phase4_2ConsistencyValidationAdapter,
 )
+from recon2sim.adapters.articulated_retrieval import (
+    ArtVIPRetrievalAdapter,
+    PartNetRetrievalAdapter,
+)
+from recon2sim.adapters.articulation_capture import ArticulationCaptureAdapter
+from recon2sim.adapters.articulation_evaluation import ArticulationEvaluationAdapter
+from recon2sim.adapters.articulation_fitting import ArticulationFittingAdapter
+from recon2sim.adapters.articulation_motion import ArticulationMotionAdapter
+from recon2sim.adapters.articulation_selection import (
+    ArticulationSelectionAdapter,
+    Phase5CConsistencyValidationAdapter,
+)
+from recon2sim.adapters.articulation_state_alignment import (
+    ArticulationStateAlignmentAdapter,
+)
 from recon2sim.adapters.base import (
     Adapter,
     ArtifactRecord,
@@ -50,6 +65,7 @@ from recon2sim.adapters.object_lifting import (
     ObjectSurfaceLiftingAdapter,
     Phase4ConsistencyValidationAdapter,
 )
+from recon2sim.adapters.particulate import ParticulateAdapter
 from recon2sim.adapters.sam3 import Sam3SegmentationTrackingAdapter
 from recon2sim.adapters.sam3d_objects import Sam3DObjectsCandidateAdapter
 from recon2sim.adapters.trellis2_objects import Trellis2ObjectCandidateAdapter
@@ -88,10 +104,27 @@ REGISTRY: dict[str, type[Adapter]] = {
     "completion_candidate_evaluation": CompletionCandidateEvaluationAdapter,
     "completion_candidate_selection": CompletionSelectionAdapter,
     "phase5b_consistency_validation": Phase5BConsistencyValidationAdapter,
+    "articulation_capture": ArticulationCaptureAdapter,
+    "articulation_state_alignment": ArticulationStateAlignmentAdapter,
+    "articulation_motion": ArticulationMotionAdapter,
+    "artvip_retrieval": ArtVIPRetrievalAdapter,
+    "partnet_retrieval": PartNetRetrievalAdapter,
+    "particulate_candidates": ParticulateAdapter,
+    "articulation_fitting": ArticulationFittingAdapter,
+    "articulation_evaluation": ArticulationEvaluationAdapter,
+    "articulation_selection": ArticulationSelectionAdapter,
+    "phase5c_consistency_validation": Phase5CConsistencyValidationAdapter,
 }
 
 __all__ = [
     "Adapter",
+    "ArtVIPRetrievalAdapter",
+    "ArticulationCaptureAdapter",
+    "ArticulationEvaluationAdapter",
+    "ArticulationFittingAdapter",
+    "ArticulationMotionAdapter",
+    "ArticulationSelectionAdapter",
+    "ArticulationStateAlignmentAdapter",
     "ArtifactRecord",
     "CommandAdapter",
     "CameraMeshAlignmentAdapter",
@@ -109,6 +142,7 @@ __all__ = [
     "InputSpec",
     "OutputSpec",
     "ObjectSurfaceLiftingAdapter",
+    "ParticulateAdapter",
     "MeasuredObjectGeometryAdapter",
     "MeasuredGeneratedComparisonAdapter",
     "MeasuredOnlyCandidateAdapter",
@@ -118,6 +152,8 @@ __all__ = [
     "Phase4_2ConsistencyValidationAdapter",
     "Phase5AConsistencyValidationAdapter",
     "Phase5BConsistencyValidationAdapter",
+    "Phase5CConsistencyValidationAdapter",
+    "PartNetRetrievalAdapter",
     "Sam3SegmentationTrackingAdapter",
     "Sam3DObjectsCandidateAdapter",
     "StageContext",

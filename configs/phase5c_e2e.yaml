@@ -1,0 +1,109 @@
+seed: 42
+stages:
+  articulation_capture:
+    adapter:
+      name: articulation_capture
+      config:
+        capture_manifest: configs/articulation_capture.example.yaml
+        part_prompt_manifest: configs/articulation_parts/cabinet_drawer.yaml
+        phase5b_selection: /absolute/path/to/routing_run/reconstruction/completion/selection.json
+    depends_on: []
+  articulation_state_alignment:
+    adapter:
+      name: articulation_state_alignment
+      env: [PATH, HOME, TMPDIR]
+      timeout_s: 1800
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/articulation-env/bin/python
+        worker_module: articulation_alignment_worker
+        docker_image: reconevery/articulation-alignment:phase5c
+    depends_on: [articulation_capture]
+  articulation_motion:
+    adapter:
+      name: articulation_motion
+      env: [PATH, HOME, TMPDIR]
+      timeout_s: 1800
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/articulation-env/bin/python
+        worker_module: articulation_alignment_worker
+        docker_image: reconevery/articulation-alignment:phase5c
+    depends_on: [articulation_state_alignment]
+  artvip_retrieval:
+    adapter:
+      name: artvip_retrieval
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/articulation-env/bin/python
+        worker_module: articulated_retrieval_worker
+        docker_image: reconevery/articulated-retrieval:phase5c
+        source_family: artvip
+        index_path: /absolute/path/to/artvip/index.json
+    depends_on: [articulation_motion]
+  partnet_retrieval:
+    adapter:
+      name: partnet_retrieval
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/articulation-env/bin/python
+        worker_module: articulated_retrieval_worker
+        docker_image: reconevery/articulated-retrieval:phase5c
+        source_family: partnet_mobility
+        index_path: /absolute/path/to/partnet_mobility/index.json
+    depends_on: [articulation_motion]
+  particulate_candidates:
+    adapter:
+      name: particulate_candidates
+      env: [PATH, HOME, TMPDIR, HF_HOME, HF_HUB_OFFLINE]
+      timeout_s: 1800
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/particulate-env/bin/python
+        worker_module: particulate_worker
+        docker_image: reconevery/particulate:phase5c
+        checkpoint_hashes:
+          model.pt: ad6f14067dadf85335119199b94e8249401376d5700c9b627c3608594ea99b5c
+        runtime_model_revisions:
+          mikaelaangel/partfield-ckpt: 90b9b1e08b6a12fdcb6ee26b4854a26235e1765f
+        runtime_model_hashes:
+          model_objaverse.ckpt: 463efc8a3afd3913142aa025e0125c00f16ef452b8de6a132ebe32bbe7877ee4
+        source_meshes:
+          cabinet_visual: /absolute/path/to/cabinet.glb
+    depends_on: [articulation_motion, artvip_retrieval, partnet_retrieval]
+  articulation_fitting:
+    adapter:
+      name: articulation_fitting
+      env: [PATH, HOME, TMPDIR]
+      timeout_s: 1800
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/articulation-env/bin/python
+        worker_module: articulation_evaluation_worker
+        docker_image: reconevery/articulation-evaluation:phase5c
+        maximum_fitting_views_per_state: 6
+    depends_on: [particulate_candidates]
+  articulation_evaluation:
+    adapter:
+      name: articulation_evaluation
+      env: [PATH, HOME, TMPDIR]
+      timeout_s: 1800
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/articulation-env/bin/python
+        worker_module: articulation_evaluation_worker
+        docker_image: reconevery/articulation-evaluation:phase5c
+    depends_on: [articulation_fitting]
+  articulation_selection:
+    adapter:
+      name: articulation_selection
+      config:
+        license_mode: research_evaluation
+    depends_on: [articulation_evaluation]
+  phase5c_consistency_validation:
+    adapter:
+      name: phase5c_consistency_validation
+      config: {}
+    depends_on: [articulation_selection]

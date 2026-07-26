@@ -1,0 +1,351 @@
+{
+  "$defs": {
+    "ArticulatedLinkAssignment": {
+      "additionalProperties": false,
+      "properties": {
+        "assignments": {
+          "items": {
+            "$ref": "#/$defs/ArticulatedLinkAssignmentRecord"
+          },
+          "title": "Assignments",
+          "type": "array"
+        },
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "0.1.0",
+          "default": "0.1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "unmatched_candidate_links": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unmatched Candidate Links",
+          "type": "array"
+        },
+        "unmatched_observed_parts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unmatched Observed Parts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "assignments",
+        "unmatched_candidate_links",
+        "unmatched_observed_parts"
+      ],
+      "title": "ArticulatedLinkAssignment",
+      "type": "object"
+    },
+    "ArticulatedLinkAssignmentRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "ambiguous": {
+          "default": false,
+          "title": "Ambiguous",
+          "type": "boolean"
+        },
+        "assignment_confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Assignment Confidence",
+          "type": "number"
+        },
+        "candidate_link_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Candidate Link Ids",
+          "type": "array"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Evidence",
+          "type": "object"
+        },
+        "observed_part_id": {
+          "minLength": 1,
+          "title": "Observed Part Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "observed_part_id",
+        "candidate_link_ids",
+        "assignment_confidence",
+        "evidence"
+      ],
+      "title": "ArticulatedLinkAssignmentRecord",
+      "type": "object"
+    },
+    "ArticulationFittingArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "failure_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Reason"
+        },
+        "fitted_joint_positions": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object"
+          },
+          "title": "Fitted Joint Positions",
+          "type": "object"
+        },
+        "fitting_median_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Median Residual"
+        },
+        "fitting_part_iou": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Part Iou"
+        },
+        "fitting_state_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fitting State Ids",
+          "type": "array"
+        },
+        "heldout_state_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heldout State Ids",
+          "type": "array"
+        },
+        "joint_axis_signs": {
+          "additionalProperties": {
+            "enum": [
+              -1,
+              1
+            ],
+            "type": "integer"
+          },
+          "title": "Joint Axis Signs",
+          "type": "object"
+        },
+        "matrix_reference_world_from_candidate_base": {
+          "anyOf": [
+            {
+              "maxItems": 16,
+              "minItems": 16,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matrix Reference World From Candidate Base"
+        },
+        "scale": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scale"
+        },
+        "status": {
+          "enum": [
+            "fitted",
+            "ambiguous",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "structure_frozen_before_heldout": {
+          "const": true,
+          "default": true,
+          "title": "Structure Frozen Before Heldout",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "status",
+        "fitting_state_ids",
+        "heldout_state_ids",
+        "fitted_joint_positions",
+        "joint_axis_signs"
+      ],
+      "title": "ArticulationFittingArtifact",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "candidate_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Candidate Manifest Sha256",
+      "type": "string"
+    },
+    "evidence_split_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Evidence Split Sha256",
+      "type": "string"
+    },
+    "fittings": {
+      "items": {
+        "$ref": "#/$defs/ArticulationFittingArtifact"
+      },
+      "title": "Fittings",
+      "type": "array"
+    },
+    "link_assignments": {
+      "items": {
+        "$ref": "#/$defs/ArticulatedLinkAssignment"
+      },
+      "title": "Link Assignments",
+      "type": "array"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidate_manifest_sha256",
+    "evidence_split_sha256",
+    "link_assignments",
+    "fittings",
+    "runtime_seconds"
+  ],
+  "title": "ArticulationFittingManifest",
+  "type": "object"
+}

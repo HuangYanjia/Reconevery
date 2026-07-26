@@ -1,0 +1,284 @@
+{
+  "$defs": {
+    "ArticulationStateTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "title": "Accepted",
+          "type": "boolean"
+        },
+        "excluded_movable_part_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded Movable Part Ids",
+          "type": "array"
+        },
+        "failure_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Reason"
+        },
+        "fitting_median_residual_scene_diagonal": {
+          "minimum": 0,
+          "title": "Fitting Median Residual Scene Diagonal",
+          "type": "number"
+        },
+        "fitting_p90_residual_scene_diagonal": {
+          "minimum": 0,
+          "title": "Fitting P90 Residual Scene Diagonal",
+          "type": "number"
+        },
+        "heldout_static_depth_inlier_fraction": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Heldout Static Depth Inlier Fraction",
+          "type": "number"
+        },
+        "inverse_matrix": {
+          "maxItems": 16,
+          "minItems": 16,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Inverse Matrix",
+          "type": "array"
+        },
+        "matrix_reference_from_state": {
+          "maxItems": 16,
+          "minItems": 16,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Matrix Reference From State",
+          "type": "array"
+        },
+        "rotation_determinant": {
+          "title": "Rotation Determinant",
+          "type": "number"
+        },
+        "scale": {
+          "exclusiveMinimum": 0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "state_id": {
+          "minLength": 1,
+          "title": "State Id",
+          "type": "string"
+        },
+        "static_correspondence_count": {
+          "minimum": 0,
+          "title": "Static Correspondence Count",
+          "type": "integer"
+        },
+        "translation": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Translation",
+          "type": "array"
+        }
+      },
+      "required": [
+        "state_id",
+        "matrix_reference_from_state",
+        "inverse_matrix",
+        "scale",
+        "rotation_determinant",
+        "translation",
+        "fitting_median_residual_scene_diagonal",
+        "fitting_p90_residual_scene_diagonal",
+        "heldout_static_depth_inlier_fraction",
+        "static_correspondence_count",
+        "excluded_movable_part_ids",
+        "accepted"
+      ],
+      "title": "ArticulationStateTransform",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "capture_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Capture Manifest Sha256",
+      "type": "string"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "reference_state_id": {
+      "minLength": 1,
+      "title": "Reference State Id",
+      "type": "string"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_states_unchanged": {
+      "const": true,
+      "default": true,
+      "title": "Source States Unchanged",
+      "type": "boolean"
+    },
+    "static_evidence_only": {
+      "const": true,
+      "default": true,
+      "title": "Static Evidence Only",
+      "type": "boolean"
+    },
+    "transforms": {
+      "items": {
+        "$ref": "#/$defs/ArticulationStateTransform"
+      },
+      "minItems": 1,
+      "title": "Transforms",
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "capture_manifest_sha256",
+    "reference_state_id",
+    "transforms",
+    "runtime_seconds"
+  ],
+  "title": "ArticulationStateAlignmentArtifact",
+  "type": "object"
+}

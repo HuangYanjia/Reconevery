@@ -1,0 +1,61 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "articulated_object_id": {
+      "minLength": 1,
+      "title": "Articulated Object Id",
+      "type": "string"
+    },
+    "candidate_generation_states": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Candidate Generation States",
+      "type": "array"
+    },
+    "heldout_validation_states": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Heldout Validation States",
+      "type": "array"
+    },
+    "heldout_views_by_state": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": "Heldout Views By State",
+      "type": "object"
+    },
+    "kinematic_fitting_states": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Kinematic Fitting States",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "articulated_object_id",
+    "candidate_generation_states",
+    "kinematic_fitting_states",
+    "heldout_validation_states",
+    "heldout_views_by_state",
+    "seed"
+  ],
+  "title": "ArticulationEvidenceSplit",
+  "type": "object"
+}

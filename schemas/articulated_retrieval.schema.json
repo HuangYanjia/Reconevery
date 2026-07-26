@@ -1,0 +1,169 @@
+{
+  "$defs": {
+    "ArticulatedRetrievalCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_bundle_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Bundle Path"
+        },
+        "candidate_bundle_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Bundle Sha256"
+        },
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "evidence_terms": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Evidence Terms",
+          "type": "object"
+        },
+        "production_selectable": {
+          "title": "Production Selectable",
+          "type": "boolean"
+        },
+        "retrieval_score": {
+          "title": "Retrieval Score",
+          "type": "number"
+        },
+        "source_asset_id": {
+          "minLength": 1,
+          "title": "Source Asset Id",
+          "type": "string"
+        },
+        "source_family": {
+          "$ref": "#/$defs/ArticulatedSourceFamily"
+        },
+        "visual_asset_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Visual Asset Hashes",
+          "type": "object"
+        },
+        "visual_asset_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Visual Asset Paths",
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "source_family",
+        "source_asset_id",
+        "retrieval_score",
+        "evidence_terms",
+        "production_selectable"
+      ],
+      "title": "ArticulatedRetrievalCandidate",
+      "type": "object"
+    },
+    "ArticulatedSourceFamily": {
+      "enum": [
+        "measured_motion_analytic",
+        "artvip",
+        "partnet_mobility",
+        "particulate"
+      ],
+      "title": "ArticulatedSourceFamily",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "articulated_object_id": {
+      "minLength": 1,
+      "title": "Articulated Object Id",
+      "type": "string"
+    },
+    "artvip_index_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Artvip Index Sha256"
+    },
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/ArticulatedRetrievalCandidate"
+      },
+      "title": "Candidates",
+      "type": "array"
+    },
+    "measured_motion_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Measured Motion Sha256",
+      "type": "string"
+    },
+    "partnet_index_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Partnet Index Sha256"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "articulated_object_id",
+    "measured_motion_sha256",
+    "candidates",
+    "runtime_seconds"
+  ],
+  "title": "ArticulatedRetrievalResult",
+  "type": "object"
+}

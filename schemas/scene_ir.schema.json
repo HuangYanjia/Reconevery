@@ -18,6 +18,35 @@
           "title": "Articulation Id",
           "type": "string"
         },
+        "collision_ready": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Collision Ready"
+        },
+        "evidence_level": {
+          "anyOf": [
+            {
+              "enum": [
+                "single_state_prior_only",
+                "two_state_motion_supported",
+                "multi_state_heldout_validated"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Level"
+        },
         "joints": {
           "items": {
             "$ref": "#/$defs/Joint"
@@ -32,6 +61,43 @@
           "minItems": 1,
           "title": "Links",
           "type": "array"
+        },
+        "physical_validation": {
+          "anyOf": [
+            {
+              "const": "not_implemented",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Physical Validation"
+        },
+        "sim_ready": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sim Ready"
+        },
+        "validation_artifact_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validation Artifact Path"
         }
       },
       "required": [
@@ -365,7 +431,8 @@
             {
               "enum": [
                 "measured_anchor",
-                "visual_completion_candidate"
+                "visual_completion_candidate",
+                "articulated_visual_link"
               ],
               "type": "string"
             },
@@ -396,7 +463,8 @@
             {
               "enum": [
                 "not_completed",
-                "selected_by_observation_validation"
+                "selected_by_observation_validation",
+                "selected_by_multi_state_validation"
               ],
               "type": "string"
             },
@@ -450,7 +518,8 @@
               "enum": [
                 "partial_observation_supported",
                 "partial_measured",
-                "complete_visual_candidate"
+                "complete_visual_candidate",
+                "articulated_visual_candidate"
               ],
               "type": "string"
             },
@@ -643,6 +712,23 @@
           "title": "Joint Type",
           "type": "string"
         },
+        "limit_source": {
+          "anyOf": [
+            {
+              "enum": [
+                "observed_range",
+                "candidate_prior",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Source"
+        },
         "limits": {
           "anyOf": [
             {
@@ -664,6 +750,60 @@
           ],
           "default": null,
           "title": "Limits"
+        },
+        "observed_position_range": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Position Range"
+        },
+        "observed_state_positions": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Observed State Positions",
+          "type": "object"
+        },
+        "origin_xyz": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Origin Xyz"
         },
         "parent_link_id": {
           "minLength": 1,
@@ -839,7 +979,8 @@
             {
               "enum": [
                 "not_completed",
-                "selected_by_observation_validation"
+                "selected_by_observation_validation",
+                "selected_by_multi_state_validation"
               ],
               "type": "string"
             },
@@ -868,7 +1009,8 @@
               "enum": [
                 "partial_observation_supported",
                 "partial_measured",
-                "complete_visual_candidate"
+                "complete_visual_candidate",
+                "articulated_visual_candidate"
               ],
               "type": "string"
             },
@@ -1451,7 +1593,8 @@
         "0.1.2",
         "0.1.3",
         "0.1.4",
-        "0.1.5"
+        "0.1.5",
+        "0.1.6"
       ],
       "title": "Schema Version",
       "type": "string"

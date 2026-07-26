@@ -1,0 +1,14 @@
+seed: 42
+stages:
+  articulation_evaluation:
+    adapter:
+      name: articulation_evaluation
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_module: articulation_evaluation_worker
+        worker_script: tests/fixtures/fake_articulation_worker.py
+        docker_image: reconevery/articulation-evaluation:phase5c
+        fake_mode: success
+    depends_on: [articulation_fitting]

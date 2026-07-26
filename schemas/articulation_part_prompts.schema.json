@@ -1,0 +1,159 @@
+{
+  "$defs": {
+    "ArticulatedJointType": {
+      "enum": [
+        "fixed",
+        "prismatic",
+        "revolute",
+        "continuous_candidate",
+        "unknown"
+      ],
+      "title": "ArticulatedJointType",
+      "type": "string"
+    },
+    "ArticulationBasePrompt": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "prompt_id": {
+          "minLength": 1,
+          "title": "Prompt Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt_id",
+        "label"
+      ],
+      "title": "ArticulationBasePrompt",
+      "type": "object"
+    },
+    "ArticulationMovablePartPrompt": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_joint_hint": {
+          "$ref": "#/$defs/ArticulatedJointType",
+          "default": "unknown"
+        },
+        "handle_part_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Handle Part Id"
+        },
+        "include": {
+          "default": true,
+          "title": "Include",
+          "type": "boolean"
+        },
+        "label": {
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "parent_part_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Part Id"
+        },
+        "part_id": {
+          "minLength": 1,
+          "title": "Part Id",
+          "type": "string"
+        },
+        "prompt_id": {
+          "minLength": 1,
+          "title": "Prompt Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "part_id",
+        "prompt_id",
+        "label"
+      ],
+      "title": "ArticulationMovablePartPrompt",
+      "type": "object"
+    },
+    "ArticulationObjectPrompt": {
+      "additionalProperties": false,
+      "properties": {
+        "articulated_object_id": {
+          "minLength": 1,
+          "title": "Articulated Object Id",
+          "type": "string"
+        },
+        "base": {
+          "$ref": "#/$defs/ArticulationBasePrompt"
+        },
+        "excluded_prompt_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Excluded Prompt Ids",
+          "type": "array"
+        },
+        "movable_parts": {
+          "items": {
+            "$ref": "#/$defs/ArticulationMovablePartPrompt"
+          },
+          "minItems": 1,
+          "title": "Movable Parts",
+          "type": "array"
+        },
+        "semantic_label": {
+          "minLength": 1,
+          "title": "Semantic Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "articulated_object_id",
+        "semantic_label",
+        "base",
+        "movable_parts"
+      ],
+      "title": "ArticulationObjectPrompt",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "objects": {
+      "items": {
+        "$ref": "#/$defs/ArticulationObjectPrompt"
+      },
+      "minItems": 1,
+      "title": "Objects",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "objects"
+  ],
+  "title": "ArticulationPartPromptManifest",
+  "type": "object"
+}

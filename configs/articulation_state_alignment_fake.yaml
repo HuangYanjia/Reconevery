@@ -1,0 +1,23 @@
+seed: 42
+stages:
+  articulation_capture:
+    adapter:
+      name: articulation_capture
+      config:
+        fake_mode: success
+        fake_state_count: 3
+    depends_on: []
+  articulation_state_alignment:
+    adapter:
+      name: articulation_state_alignment
+      env: [PATH, HOME, TMPDIR]
+      timeout_s: 60
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_module: articulation_alignment_worker
+        worker_script: tests/fixtures/fake_articulation_worker.py
+        docker_image: reconevery/articulation-alignment:phase5c
+        fake_mode: success
+        minimum_static_correspondences: 8
+    depends_on: [articulation_capture]

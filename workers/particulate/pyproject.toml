@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reconevery-particulate-worker"
+version = "0.1.0"
+description = "Verified wrapper for official Particulate articulated inference"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "numpy>=2.0,<3",
+  "trimesh>=4.8,<5",
+]
+
+[project.scripts]
+particulate-worker = "particulate_worker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["particulate_worker*"]

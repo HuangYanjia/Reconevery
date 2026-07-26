@@ -113,3 +113,12 @@ Phase 5B may add a separate `visual_completion_candidate` with
 `observation_grounded=true`, `physical_validation=not_implemented`,
 `collision_ready=false`, and `sim_ready=false`. Usage policy and production
 selectability are explicit; the `measured_anchor` remains attached to the object.
+
+Phase 5C adds typed `Link`, `Joint`, and `Articulation` evidence. Joints may be fixed,
+prismatic, or revolute in Scene IR; unknown/continuous priors remain in Phase 5C
+artifacts until they meet the stricter IR contract. Observed positions and ranges are
+separate from candidate mechanical limits. Measured part assets remain
+`partial_measured`. A selected generated link is
+`articulated_visual_candidate` and `selected_by_multi_state_validation`. All Phase 5C
+objects keep `physical_validation=not_implemented`, `collision_ready=false`, and
+`sim_ready=false`.
