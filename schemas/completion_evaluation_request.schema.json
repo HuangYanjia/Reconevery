@@ -1,0 +1,142 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "camera_reconstruction_path": {
+      "const": "camera/reconstruction.json",
+      "title": "Camera Reconstruction Path",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "dense_depth_manifest_path": {
+      "const": "reconstruction/dense/depth_manifest.json",
+      "title": "Dense Depth Manifest Path",
+      "type": "string"
+    },
+    "dense_depth_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Dense Depth Manifest Sha256",
+      "type": "string"
+    },
+    "dense_undistortion_manifest_path": {
+      "const": "reconstruction/dense/undistortion_manifest.json",
+      "title": "Dense Undistortion Manifest Path",
+      "type": "string"
+    },
+    "dense_undistortion_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Dense Undistortion Manifest Sha256",
+      "type": "string"
+    },
+    "evaluation_configuration": {
+      "additionalProperties": true,
+      "title": "Evaluation Configuration",
+      "type": "object"
+    },
+    "evidence_package_path": {
+      "const": "reconstruction/completion/evidence/evidence_package.json",
+      "title": "Evidence Package Path",
+      "type": "string"
+    },
+    "evidence_package_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Evidence Package Sha256",
+      "type": "string"
+    },
+    "evidence_split_path": {
+      "const": "reconstruction/completion/evidence_split.json",
+      "title": "Evidence Split Path",
+      "type": "string"
+    },
+    "evidence_split_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Evidence Split Sha256",
+      "type": "string"
+    },
+    "generation_manifest_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Generation Manifest Hashes",
+      "type": "object"
+    },
+    "generation_manifest_paths": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Generation Manifest Paths",
+      "type": "object"
+    },
+    "heldout_inputs": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Heldout Inputs",
+      "type": "object"
+    },
+    "output_directory": {
+      "const": "reconstruction/completion",
+      "title": "Output Directory",
+      "type": "string"
+    },
+    "registration_manifest_path": {
+      "const": "reconstruction/completion/registration_manifest.json",
+      "title": "Registration Manifest Path",
+      "type": "string"
+    },
+    "registration_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Registration Manifest Sha256",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "segmentation_tracking_path": {
+      "const": "observations/object_tracks.json",
+      "title": "Segmentation Tracking Path",
+      "type": "string"
+    },
+    "segmentation_tracking_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Segmentation Tracking Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "registration_manifest_path",
+    "registration_manifest_sha256",
+    "evidence_package_path",
+    "evidence_package_sha256",
+    "evidence_split_path",
+    "evidence_split_sha256",
+    "generation_manifest_paths",
+    "generation_manifest_hashes",
+    "segmentation_tracking_path",
+    "segmentation_tracking_sha256",
+    "camera_reconstruction_path",
+    "camera_reconstruction_sha256",
+    "dense_depth_manifest_path",
+    "dense_depth_manifest_sha256",
+    "dense_undistortion_manifest_path",
+    "dense_undistortion_manifest_sha256",
+    "heldout_inputs",
+    "evaluation_configuration",
+    "output_directory",
+    "seed"
+  ],
+  "title": "CandidateEvaluationRequest",
+  "type": "object"
+}

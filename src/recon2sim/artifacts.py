@@ -2545,6 +2545,17 @@ class ObservedSurfaceMeshManifest(StrictModel):
         return _relative_artifact_path(value)
 
 
+class MeasuredSurfelSpacingDiagnostics(StrictModel):
+    method: Literal["coordinate_hash_kdtree_nearest_neighbor_v1"]
+    source_point_count: int = Field(gt=0)
+    sampled_point_count: int = Field(gt=0)
+    nearest_neighbor_p10: float = Field(gt=0)
+    nearest_neighbor_median: float = Field(gt=0)
+    nearest_neighbor_p90: float = Field(gt=0)
+    voxel_size: float = Field(gt=0)
+    coordinate_hash_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
 class MeasuredObjectHypothesis(StrictModel):
     object_id: Annotated[str, Field(min_length=1)]
     semantic_label: Annotated[str, Field(min_length=1)]
@@ -2571,6 +2582,7 @@ class MeasuredObjectHypothesis(StrictModel):
     connected_component_count: int = Field(ge=0)
     measurement_confidence: float = Field(ge=0, le=1)
     completeness_confidence: float = Field(default=0.0, ge=0, le=0)
+    surfel_spacing: MeasuredSurfelSpacingDiagnostics | None = None
     geometry_source: Literal["measured"] = "measured"
     geometry_status: Literal["partial_measured"] = "partial_measured"
     hidden_surface_completion: Literal["not_implemented"] = "not_implemented"
@@ -2697,4 +2709,600 @@ class Phase5AConsistencyReport(StrictModel):
     def phase5a_summary_matches_checks(self) -> Self:
         if self.passed != all(check.passed for check in self.checks):
             raise ValueError("Phase 5A pass status must match its checks")
+        return self
+
+
+# Phase 5B: observation-grounded rigid visual completion. Generated assets are
+# always distinct from their measured anchors and never imply physical validity.
+class CompletionEligibilityStatus(StrEnum):
+    ELIGIBLE_RIGID = "eligible_rigid"
+    ELIGIBLE_STATIC = "eligible_static"
+    DEFERRED_ARTICULATED = "deferred_articulated"
+    DEFERRED_DEFORMABLE = "deferred_deformable"
+    DEFERRED_FLUID = "deferred_fluid"
+    DEFERRED_HUMAN = "deferred_human"
+    DEFERRED_UNKNOWN = "deferred_unknown"
+
+
+class CompletionBackend(StrEnum):
+    SAM3D_OBJECTS = "sam3d_objects"
+    TRELLIS2 = "trellis2"
+    MEASURED_PARTIAL_BASELINE = "measured_partial_baseline"
+
+
+class CompletionLicenseMode(StrEnum):
+    RESEARCH_EVALUATION = "research_evaluation"
+    PRODUCTION_CANDIDATE = "production_candidate"
+
+
+class CandidateNativeFormat(StrEnum):
+    MESH_PLY = "mesh_ply"
+    MESH_GLB = "mesh_glb"
+    PBR_GLB = "pbr_glb"
+    GAUSSIAN_SPLAT_PLY = "gaussian_splat_ply"
+    NATIVE_BACKEND_BUNDLE = "native_backend_bundle"
+
+
+class CompletionLicenseRecord(StrictModel):
+    backend: CompletionBackend
+    code_license: Annotated[str, Field(min_length=1)]
+    checkpoint_license: Annotated[str, Field(min_length=1)]
+    dependency_licenses: dict[str, str] = Field(default_factory=dict)
+    asset_license: Annotated[str, Field(min_length=1)]
+    access_conditions: list[str] = Field(default_factory=list)
+    commercial_use_review_status: Literal[
+        "not_reviewed",
+        "research_only",
+        "approved_by_project_policy",
+    ]
+    research_evaluation_allowed: bool
+    production_selectable: bool
+
+
+class CompletionEligibilityRecord(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    semantic_label: Annotated[str, Field(min_length=1)]
+    asset_type_hint: AssetType | None = None
+    status: CompletionEligibilityStatus
+    explicitly_overridden: bool = False
+    reason: Annotated[str, Field(min_length=1)]
+
+
+class CompletionEligibilityArtifact(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    segmentation_tracking_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    measured_geometry_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    records: list[CompletionEligibilityRecord]
+
+    @model_validator(mode="after")
+    def unique_completion_objects(self) -> Self:
+        ids = [record.object_id for record in self.records]
+        if len(ids) != len(set(ids)):
+            raise ValueError("completion eligibility object IDs must be unique")
+        return self
+
+
+class CompletionObjectEvidenceSplit(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    generation_anchor_frames: list[str]
+    registration_fitting_frames: list[str]
+    heldout_validation_frames: list[str]
+    degraded_split: bool = False
+    limitation: str | None = None
+
+    @model_validator(mode="after")
+    def disjoint_completion_evidence(self) -> Self:
+        groups = [
+            self.generation_anchor_frames,
+            self.registration_fitting_frames,
+            self.heldout_validation_frames,
+        ]
+        if any(len(group) != len(set(group)) for group in groups):
+            raise ValueError("completion evidence groups must not contain duplicate frames")
+        if any(
+            set(left) & set(right)
+            for index, left in enumerate(groups)
+            for right in groups[index + 1 :]
+        ):
+            raise ValueError("completion generation, fitting, and held-out frames must be disjoint")
+        return self
+
+
+class CompletionEvidenceSplit(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    split_version: Literal["disjoint_object_views_v1"] = "disjoint_object_views_v1"
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    objects: list[CompletionObjectEvidenceSplit]
+    seed: int
+
+
+class CompletionAnchorRecord(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    frame_id: Annotated[str, Field(min_length=1)]
+    rank: int = Field(gt=0)
+    selection_score: float
+    camera_direction: tuple[float, float, float]
+    mask_bbox_xywh: tuple[int, int, int, int]
+    mask_area_ratio: float = Field(gt=0, le=1)
+    dense_valid_ratio: float = Field(ge=0, le=1)
+    measured_sample_count: int = Field(ge=0)
+    selection_reason: Annotated[str, Field(min_length=1)]
+    crop_path: str
+    crop_metadata_path: str
+    crop_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    source_frame_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    source_mask_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    crop_to_source_transform: tuple[float, float, float, float, float, float, float, float, float]
+    source_to_crop_transform: tuple[float, float, float, float, float, float, float, float, float]
+
+    @field_validator("crop_path", "crop_metadata_path")
+    @classmethod
+    def safe_completion_crop_paths(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class CompletionCropManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    output_size: int = Field(gt=0)
+    margin_ratio: float = Field(ge=0)
+    padding_mode: Literal["transparent"] = "transparent"
+    anchors: list[CompletionAnchorRecord]
+
+
+class CompletionTrainingEvidence(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    training_frame_ids: list[str]
+    heldout_frame_ids: list[str]
+    training_points_path: str | None = None
+    training_points_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    training_point_count: int = Field(ge=0)
+    training_normals_available: bool = False
+    heldout_measurement_manifest_path: str
+    heldout_measurement_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+    @field_validator("training_points_path", "heldout_measurement_manifest_path")
+    @classmethod
+    def safe_completion_evidence_paths(cls, value: str | None) -> str | None:
+        return _relative_artifact_path(value) if value is not None else None
+
+
+class CompletionEvidencePackage(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    segmentation_tracking_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    dense_depth_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    measured_geometry_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    evidence_split_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    crop_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    objects: list[CompletionTrainingEvidence]
+    coordinate_convention: CoordinateConvention
+    scale_status: ScaleStatus
+
+
+class CompletionEvidencePreparationRequest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    manifest_path: Literal["inputs/manifest.json"] = "inputs/manifest.json"
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_path: Literal["camera/reconstruction.json"]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    segmentation_tracking_path: Literal["observations/object_tracks.json"]
+    segmentation_tracking_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    dense_depth_manifest_path: Literal["reconstruction/dense/depth_manifest.json"]
+    dense_depth_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    dense_undistortion_manifest_path: Literal["reconstruction/dense/undistortion_manifest.json"]
+    dense_undistortion_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    measured_geometry_path: Literal["reconstruction/measured_objects/geometry_manifest.json"]
+    measured_geometry_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    evidence_split_path: Literal["reconstruction/completion/evidence_split.json"]
+    evidence_split_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    crop_manifest_path: Literal["reconstruction/completion/crop_manifest.json"]
+    crop_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    object_inputs: dict[str, dict[str, object]]
+    coordinate_convention: CoordinateConvention
+    output_directory: Literal["reconstruction/completion/evidence"]
+    seed: int
+
+
+class CompletionWorkerManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    worker_name: Annotated[str, Field(min_length=1)]
+    worker_version: Annotated[str, Field(min_length=1)]
+    action: Annotated[str, Field(min_length=1)]
+    backend: Annotated[str, Field(min_length=1)]
+    request_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    official_repository: str | None = None
+    official_code_commit: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    checkpoint_repository: str | None = None
+    checkpoint_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    checkpoint_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]] = Field(
+        default_factory=dict
+    )
+    runtime_model_revisions: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]] = Field(
+        default_factory=dict
+    )
+    runtime_model_hashes: dict[str, dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]] = (
+        Field(default_factory=dict)
+    )
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    peak_host_memory_bytes: int | None = Field(default=None, ge=0)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ObjectCompletionCandidateRequest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    run_id: Annotated[str, Field(min_length=1)]
+    object_id: Annotated[str, Field(min_length=1)]
+    semantic_label: Annotated[str, Field(min_length=1)]
+    asset_type_hint: AssetType | None = None
+    eligibility_status: CompletionEligibilityStatus
+    backend: CompletionBackend
+    official_repository: Annotated[str, Field(min_length=1)]
+    official_code_commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    checkpoint_repository: Annotated[str, Field(min_length=1)]
+    checkpoint_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    checkpoint_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    runtime_model_revisions: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]] = Field(
+        default_factory=dict
+    )
+    runtime_model_hashes: dict[str, dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]] = (
+        Field(default_factory=dict)
+    )
+    license_policy: CompletionLicenseRecord
+    anchor_frame_id: Annotated[str, Field(min_length=1)]
+    anchor_crop_path: str
+    anchor_crop_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    anchor_crop_transform: tuple[float, float, float, float, float, float, float, float, float]
+    source_frame_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    source_mask_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    generation_seed: int
+    generation_configuration: dict[str, object]
+    output_directory: str
+
+    @field_validator("anchor_crop_path", "output_directory")
+    @classmethod
+    def safe_candidate_request_paths(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class CandidateNativeAsset(StrictModel):
+    relative_path: str
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    format: CandidateNativeFormat
+    size_bytes: int = Field(gt=0)
+    role: Annotated[str, Field(min_length=1)]
+
+    @field_validator("relative_path")
+    @classmethod
+    def safe_native_candidate_path(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class CandidateRenderCapability(StrictModel):
+    renderer: Annotated[str, Field(min_length=1)]
+    supports_rgba: bool
+    supports_depth: bool
+    supports_normals: bool = False
+    camera_axes: Literal["x_right_y_down_z_forward"]
+
+
+class ObjectCompletionCandidate(StrictModel):
+    candidate_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")]
+    object_id: Annotated[str, Field(min_length=1)]
+    semantic_label: Annotated[str, Field(min_length=1)]
+    backend: CompletionBackend
+    anchor_frame_id: Annotated[str, Field(min_length=1)]
+    generation_seed: int
+    native_assets: Annotated[list[CandidateNativeAsset], Field(min_length=1)]
+    native_coordinate_convention: Annotated[str, Field(min_length=1)]
+    native_bounds_min: tuple[float, float, float] | None = None
+    native_bounds_max: tuple[float, float, float] | None = None
+    native_center: tuple[float, float, float] | None = None
+    native_scale: float | None = Field(default=None, gt=0)
+    vertex_count: int | None = Field(default=None, ge=0)
+    face_count: int | None = Field(default=None, ge=0)
+    material_count: int | None = Field(default=None, ge=0)
+    texture_count: int | None = Field(default=None, ge=0)
+    gaussian_count: int | None = Field(default=None, ge=0)
+    backend_predicted_layout: dict[str, object] = Field(default_factory=dict)
+    render_capability: CandidateRenderCapability
+    sampling_method: Annotated[str, Field(min_length=1)]
+    generation_runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    license_record: CompletionLicenseRecord
+    provenance: ProvenanceRecord
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CandidateGenerationManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    backend: CompletionBackend
+    official_repository: Annotated[str, Field(min_length=1)]
+    official_code_commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    checkpoint_repository: Annotated[str, Field(min_length=1)]
+    checkpoint_revision: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    checkpoint_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    runtime_model_revisions: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]] = Field(
+        default_factory=dict
+    )
+    runtime_model_hashes: dict[str, dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]] = (
+        Field(default_factory=dict)
+    )
+    evidence_split_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    crop_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    requests: list[ObjectCompletionCandidateRequest]
+    candidates: list[ObjectCompletionCandidate]
+    failed_candidate_ids: list[str] = Field(default_factory=list)
+    runtime_seconds: float = Field(ge=0)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CandidateRegistrationRequest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    evidence_package_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    generation_manifest_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    candidate_ids: list[str]
+    camera_reconstruction_path: Literal["camera/reconstruction.json"]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    dense_undistortion_manifest_path: Literal["reconstruction/dense/undistortion_manifest.json"]
+    dense_undistortion_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    fitting_inputs: dict[str, dict[str, object]]
+    registration_configuration: dict[str, object]
+    output_directory: Literal["reconstruction/completion"]
+    seed: int
+
+
+class CandidateTransformHypothesis(StrictModel):
+    matrix_world_from_candidate: tuple[
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+    ]
+    inverse_matrix: tuple[
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+    ]
+    scale: float = Field(gt=0)
+    rotation_determinant: float
+    rotation_degrees: float = Field(ge=0, le=180)
+    translation: tuple[float, float, float]
+    measured_surface_median_residual: float = Field(ge=0)
+    measured_surface_p90_residual: float = Field(ge=0)
+    normal_agreement: float = Field(ge=-1, le=1)
+    symmetry_ambiguous: bool = False
+    fitting_refined: bool = False
+    fitting_objective_before: float | None = Field(default=None, ge=0)
+    fitting_objective_after: float | None = Field(default=None, ge=0)
+
+
+class CandidateRegistrationArtifact(StrictModel):
+    candidate_id: Annotated[str, Field(min_length=1)]
+    object_id: Annotated[str, Field(min_length=1)]
+    status: Literal["registered", "symmetry_ambiguous", "registration_failed"]
+    frozen_transform: CandidateTransformHypothesis | None = None
+    fitting_frame_ids: list[str]
+    heldout_frame_ids: list[str]
+    training_points_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    fitting_objective: float | None = Field(default=None, ge=0)
+    failure_reason: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def registration_status_matches_transform(self) -> Self:
+        if self.status == "registration_failed" and self.frozen_transform is not None:
+            raise ValueError("failed registration cannot contain a frozen transform")
+        if self.status != "registration_failed" and self.frozen_transform is None:
+            raise ValueError("successful registration requires a frozen transform")
+        if set(self.fitting_frame_ids) & set(self.heldout_frame_ids):
+            raise ValueError("registration fitting and held-out frames must be disjoint")
+        return self
+
+
+class CandidateRegistrationManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    request_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    registrations: list[CandidateRegistrationArtifact]
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    peak_host_memory_bytes: int | None = Field(default=None, ge=0)
+
+
+class CandidateEvaluationRequest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    registration_manifest_path: Literal["reconstruction/completion/registration_manifest.json"]
+    registration_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    evidence_package_path: Literal["reconstruction/completion/evidence/evidence_package.json"]
+    evidence_package_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    evidence_split_path: Literal["reconstruction/completion/evidence_split.json"]
+    evidence_split_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    generation_manifest_paths: dict[str, str]
+    generation_manifest_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    segmentation_tracking_path: Literal["observations/object_tracks.json"]
+    segmentation_tracking_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_path: Literal["camera/reconstruction.json"]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    dense_depth_manifest_path: Literal["reconstruction/dense/depth_manifest.json"]
+    dense_depth_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    dense_undistortion_manifest_path: Literal["reconstruction/dense/undistortion_manifest.json"]
+    dense_undistortion_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    heldout_inputs: dict[str, dict[str, object]]
+    evaluation_configuration: dict[str, object]
+    output_directory: Literal["reconstruction/completion"]
+    seed: int
+
+    @field_validator("generation_manifest_paths")
+    @classmethod
+    def safe_evaluation_manifest_paths(cls, values: dict[str, str]) -> dict[str, str]:
+        return {name: _relative_artifact_path(path) for name, path in values.items()}
+
+
+class CandidateHeldoutMetrics(StrictModel):
+    mask_precision: float = Field(ge=0, le=1)
+    mask_recall: float = Field(ge=0, le=1)
+    mask_iou: float = Field(ge=0, le=1)
+    per_frame_iou: dict[str, float]
+    dense_depth_relative_residual: float = Field(ge=0)
+    depth_inlier_fraction: float = Field(ge=0, le=1)
+    negative_space_violation_ratio: float = Field(ge=0, le=1)
+    front_of_scene_violation_ratio: float = Field(ge=0, le=1)
+    measured_point_to_candidate_median: float = Field(ge=0)
+    measured_point_to_candidate_p90: float = Field(ge=0)
+    normal_agreement: float = Field(ge=-1, le=1)
+    candidate_visible_coverage: float = Field(ge=0, le=1)
+    validation_view_count: int = Field(ge=0)
+    visible_candidate_area: int = Field(ge=0)
+    occluded_candidate_area: int = Field(ge=0)
+    negative_space_violation_area: int = Field(ge=0)
+    front_of_scene_violation_area: int = Field(ge=0)
+
+
+class CandidateCompletionGain(StrictModel):
+    recall_gain_vs_measured_baseline: float = Field(ge=-1, le=1)
+    iou_gain_vs_measured_baseline: float = Field(ge=-1, le=1)
+    precision_change_vs_measured_baseline: float = Field(ge=-1, le=1)
+    depth_residual_change: float
+    visible_coverage_gain: float = Field(ge=-1, le=1)
+    negative_space_change: float = Field(ge=-1, le=1)
+
+
+class CandidateHeldoutEvaluation(StrictModel):
+    candidate_id: Annotated[str, Field(min_length=1)]
+    object_id: Annotated[str, Field(min_length=1)]
+    backend: CompletionBackend
+    transform_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    heldout_frame_ids: list[str]
+    metrics: CandidateHeldoutMetrics
+    measured_baseline_metrics: CandidateHeldoutMetrics
+    completion_gain: CandidateCompletionGain
+    passed_hard_gates: bool
+    failed_gates: list[str]
+    evaluation_runtime_seconds: float = Field(ge=0)
+    license_record: CompletionLicenseRecord
+    render_paths: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("render_paths")
+    @classmethod
+    def safe_candidate_render_paths(cls, values: dict[str, str]) -> dict[str, str]:
+        return {frame_id: _relative_artifact_path(path) for frame_id, path in values.items()}
+
+
+class CandidateEvaluationManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    registration_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    evaluation_configuration: dict[str, object]
+    evaluations: list[CandidateHeldoutEvaluation]
+    transforms_frozen_before_heldout_evaluation: Literal[True] = True
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    peak_host_memory_bytes: int | None = Field(default=None, ge=0)
+
+
+class SelectedVisualCompletion(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    status: Literal[
+        "accepted_visual_completion",
+        "ambiguous_multiple_candidates",
+        "symmetry_ambiguous",
+        "rejected_inconsistent",
+        "unresolved_no_candidate",
+        "deferred_object_type",
+        "license_blocked",
+        "backend_failed",
+    ]
+    best_research_candidate: str | None = None
+    best_production_eligible_candidate: str | None = None
+    selected_candidate: str | None = None
+    measured_anchor_asset_path: str | None = None
+    selected_native_asset_path: str | None = None
+    selection_rationale: list[str]
+    geometry_status: Literal["complete_visual_candidate"] | None = None
+    observation_grounded: Literal[True] = True
+    physical_validation: Literal["not_implemented"] = "not_implemented"
+    collision_ready: Literal[False] = False
+    sim_ready: Literal[False] = False
+    metric_scale_known: Literal[False] = False
+    canonical_gravity_alignment_known: Literal[False] = False
+
+    @field_validator("measured_anchor_asset_path", "selected_native_asset_path")
+    @classmethod
+    def safe_selected_completion_paths(cls, value: str | None) -> str | None:
+        return _relative_artifact_path(value) if value is not None else None
+
+
+class CandidateSelectionArtifact(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    evaluation_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    license_mode: CompletionLicenseMode
+    ranking_policy: Literal["hard_gates_pareto_deterministic_v1"]
+    objects: list[SelectedVisualCompletion]
+    deterministic_selection_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+class CompletionDiagnostics(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    eligible_object_count: int = Field(ge=0)
+    deferred_object_count: int = Field(ge=0)
+    candidate_count_by_backend: dict[str, int]
+    registered_candidate_count: int = Field(ge=0)
+    evaluated_candidate_count: int = Field(ge=0)
+    passing_candidate_count: int = Field(ge=0)
+    selected_research_count: int = Field(ge=0)
+    selected_production_count: int = Field(ge=0)
+    total_runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    peak_host_memory_bytes: int | None = Field(default=None, ge=0)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class Phase5BConsistencyReport(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    passed: bool
+    checks: list[EndToEndConsistencyCheck]
+    measured_anchor_preserved: Literal[True] = True
+    generated_hidden_geometry_used: bool
+    heldout_validation_used: Literal[True] = True
+    articulated_completion_implemented: Literal[False] = False
+    collision_generation_implemented: Literal[False] = False
+    physical_validation_implemented: Literal[False] = False
+    metric_scale_known: Literal[False] = False
+    canonical_gravity_alignment_known: Literal[False] = False
+    sim_ready_scene_implemented: Literal[False] = False
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def phase5b_summary_matches_checks(self) -> Self:
+        if self.passed != all(check.passed for check in self.checks):
+            raise ValueError("Phase 5B pass status must match its checks")
         return self

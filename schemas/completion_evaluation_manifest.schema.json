@@ -1,0 +1,400 @@
+{
+  "$defs": {
+    "CandidateCompletionGain": {
+      "additionalProperties": false,
+      "properties": {
+        "depth_residual_change": {
+          "title": "Depth Residual Change",
+          "type": "number"
+        },
+        "iou_gain_vs_measured_baseline": {
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Iou Gain Vs Measured Baseline",
+          "type": "number"
+        },
+        "negative_space_change": {
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Negative Space Change",
+          "type": "number"
+        },
+        "precision_change_vs_measured_baseline": {
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Precision Change Vs Measured Baseline",
+          "type": "number"
+        },
+        "recall_gain_vs_measured_baseline": {
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Recall Gain Vs Measured Baseline",
+          "type": "number"
+        },
+        "visible_coverage_gain": {
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Visible Coverage Gain",
+          "type": "number"
+        }
+      },
+      "required": [
+        "recall_gain_vs_measured_baseline",
+        "iou_gain_vs_measured_baseline",
+        "precision_change_vs_measured_baseline",
+        "depth_residual_change",
+        "visible_coverage_gain",
+        "negative_space_change"
+      ],
+      "title": "CandidateCompletionGain",
+      "type": "object"
+    },
+    "CandidateHeldoutEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "$ref": "#/$defs/CompletionBackend"
+        },
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "completion_gain": {
+          "$ref": "#/$defs/CandidateCompletionGain"
+        },
+        "evaluation_runtime_seconds": {
+          "minimum": 0,
+          "title": "Evaluation Runtime Seconds",
+          "type": "number"
+        },
+        "failed_gates": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failed Gates",
+          "type": "array"
+        },
+        "heldout_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heldout Frame Ids",
+          "type": "array"
+        },
+        "license_record": {
+          "$ref": "#/$defs/CompletionLicenseRecord"
+        },
+        "measured_baseline_metrics": {
+          "$ref": "#/$defs/CandidateHeldoutMetrics"
+        },
+        "metrics": {
+          "$ref": "#/$defs/CandidateHeldoutMetrics"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "passed_hard_gates": {
+          "title": "Passed Hard Gates",
+          "type": "boolean"
+        },
+        "render_paths": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Render Paths",
+          "type": "object"
+        },
+        "transform_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Transform Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "object_id",
+        "backend",
+        "transform_sha256",
+        "heldout_frame_ids",
+        "metrics",
+        "measured_baseline_metrics",
+        "completion_gain",
+        "passed_hard_gates",
+        "failed_gates",
+        "evaluation_runtime_seconds",
+        "license_record"
+      ],
+      "title": "CandidateHeldoutEvaluation",
+      "type": "object"
+    },
+    "CandidateHeldoutMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_visible_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Candidate Visible Coverage",
+          "type": "number"
+        },
+        "dense_depth_relative_residual": {
+          "minimum": 0,
+          "title": "Dense Depth Relative Residual",
+          "type": "number"
+        },
+        "depth_inlier_fraction": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Depth Inlier Fraction",
+          "type": "number"
+        },
+        "front_of_scene_violation_area": {
+          "minimum": 0,
+          "title": "Front Of Scene Violation Area",
+          "type": "integer"
+        },
+        "front_of_scene_violation_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Front Of Scene Violation Ratio",
+          "type": "number"
+        },
+        "mask_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mask Iou",
+          "type": "number"
+        },
+        "mask_precision": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mask Precision",
+          "type": "number"
+        },
+        "mask_recall": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mask Recall",
+          "type": "number"
+        },
+        "measured_point_to_candidate_median": {
+          "minimum": 0,
+          "title": "Measured Point To Candidate Median",
+          "type": "number"
+        },
+        "measured_point_to_candidate_p90": {
+          "minimum": 0,
+          "title": "Measured Point To Candidate P90",
+          "type": "number"
+        },
+        "negative_space_violation_area": {
+          "minimum": 0,
+          "title": "Negative Space Violation Area",
+          "type": "integer"
+        },
+        "negative_space_violation_ratio": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Negative Space Violation Ratio",
+          "type": "number"
+        },
+        "normal_agreement": {
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Normal Agreement",
+          "type": "number"
+        },
+        "occluded_candidate_area": {
+          "minimum": 0,
+          "title": "Occluded Candidate Area",
+          "type": "integer"
+        },
+        "per_frame_iou": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Per Frame Iou",
+          "type": "object"
+        },
+        "validation_view_count": {
+          "minimum": 0,
+          "title": "Validation View Count",
+          "type": "integer"
+        },
+        "visible_candidate_area": {
+          "minimum": 0,
+          "title": "Visible Candidate Area",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mask_precision",
+        "mask_recall",
+        "mask_iou",
+        "per_frame_iou",
+        "dense_depth_relative_residual",
+        "depth_inlier_fraction",
+        "negative_space_violation_ratio",
+        "front_of_scene_violation_ratio",
+        "measured_point_to_candidate_median",
+        "measured_point_to_candidate_p90",
+        "normal_agreement",
+        "candidate_visible_coverage",
+        "validation_view_count",
+        "visible_candidate_area",
+        "occluded_candidate_area",
+        "negative_space_violation_area",
+        "front_of_scene_violation_area"
+      ],
+      "title": "CandidateHeldoutMetrics",
+      "type": "object"
+    },
+    "CompletionBackend": {
+      "enum": [
+        "sam3d_objects",
+        "trellis2",
+        "measured_partial_baseline"
+      ],
+      "title": "CompletionBackend",
+      "type": "string"
+    },
+    "CompletionLicenseRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "access_conditions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Access Conditions",
+          "type": "array"
+        },
+        "asset_license": {
+          "minLength": 1,
+          "title": "Asset License",
+          "type": "string"
+        },
+        "backend": {
+          "$ref": "#/$defs/CompletionBackend"
+        },
+        "checkpoint_license": {
+          "minLength": 1,
+          "title": "Checkpoint License",
+          "type": "string"
+        },
+        "code_license": {
+          "minLength": 1,
+          "title": "Code License",
+          "type": "string"
+        },
+        "commercial_use_review_status": {
+          "enum": [
+            "not_reviewed",
+            "research_only",
+            "approved_by_project_policy"
+          ],
+          "title": "Commercial Use Review Status",
+          "type": "string"
+        },
+        "dependency_licenses": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Dependency Licenses",
+          "type": "object"
+        },
+        "production_selectable": {
+          "title": "Production Selectable",
+          "type": "boolean"
+        },
+        "research_evaluation_allowed": {
+          "title": "Research Evaluation Allowed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "backend",
+        "code_license",
+        "checkpoint_license",
+        "asset_license",
+        "commercial_use_review_status",
+        "research_evaluation_allowed",
+        "production_selectable"
+      ],
+      "title": "CompletionLicenseRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "evaluation_configuration": {
+      "additionalProperties": true,
+      "title": "Evaluation Configuration",
+      "type": "object"
+    },
+    "evaluations": {
+      "items": {
+        "$ref": "#/$defs/CandidateHeldoutEvaluation"
+      },
+      "title": "Evaluations",
+      "type": "array"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "registration_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Registration Manifest Sha256",
+      "type": "string"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "transforms_frozen_before_heldout_evaluation": {
+      "const": true,
+      "default": true,
+      "title": "Transforms Frozen Before Heldout Evaluation",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "registration_manifest_sha256",
+    "evaluation_configuration",
+    "evaluations",
+    "runtime_seconds"
+  ],
+  "title": "CandidateEvaluationManifest",
+  "type": "object"
+}

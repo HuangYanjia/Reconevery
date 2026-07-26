@@ -1,0 +1,19 @@
+seed: 42
+stages:
+  completion_evidence_package:
+    adapter:
+      name: completion_evidence_package
+      timeout_s: 3600
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/completion-evaluation-env/bin/python
+        worker_module: completion_evaluation_worker
+        allow_unclassified: false
+        maximum_anchors_per_object: 2
+        minimum_anchor_angle_degrees: 12
+        minimum_heldout_frames: 2
+        fitting_fraction: 0.6
+        crop_margin_ratio: 0.15
+        crop_output_size: 1024
+    depends_on: [camera_recovery, segmentation_tracking, dense_mvs, measured_object_geometry]

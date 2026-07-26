@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 
+from measured_geometry_worker.spacing import estimate_spacing
 from measured_geometry_worker.version import __version__
 
 
@@ -387,18 +388,28 @@ def validate_points(
 
 def fuse(
     points: np.ndarray, normals: np.ndarray, multiplier: float
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict[str, float | int | str]]:
     if len(points) == 0:
-        return points, normals, np.empty(0, dtype=np.int32), np.empty((0, 3), dtype=np.int64)
-    sample = points[: min(len(points), 2000)]
-    if len(sample) > 1:
-        differences = sample[1:] - sample[:-1]
-        spacing = np.median(np.linalg.norm(differences, axis=1))
-    else:
-        spacing = 1e-3
-    voxel = max(float(spacing) * multiplier, 1e-8)
+        raise ValueError("surfel fusion requires at least one measured point")
+    spacing = estimate_spacing(
+        (tuple(float(value) for value in point) for point in points),
+        multiplier=multiplier,
+    )
+    voxel = float(spacing["voxel_size"])
     keys = np.floor(points / voxel).astype(np.int64)
-    order = np.lexsort((keys[:, 2], keys[:, 1], keys[:, 0]))
+    order = np.lexsort(
+        (
+            normals[:, 2],
+            normals[:, 1],
+            normals[:, 0],
+            points[:, 2],
+            points[:, 1],
+            points[:, 0],
+            keys[:, 2],
+            keys[:, 1],
+            keys[:, 0],
+        )
+    )
     keys = keys[order]
     points = points[order]
     normals = normals[order]
@@ -407,7 +418,7 @@ def fuse(
     fused_normals = np.add.reduceat(normals, starts, axis=0)
     lengths = np.linalg.norm(fused_normals, axis=1)
     fused_normals /= np.maximum(lengths[:, None], 1e-12)
-    return fused_points, fused_normals, counts, unique
+    return fused_points, fused_normals, counts, unique, spacing
 
 
 def voxel_component_count(keys: np.ndarray) -> int:
@@ -687,7 +698,7 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> dict[str, o
             indices = np.linspace(0, len(points) - 1, maximum, dtype=int)
             points, normals = points[indices], normals[indices]
         operation_started = time.monotonic()
-        fused_points, fused_normals, counts, voxel_keys = fuse(
+        fused_points, fused_normals, counts, voxel_keys, spacing = fuse(
             points,
             normals,
             float(request["surfel_fusion_configuration"]["voxel_size_multiplier"]),
@@ -767,6 +778,7 @@ def infer(request_path: Path, input_root: Path, output_dir: Path) -> dict[str, o
                 "reprojection_iou": reprojection_iou,
                 "visible_mask_coverage": recall,
                 "connected_component_count": voxel_component_count(voxel_keys),
+                "surfel_spacing": spacing,
                 "measurement_confidence": confidence,
                 "warnings": [
                     "visible surfels only; hidden surfaces and watertight completion are absent",

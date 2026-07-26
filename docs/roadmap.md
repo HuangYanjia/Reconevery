@@ -105,10 +105,14 @@ claim exhaustive vocabulary or physical classification without validation.
 
 ## Later phases
 
-- Phase 5B: separately evaluated hidden-surface completion or object reconstruction that retains
-  Phase 5A measured assets as immutable evidence.
+- Phase 5C: articulated, deformable, or otherwise non-rigid object reconstruction.
 - Phase 6: SceneSmith or equivalent scene compiler adapter.
-- Phase 6: physics repair and explicit simulator exports.
+- A later simulation phase: collision generation, physics repair, and explicit simulator exports.
 
 Each phase must preserve the canonical Scene IR boundary and add real-adapter tests without making
 the CPU-only mock quality gate depend on GPUs, checkpoints, Docker, or network model downloads.
+
+Phase 5B now covers ordinary rigid/static visual candidates from official SAM 3D
+Objects and TRELLIS.2 with measured registration, held-out evaluation, and
+license-aware selection. Articulated completion, collision generation, physical
+validation, SceneSmith, and simulator compilation remain future work.

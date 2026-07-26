@@ -1,0 +1,373 @@
+{
+  "$defs": {
+    "CandidateRegistrationArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "failure_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Reason"
+        },
+        "fitting_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fitting Frame Ids",
+          "type": "array"
+        },
+        "fitting_objective": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Objective"
+        },
+        "frozen_transform": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CandidateTransformHypothesis"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "heldout_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heldout Frame Ids",
+          "type": "array"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "registered",
+            "symmetry_ambiguous",
+            "registration_failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "training_points_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Training Points Sha256",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "object_id",
+        "status",
+        "fitting_frame_ids",
+        "heldout_frame_ids",
+        "training_points_sha256"
+      ],
+      "title": "CandidateRegistrationArtifact",
+      "type": "object"
+    },
+    "CandidateTransformHypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "fitting_objective_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Objective After"
+        },
+        "fitting_objective_before": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Objective Before"
+        },
+        "fitting_refined": {
+          "default": false,
+          "title": "Fitting Refined",
+          "type": "boolean"
+        },
+        "inverse_matrix": {
+          "maxItems": 16,
+          "minItems": 16,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Inverse Matrix",
+          "type": "array"
+        },
+        "matrix_world_from_candidate": {
+          "maxItems": 16,
+          "minItems": 16,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Matrix World From Candidate",
+          "type": "array"
+        },
+        "measured_surface_median_residual": {
+          "minimum": 0,
+          "title": "Measured Surface Median Residual",
+          "type": "number"
+        },
+        "measured_surface_p90_residual": {
+          "minimum": 0,
+          "title": "Measured Surface P90 Residual",
+          "type": "number"
+        },
+        "normal_agreement": {
+          "maximum": 1,
+          "minimum": -1,
+          "title": "Normal Agreement",
+          "type": "number"
+        },
+        "rotation_degrees": {
+          "maximum": 180,
+          "minimum": 0,
+          "title": "Rotation Degrees",
+          "type": "number"
+        },
+        "rotation_determinant": {
+          "title": "Rotation Determinant",
+          "type": "number"
+        },
+        "scale": {
+          "exclusiveMinimum": 0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "symmetry_ambiguous": {
+          "default": false,
+          "title": "Symmetry Ambiguous",
+          "type": "boolean"
+        },
+        "translation": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Translation",
+          "type": "array"
+        }
+      },
+      "required": [
+        "matrix_world_from_candidate",
+        "inverse_matrix",
+        "scale",
+        "rotation_determinant",
+        "rotation_degrees",
+        "translation",
+        "measured_surface_median_residual",
+        "measured_surface_p90_residual",
+        "normal_agreement"
+      ],
+      "title": "CandidateTransformHypothesis",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "registrations": {
+      "items": {
+        "$ref": "#/$defs/CandidateRegistrationArtifact"
+      },
+      "title": "Registrations",
+      "type": "array"
+    },
+    "request_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Request Sha256",
+      "type": "string"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_sha256",
+    "registrations",
+    "runtime_seconds"
+  ],
+  "title": "CandidateRegistrationManifest",
+  "type": "object"
+}

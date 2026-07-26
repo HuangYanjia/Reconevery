@@ -119,3 +119,9 @@ hypotheses as separate Scene IR assets.
 Observed geometry stays open and partial: do not close holes, infer hidden backsides, create
 collisions, or claim simulation readiness. Completion and object reconstruction remain separately
 reviewed future work.
+
+Phase 5B completion must retain the measured asset, keep generation/fitting/held-out
+evidence disjoint, and keep torch, NumPy, SAM 3D Objects, TRELLIS.2, and CUDA outside
+the core package. Model code/revision/hash and license policy are mandatory. A
+research-only candidate must not become production-selected. Do not add articulated
+completion, collision, physics, metric/gravity claims, or simulator export.

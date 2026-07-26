@@ -106,3 +106,10 @@ Phase 5A adds `source=measured`, `geometry_status=partial_measured` assets with
 `completion_status=not_completed`, `sim_ready=false`, and ambiguous scale. A measured
 point/surfel asset and a generated or fused Phase 4 hypothesis may coexist on the same object.
 Neither silently replaces the other, and no measured asset is promoted to collision geometry.
+
+Phase 5B may add a separate `visual_completion_candidate` with
+`geometry_status=complete_visual_candidate`,
+`completion_status=selected_by_observation_validation`,
+`observation_grounded=true`, `physical_validation=not_implemented`,
+`collision_ready=false`, and `sim_ready=false`. Usage policy and production
+selectability are explicit; the `measured_anchor` remains attached to the object.

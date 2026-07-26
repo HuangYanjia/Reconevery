@@ -1,0 +1,116 @@
+{
+  "$defs": {
+    "EndToEndConsistencyCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check_id": {
+          "minLength": 1,
+          "title": "Check Id",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "check_id",
+        "passed",
+        "message"
+      ],
+      "title": "EndToEndConsistencyCheck",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "articulated_completion_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Articulated Completion Implemented",
+      "type": "boolean"
+    },
+    "canonical_gravity_alignment_known": {
+      "const": false,
+      "default": false,
+      "title": "Canonical Gravity Alignment Known",
+      "type": "boolean"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/EndToEndConsistencyCheck"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "collision_generation_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Collision Generation Implemented",
+      "type": "boolean"
+    },
+    "generated_hidden_geometry_used": {
+      "title": "Generated Hidden Geometry Used",
+      "type": "boolean"
+    },
+    "heldout_validation_used": {
+      "const": true,
+      "default": true,
+      "title": "Heldout Validation Used",
+      "type": "boolean"
+    },
+    "measured_anchor_preserved": {
+      "const": true,
+      "default": true,
+      "title": "Measured Anchor Preserved",
+      "type": "boolean"
+    },
+    "metric_scale_known": {
+      "const": false,
+      "default": false,
+      "title": "Metric Scale Known",
+      "type": "boolean"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "physical_validation_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Physical Validation Implemented",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sim_ready_scene_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Sim Ready Scene Implemented",
+      "type": "boolean"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "passed",
+    "checks",
+    "generated_hidden_geometry_used"
+  ],
+  "title": "Phase5BConsistencyReport",
+  "type": "object"
+}

@@ -1,0 +1,251 @@
+{
+  "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "CompletionTrainingEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "heldout_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heldout Frame Ids",
+          "type": "array"
+        },
+        "heldout_measurement_manifest_path": {
+          "title": "Heldout Measurement Manifest Path",
+          "type": "string"
+        },
+        "heldout_measurement_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Heldout Measurement Manifest Sha256",
+          "type": "string"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "training_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Training Frame Ids",
+          "type": "array"
+        },
+        "training_normals_available": {
+          "default": false,
+          "title": "Training Normals Available",
+          "type": "boolean"
+        },
+        "training_point_count": {
+          "minimum": 0,
+          "title": "Training Point Count",
+          "type": "integer"
+        },
+        "training_points_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Training Points Path"
+        },
+        "training_points_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Training Points Sha256"
+        }
+      },
+      "required": [
+        "object_id",
+        "training_frame_ids",
+        "heldout_frame_ids",
+        "training_point_count",
+        "heldout_measurement_manifest_path",
+        "heldout_measurement_manifest_sha256"
+      ],
+      "title": "CompletionTrainingEvidence",
+      "type": "object"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "coordinate_convention": {
+      "$ref": "#/$defs/CoordinateConvention"
+    },
+    "crop_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Crop Manifest Sha256",
+      "type": "string"
+    },
+    "dense_depth_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Dense Depth Manifest Sha256",
+      "type": "string"
+    },
+    "evidence_split_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Evidence Split Sha256",
+      "type": "string"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "measured_geometry_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Measured Geometry Sha256",
+      "type": "string"
+    },
+    "objects": {
+      "items": {
+        "$ref": "#/$defs/CompletionTrainingEvidence"
+      },
+      "title": "Objects",
+      "type": "array"
+    },
+    "scale_status": {
+      "$ref": "#/$defs/ScaleStatus"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segmentation_tracking_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Segmentation Tracking Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "segmentation_tracking_sha256",
+    "dense_depth_manifest_sha256",
+    "measured_geometry_sha256",
+    "evidence_split_sha256",
+    "crop_manifest_sha256",
+    "objects",
+    "coordinate_convention",
+    "scale_status"
+  ],
+  "title": "CompletionEvidencePackage",
+  "type": "object"
+}

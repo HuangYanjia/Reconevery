@@ -1,0 +1,32 @@
+seed: 42
+stages:
+  trellis2_object_candidates:
+    adapter:
+      name: trellis2_object_candidates
+      timeout_s: 14400
+      env: [PATH, HOME, HF_HOME, HF_TOKEN, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: docker
+        docker_image: reconevery/trellis2-objects:phase5b
+        docker_gpus: device=0
+        docker_model_mounts:
+          /absolute/path/to/huggingface-cache: /cache/huggingface
+        checkpoint_hashes:
+          pipeline.json: <exact-sha256>
+          ckpts/model.safetensors: <exact-sha256>
+        runtime_model_revisions:
+          facebook/dinov3-vitl16-pretrain-lvd1689m: ea8dc2863c51be0a264bab82070e3e8836b02d51
+          microsoft/TRELLIS-image-large: 25e0d31ffbebe4b5a97464dd851910efc3002d96
+        runtime_model_hashes:
+          facebook/dinov3-vitl16-pretrain-lvd1689m:
+            model.safetensors: <exact-sha256>
+          microsoft/TRELLIS-image-large:
+            ckpts/ss_dec_conv3d_16l8_fp16.safetensors: <exact-sha256>
+        seeds_per_anchor: 2
+        generation_configuration:
+          official_checkout_path: /opt/trellis2
+          checkpoint_snapshot_path: /cache/huggingface/trellis2-snapshot
+          runtime_model_paths:
+            facebook/dinov3-vitl16-pretrain-lvd1689m: /cache/huggingface/dinov3-snapshot
+            microsoft/TRELLIS-image-large: /cache/huggingface/trellis-image-snapshot
+    depends_on: [completion_evidence_package]

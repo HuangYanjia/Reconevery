@@ -201,12 +201,35 @@ class PipelineRunner:
             adapter_class = REGISTRY[stage_config.adapter.name]
             adapter = adapter_class()
             signature, signature_inputs = self._stage_signature(stage_name, adapter, manifest)
+            artifacts_current = self._artifacts_current(entry)
+            exact_cache_hit = entry.get("signature") == signature
+            migrated_cache_hit = self._can_migrate_selective_signature(
+                entry,
+                signature_inputs,
+            )
             if (
                 resume
                 and entry.get("status") == "succeeded"
-                and entry.get("signature") == signature
-                and self._artifacts_current(entry)
+                and artifacts_current
+                and (exact_cache_hit or migrated_cache_hit)
             ):
+                if migrated_cache_hit:
+                    output_signature = entry.get("output_signature")
+                    if not isinstance(output_signature, str):
+                        raise PipelineConfigurationError(
+                            f"stage {stage_name!r} cannot migrate a cache entry without an "
+                            "output signature"
+                        )
+                    entry.update(
+                        signature=signature,
+                        signature_inputs=signature_inputs,
+                        execution_signature=_stable_digest(
+                            {
+                                "signature": signature,
+                                "output_signature": output_signature,
+                            }
+                        ),
+                    )
                 entry["last_execution"] = "cache_hit"
                 entry["cache_checked_at"] = _now()
                 entry["error"] = None
@@ -760,6 +783,24 @@ class PipelineRunner:
         self, stage_name: str, adapter: Adapter, manifest: Manifest
     ) -> tuple[str, dict[str, Any]]:
         stage_config = self.config.stages[stage_name]
+        signature_context = StageContext(
+            stage_name=stage_name,
+            input_dir=self.input_dir,
+            run_dir=self.run_dir,
+            canonical_run_dir=self.run_dir,
+            config=stage_config,
+            seed=self.config.seed,
+            attempt=0,
+        )
+        declared_specs = self._adapter_input_specs(adapter, signature_context)
+        if declared_specs is not None:
+            return self._selective_stage_signature(
+                stage_name,
+                adapter,
+                manifest,
+                declared_specs,
+            )
+
         upstream_artifacts: dict[str, list[dict[str, str | int]]] = {}
         upstream_signatures: dict[str, str] = {}
         stages = self._stage_entries(manifest)
@@ -802,39 +843,237 @@ class PipelineRunner:
             if not stage_config.depends_on
             else [],
         }
-        signature_context = StageContext(
-            stage_name=stage_name,
-            input_dir=self.input_dir,
-            run_dir=self.run_dir,
-            canonical_run_dir=self.run_dir,
-            config=stage_config,
-            seed=self.config.seed,
-            attempt=0,
-        )
-        declared_specs = self._adapter_input_specs(adapter, signature_context)
-        external_inputs: list[dict[str, str | int]] = []
-        for spec in declared_specs or []:
-            if spec.source_path is None:
+        signature_inputs["external_input_files"] = []
+        return _stable_digest(signature_inputs), signature_inputs
+
+    def _selective_stage_signature(
+        self,
+        stage_name: str,
+        adapter: Adapter,
+        manifest: Manifest,
+        declared_specs: list[InputSpec],
+    ) -> tuple[str, dict[str, Any]]:
+        stage_config = self.config.stages[stage_name]
+        ancestors = self._ancestor_stages(stage_name)
+        stages = self._stage_entries(manifest)
+        records: dict[str, tuple[str, ArtifactRecord]] = {}
+        for producer_stage, entry in stages.items():
+            if producer_stage not in ancestors or entry.get("status") != "succeeded":
                 continue
-            source = spec.source_path.expanduser()
-            if not source.is_absolute():
-                source = Path.cwd() / source
-            source = source.resolve()
+            for raw_record in cast(list[dict[str, Any]], entry.get("artifacts", [])):
+                record = ArtifactRecord.model_validate(raw_record)
+                records[record.relative_path] = (producer_stage, record)
+
+        declared_inputs: list[dict[str, str | int | bool]] = []
+        destinations: set[str] = set()
+        for spec in declared_specs:
+            self._validate_input_spec(stage_name, spec)
+            if spec.relative_path in destinations:
+                raise PipelineConfigurationError(
+                    f"stage {stage_name!r} declared duplicate input destination "
+                    f"{spec.relative_path!r}"
+                )
+            destinations.add(spec.relative_path)
+
+            if spec.source_path is not None:
+                source = spec.source_path.expanduser()
+                if not source.is_absolute():
+                    source = Path.cwd() / source
+                source = source.resolve()
+                source_artifact_path = str(source)
+                source_kind = "external_configuration"
+                producer_stage = "external"
+                source_record: ArtifactRecord | None = None
+            else:
+                source_artifact_path = spec.source_artifact_path or spec.relative_path
+                resolved = records.get(source_artifact_path)
+                if resolved is None:
+                    if not spec.required:
+                        continue
+                    raise FileNotFoundError(
+                        f"stage {stage_name!r} requires undeclared or missing upstream artifact "
+                        f"{source_artifact_path!r}"
+                    )
+                producer_stage, source_record = resolved
+                if (
+                    spec.artifact_type != source_record.artifact_type
+                    and spec.artifact_type != "any"
+                ):
+                    raise PipelineConfigurationError(
+                        f"stage {stage_name!r} requested artifact "
+                        f"{source_artifact_path!r} as {spec.artifact_type!r}, but its type is "
+                        f"{source_record.artifact_type!r}"
+                    )
+                source = self.run_dir / source_record.relative_path
+                source_kind = "ancestor_artifact"
+
             if not source.is_file():
                 if not spec.required:
                     continue
-                raise FileNotFoundError(
-                    f"stage {stage_name!r} requires missing external input {source}"
+                raise FileNotFoundError(f"stage {stage_name!r} requires missing input {source}")
+            if source.is_symlink():
+                raise PipelineConfigurationError(
+                    f"stage {stage_name!r} input source must not be a symlink: {source}"
                 )
-            external_inputs.append(
-                {
-                    "relative_path": spec.relative_path,
-                    "sha256": _sha256(source),
-                    "size_bytes": source.stat().st_size,
-                }
+            source_hash = _sha256(source)
+            expected_hash = spec.expected_sha256 or (
+                source_record.sha256 if source_record is not None else None
             )
-        signature_inputs["external_input_files"] = external_inputs
+            if expected_hash is not None and source_hash != expected_hash:
+                raise FileNotFoundError(
+                    f"stage {stage_name!r} requires stale input {source}; "
+                    f"expected sha256 {expected_hash}, found {source_hash}"
+                )
+            signature_record: dict[str, str | int | bool] = {
+                "relative_path": spec.relative_path,
+                "source": source_artifact_path,
+                "source_kind": source_kind,
+                "producer_stage": producer_stage,
+                "artifact_type": spec.artifact_type,
+                "sha256": source_hash,
+                "size_bytes": source.stat().st_size,
+                "materialization_mode": spec.materialization_mode,
+                "include_producer_signature": spec.include_producer_signature,
+            }
+            if source_record is not None and spec.include_producer_signature:
+                producer_entry = self._stage_entry(stages, producer_stage)
+                producer_signature = producer_entry.get("execution_signature")
+                if not isinstance(producer_signature, str):
+                    raise PipelineConfigurationError(
+                        f"stage {stage_name!r} requires stage {producer_stage!r}, but that "
+                        "producer has no successful execution signature"
+                    )
+                signature_record["producer_execution_signature"] = producer_signature
+            declared_inputs.append(signature_record)
+
+        signature_inputs: dict[str, Any] = {
+            "stage": stage_name,
+            "stage_configuration": stage_config.model_dump(mode="json"),
+            "adapter_name": adapter.name,
+            "adapter_version": adapter.version,
+            "seed": self.config.seed,
+            "declared_inputs": sorted(
+                declared_inputs,
+                key=lambda item: (
+                    str(item["relative_path"]),
+                    str(item["source"]),
+                ),
+            ),
+            "source_input_files": _source_snapshot(self.input_dir)
+            if not stage_config.depends_on
+            else [],
+        }
         return _stable_digest(signature_inputs), signature_inputs
+
+    @staticmethod
+    def _can_migrate_selective_signature(
+        entry: StageEntry,
+        new_inputs: dict[str, Any],
+    ) -> bool:
+        declared = new_inputs.get("declared_inputs")
+        legacy = entry.get("signature_inputs")
+        if (
+            not isinstance(declared, list)
+            or not isinstance(legacy, dict)
+            or legacy.get("stage") != new_inputs.get("stage")
+            or legacy.get("stage_configuration") != new_inputs.get("stage_configuration")
+            or legacy.get("adapter_name") != new_inputs.get("adapter_name")
+            or legacy.get("adapter_version") != new_inputs.get("adapter_version")
+            or legacy.get("seed") != new_inputs.get("seed")
+        ):
+            return False
+
+        legacy_declared = legacy.get("declared_inputs")
+        if isinstance(legacy_declared, list):
+            comparable_fields = (
+                "relative_path",
+                "source",
+                "source_kind",
+                "producer_stage",
+                "artifact_type",
+                "sha256",
+                "size_bytes",
+                "materialization_mode",
+            )
+            old_by_identity = {
+                tuple(raw.get(field) for field in comparable_fields): raw
+                for raw in legacy_declared
+                if isinstance(raw, dict)
+            }
+            for raw in declared:
+                if not isinstance(raw, dict):
+                    return False
+                identity = tuple(raw.get(field) for field in comparable_fields)
+                prior = old_by_identity.get(identity)
+                if prior is None:
+                    return False
+                producer_signature = raw.get("producer_execution_signature")
+                if producer_signature is not None and (
+                    not isinstance(producer_signature, str)
+                    or prior.get("producer_execution_signature") != producer_signature
+                ):
+                    return False
+            return True
+
+        legacy_artifacts: dict[str, tuple[str, int]] = {}
+        raw_artifact_groups = legacy.get("input_artifacts")
+        if isinstance(raw_artifact_groups, dict):
+            for raw_group in raw_artifact_groups.values():
+                if not isinstance(raw_group, list):
+                    continue
+                for raw in raw_group:
+                    if not isinstance(raw, dict):
+                        continue
+                    path = raw.get("relative_path")
+                    sha256 = raw.get("sha256")
+                    size = raw.get("size_bytes")
+                    if isinstance(path, str) and isinstance(sha256, str) and isinstance(size, int):
+                        legacy_artifacts[path] = (sha256, size)
+        legacy_external: dict[str, tuple[str, int]] = {}
+        raw_external = legacy.get("external_input_files")
+        if isinstance(raw_external, list):
+            for raw in raw_external:
+                if not isinstance(raw, dict):
+                    continue
+                path = raw.get("relative_path")
+                sha256 = raw.get("sha256")
+                size = raw.get("size_bytes")
+                if isinstance(path, str) and isinstance(sha256, str) and isinstance(size, int):
+                    legacy_external[path] = (sha256, size)
+        legacy_producer_signatures = legacy.get("upstream_execution_signatures")
+        if not isinstance(legacy_producer_signatures, dict):
+            legacy_producer_signatures = {}
+
+        for raw in declared:
+            if not isinstance(raw, dict):
+                return False
+            source_kind = raw.get("source_kind")
+            lookup = (
+                legacy_external if source_kind == "external_configuration" else legacy_artifacts
+            )
+            lookup_path = (
+                raw.get("relative_path")
+                if source_kind == "external_configuration"
+                else raw.get("source")
+            )
+            sha256 = raw.get("sha256")
+            size = raw.get("size_bytes")
+            if (
+                not isinstance(lookup_path, str)
+                or not isinstance(sha256, str)
+                or not isinstance(size, int)
+                or lookup.get(lookup_path) != (sha256, size)
+            ):
+                return False
+            producer_signature = raw.get("producer_execution_signature")
+            producer_stage = raw.get("producer_stage")
+            if producer_signature is not None and (
+                not isinstance(producer_signature, str)
+                or not isinstance(producer_stage, str)
+                or legacy_producer_signatures.get(producer_stage) != producer_signature
+            ):
+                return False
+        return True
 
     def _validate_execution_dependencies(self, manifest: Manifest, chosen: set[str]) -> None:
         stages = self._stage_entries(manifest)

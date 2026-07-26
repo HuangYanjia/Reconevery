@@ -1,0 +1,235 @@
+{
+  "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_reconstruction_path": {
+      "const": "camera/reconstruction.json",
+      "title": "Camera Reconstruction Path",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "coordinate_convention": {
+      "$ref": "#/$defs/CoordinateConvention"
+    },
+    "crop_manifest_path": {
+      "const": "reconstruction/completion/crop_manifest.json",
+      "title": "Crop Manifest Path",
+      "type": "string"
+    },
+    "crop_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Crop Manifest Sha256",
+      "type": "string"
+    },
+    "dense_depth_manifest_path": {
+      "const": "reconstruction/dense/depth_manifest.json",
+      "title": "Dense Depth Manifest Path",
+      "type": "string"
+    },
+    "dense_depth_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Dense Depth Manifest Sha256",
+      "type": "string"
+    },
+    "dense_undistortion_manifest_path": {
+      "const": "reconstruction/dense/undistortion_manifest.json",
+      "title": "Dense Undistortion Manifest Path",
+      "type": "string"
+    },
+    "dense_undistortion_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Dense Undistortion Manifest Sha256",
+      "type": "string"
+    },
+    "evidence_split_path": {
+      "const": "reconstruction/completion/evidence_split.json",
+      "title": "Evidence Split Path",
+      "type": "string"
+    },
+    "evidence_split_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Evidence Split Sha256",
+      "type": "string"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "manifest_path": {
+      "const": "inputs/manifest.json",
+      "default": "inputs/manifest.json",
+      "title": "Manifest Path",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "measured_geometry_path": {
+      "const": "reconstruction/measured_objects/geometry_manifest.json",
+      "title": "Measured Geometry Path",
+      "type": "string"
+    },
+    "measured_geometry_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Measured Geometry Sha256",
+      "type": "string"
+    },
+    "object_inputs": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Object Inputs",
+      "type": "object"
+    },
+    "output_directory": {
+      "const": "reconstruction/completion/evidence",
+      "title": "Output Directory",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "segmentation_tracking_path": {
+      "const": "observations/object_tracks.json",
+      "title": "Segmentation Tracking Path",
+      "type": "string"
+    },
+    "segmentation_tracking_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Segmentation Tracking Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_path",
+    "camera_reconstruction_sha256",
+    "segmentation_tracking_path",
+    "segmentation_tracking_sha256",
+    "dense_depth_manifest_path",
+    "dense_depth_manifest_sha256",
+    "dense_undistortion_manifest_path",
+    "dense_undistortion_manifest_sha256",
+    "measured_geometry_path",
+    "measured_geometry_sha256",
+    "evidence_split_path",
+    "evidence_split_sha256",
+    "crop_manifest_path",
+    "crop_manifest_sha256",
+    "object_inputs",
+    "coordinate_convention",
+    "output_directory",
+    "seed"
+  ],
+  "title": "CompletionEvidencePreparationRequest",
+  "type": "object"
+}

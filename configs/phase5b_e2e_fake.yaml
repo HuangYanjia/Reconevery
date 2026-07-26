@@ -1,0 +1,145 @@
+seed: 42
+stages:
+  ingest:
+    adapter:
+      name: ffmpeg_ingest
+      env: [PATH, HOME, TMPDIR]
+      config:
+        input_mode: image_directory
+        max_frames: 16
+        resize_max_edge: 32
+        blur_threshold: 0.0
+        duplicate_threshold: 0.0
+        min_brightness: 0.0
+        max_brightness: 255.0
+    depends_on: []
+  camera_recovery:
+    adapter:
+      name: colmap_camera_recovery
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: local
+        executable: tests/fixtures/fake_colmap_executable.py
+        matcher: sequential
+        camera_model: PINHOLE
+        single_camera: true
+        use_gpu: false
+        min_registered_frames: 3
+        min_registration_ratio: 1.0
+        mapper:
+          multiple_models: false
+    depends_on: [ingest]
+  segmentation_tracking:
+    adapter:
+      name: sam3_segmentation_tracking
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_sam3_worker.py
+        prompt_manifest: configs/prompts/tabletop.yaml
+        device: cpu
+        precision: float32
+        strategy: detect_then_track
+        anchor_strategy: best_quality_registered_frame
+        anchor_count: 1
+        tracking_direction: forward_backward
+        score_threshold: 0.5
+        min_mask_area_pixels: 8
+        min_track_observations: 2
+        min_track_coverage: 0.1
+        fake_mode: multiple_instances
+    depends_on: [ingest, camera_recovery]
+  dense_mvs:
+    adapter:
+      name: dense_mvs
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_dense_mvs_worker.py
+        use_gpu: false
+        max_image_size: 32
+        fake_mode: success
+    depends_on: [ingest, camera_recovery]
+  measured_object_geometry:
+    adapter:
+      name: measured_object_geometry
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_measured_geometry_worker.py
+        fake_mode: success
+    depends_on: [camera_recovery, segmentation_tracking, dense_mvs]
+  completion_evidence_package:
+    adapter:
+      name: completion_evidence_package
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_completion_evaluation_worker.py
+        allow_unclassified: true
+        maximum_anchors_per_object: 1
+        minimum_heldout_frames: 1
+        crop_output_size: 128
+        fake_mode: success
+    depends_on: [camera_recovery, segmentation_tracking, dense_mvs, measured_object_geometry]
+  sam3d_object_candidates:
+    adapter:
+      name: sam3d_object_candidates
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_sam3d_objects_worker.py
+        fake_mode: success
+    depends_on: [completion_evidence_package]
+  trellis2_object_candidates:
+    adapter:
+      name: trellis2_object_candidates
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_trellis2_objects_worker.py
+        fake_mode: success
+    depends_on: [completion_evidence_package]
+  measured_only_candidates:
+    adapter:
+      name: measured_only_candidates
+      config: {}
+    depends_on: [completion_evidence_package, measured_object_geometry]
+  completion_candidate_registration:
+    adapter:
+      name: completion_candidate_registration
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_completion_evaluation_worker.py
+        fake_mode: success
+    depends_on: [sam3d_object_candidates, trellis2_object_candidates, measured_only_candidates]
+  completion_candidate_evaluation:
+    adapter:
+      name: completion_candidate_evaluation
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_completion_evaluation_worker.py
+        minimum_validation_views: 1
+        fake_mode: success
+    depends_on: [completion_candidate_registration]
+  completion_candidate_selection:
+    adapter:
+      name: completion_candidate_selection
+      config:
+        license_mode: research_evaluation
+    depends_on: [completion_candidate_evaluation]
+  phase5b_consistency_validation:
+    adapter:
+      name: phase5b_consistency_validation
+      config: {}
+    depends_on: [completion_candidate_selection]

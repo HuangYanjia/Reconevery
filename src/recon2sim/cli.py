@@ -18,6 +18,12 @@ from recon2sim.artifacts import (
     CameraMeshAlignmentPreviewManifest,
     CameraMeshAlignmentResult,
     CameraReconstruction,
+    CandidateEvaluationManifest,
+    CandidateGenerationManifest,
+    CandidateSelectionArtifact,
+    CompletionDiagnostics,
+    CompletionEligibilityArtifact,
+    CompletionEvidenceSplit,
     DenseDepthManifest,
     DenseFusionArtifact,
     DenseMVSDiagnostics,
@@ -40,6 +46,7 @@ from recon2sim.artifacts import (
     Phase4_2ConsistencyReport,
     Phase4ConsistencyReport,
     Phase5AConsistencyReport,
+    Phase5BConsistencyReport,
     Sam3WorkerManifest,
     SegmentationDiagnostics,
     SegmentationPromptManifest,
@@ -92,6 +99,10 @@ dense_app = typer.Typer(
     help="Inspect and export official COLMAP dense MVS artifacts.",
     no_args_is_help=True,
 )
+completion_app = typer.Typer(
+    help="Inspect rigid visual-completion candidates and held-out selection.",
+    no_args_is_help=True,
+)
 app.add_typer(adapters_app, name="adapters")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(camera_app, name="camera")
@@ -101,6 +112,7 @@ app.add_typer(validation_app, name="validation")
 app.add_typer(objects_app, name="objects")
 app.add_typer(alignment_app, name="alignment")
 app.add_typer(dense_app, name="dense")
+app.add_typer(completion_app, name="completion")
 
 
 @app.command()
@@ -1401,3 +1413,271 @@ def verify_phase5a(
         failed = [check.check_id for check in report.checks if not check.passed]
         raise typer.BadParameter(f"Phase 5A consistency verification failed: {failed}")
     typer.echo(f"Phase 5A measured-geometry consistency passed ({len(report.checks)} checks)")
+
+
+def _completion_selection(run_dir: Path) -> CandidateSelectionArtifact:
+    return _artifact_model(
+        run_dir,
+        "reconstruction/completion/selection.json",
+        CandidateSelectionArtifact,
+    )
+
+
+def _completion_generations(run_dir: Path) -> list[CandidateGenerationManifest]:
+    return [
+        _artifact_model(run_dir, path, CandidateGenerationManifest)
+        for path in (
+            "reconstruction/completion/sam3d_generation_manifest.json",
+            "reconstruction/completion/trellis2_generation_manifest.json",
+            "reconstruction/completion/measured_generation_manifest.json",
+        )
+    ]
+
+
+@completion_app.command("inspect")
+def inspect_completion(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    diagnostics = _artifact_model(
+        run_dir,
+        "reconstruction/completion/diagnostics.json",
+        CompletionDiagnostics,
+    )
+    selection = _completion_selection(run_dir)
+    typer.echo(
+        json.dumps(
+            {
+                **diagnostics.model_dump(mode="json"),
+                "objects": [item.model_dump(mode="json") for item in selection.objects],
+            },
+            indent=2,
+        )
+    )
+
+
+@completion_app.command("inspect-object")
+def inspect_completion_object(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Canonical object ID.")],
+) -> None:
+    eligibility = _artifact_model(
+        run_dir,
+        "reconstruction/completion/eligibility.json",
+        CompletionEligibilityArtifact,
+    )
+    split = _artifact_model(
+        run_dir,
+        "reconstruction/completion/evidence_split.json",
+        CompletionEvidenceSplit,
+    )
+    selection = _completion_selection(run_dir)
+    payload = {
+        "eligibility": next(
+            (
+                item.model_dump(mode="json")
+                for item in eligibility.records
+                if item.object_id == object_id
+            ),
+            None,
+        ),
+        "evidence_split": next(
+            (item.model_dump(mode="json") for item in split.objects if item.object_id == object_id),
+            None,
+        ),
+        "selection": next(
+            (
+                item.model_dump(mode="json")
+                for item in selection.objects
+                if item.object_id == object_id
+            ),
+            None,
+        ),
+    }
+    if payload["eligibility"] is None:
+        raise typer.BadParameter(f"completion has no object {object_id!r}")
+    typer.echo(json.dumps(payload, indent=2))
+
+
+@completion_app.command("inspect-candidate")
+def inspect_completion_candidate(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    candidate_id: Annotated[str, typer.Argument(help="Deterministic candidate ID.")],
+) -> None:
+    for generation in _completion_generations(run_dir):
+        for candidate in generation.candidates:
+            if candidate.candidate_id == candidate_id:
+                typer.echo(json.dumps(candidate.model_dump(mode="json"), indent=2))
+                return
+    raise typer.BadParameter(f"completion has no candidate {candidate_id!r}")
+
+
+@completion_app.command("render-previews")
+def render_completion_previews(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    from recon2sim.adapters.completion_selection import CompletionSelectionAdapter
+
+    selection = _completion_selection(run_dir)
+    evaluation = _artifact_model(
+        run_dir,
+        "reconstruction/completion/evaluation_manifest.json",
+        CandidateEvaluationManifest,
+    )
+    CompletionSelectionAdapter._write_previews(
+        run_dir / "reconstruction/completion/previews",
+        selection,
+        evaluation,
+        run_dir,
+    )
+    typer.echo("regenerated deterministic Phase 5B completion previews")
+
+
+@completion_app.command("compare-candidates")
+def compare_completion_candidates(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Canonical object ID.")],
+) -> None:
+    evaluation = _artifact_model(
+        run_dir,
+        "reconstruction/completion/evaluation_manifest.json",
+        CandidateEvaluationManifest,
+    )
+    items = [
+        item.model_dump(mode="json")
+        for item in evaluation.evaluations
+        if item.object_id == object_id
+    ]
+    if not items:
+        raise typer.BadParameter(f"completion has no evaluations for {object_id!r}")
+    typer.echo(json.dumps(items, indent=2))
+
+
+def _export_completion_candidate(run_dir: Path, candidate_id: str, output: Path) -> None:
+    for generation in _completion_generations(run_dir):
+        for candidate in generation.candidates:
+            if candidate.candidate_id != candidate_id:
+                continue
+            source = run_dir / candidate.native_assets[0].relative_path
+            output.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, output)
+            return
+    raise typer.BadParameter(f"completion has no candidate {candidate_id!r}")
+
+
+@completion_app.command("export-candidate")
+def export_completion_candidate(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    candidate_id: Annotated[str, typer.Argument(help="Deterministic candidate ID.")],
+    output: Annotated[Path, typer.Option("--output", help="Destination asset path.")],
+) -> None:
+    _export_completion_candidate(run_dir, candidate_id, output)
+    typer.echo(f"exported {candidate_id} to {output}")
+
+
+@completion_app.command("export-selected")
+def export_selected_completion(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Canonical object ID.")],
+    output: Annotated[Path, typer.Option("--output", help="Destination asset path.")],
+) -> None:
+    selected = next(
+        (item for item in _completion_selection(run_dir).objects if item.object_id == object_id),
+        None,
+    )
+    if selected is None or selected.selected_candidate is None:
+        raise typer.BadParameter(f"{object_id!r} has no selected completion")
+    _export_completion_candidate(run_dir, selected.selected_candidate, output)
+    typer.echo(f"exported selected completion for {object_id} to {output}")
+
+
+@completion_app.command("explain-selection")
+def explain_completion_selection(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Canonical object ID.")],
+) -> None:
+    evaluation = _artifact_model(
+        run_dir,
+        "reconstruction/completion/evaluation_manifest.json",
+        CandidateEvaluationManifest,
+    )
+    selected = next(
+        (item for item in _completion_selection(run_dir).objects if item.object_id == object_id),
+        None,
+    )
+    if selected is None:
+        raise typer.BadParameter(f"completion has no object {object_id!r}")
+    typer.echo(
+        json.dumps(
+            {
+                "selection": selected.model_dump(mode="json"),
+                "candidate_gates": [
+                    {
+                        "candidate_id": item.candidate_id,
+                        "passed": item.passed_hard_gates,
+                        "failed_gates": item.failed_gates,
+                        "metrics": item.metrics.model_dump(mode="json"),
+                    }
+                    for item in evaluation.evaluations
+                    if item.object_id == object_id
+                ],
+            },
+            indent=2,
+        )
+    )
+
+
+@validation_app.command("inspect-phase5b")
+def inspect_phase5b(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase5b_rigid_completion.json",
+        Phase5BConsistencyReport,
+    )
+    typer.echo(json.dumps(report.model_dump(mode="json"), indent=2))
+
+
+@validation_app.command("verify-phase5b")
+def verify_phase5b(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase5b_rigid_completion.json",
+        Phase5BConsistencyReport,
+    )
+    if not report.passed:
+        failed = [check.check_id for check in report.checks if not check.passed]
+        raise typer.BadParameter(f"Phase 5B consistency verification failed: {failed}")
+    typer.echo(f"Phase 5B rigid-completion consistency passed ({len(report.checks)} checks)")
