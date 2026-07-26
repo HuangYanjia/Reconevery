@@ -67,6 +67,12 @@ class WorkerRequest(StrictModel):
     global_reconstruction_sha256: str
     global_mesh_path: str
     global_mesh_sha256: str
+    alignment_policy: Literal["none", "use_if_accepted", "require_accepted"] = "none"
+    alignment_path: str | None = None
+    alignment_sha256: str | None = None
+    alignment_status: str | None = None
+    alignment_accepted: bool = False
+    matrix_original_mesh_to_aligned_colmap: list[list[float]] | None = None
     lifting_method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"]
     rasterization_configuration: dict[str, Any]
     mask_processing_configuration: dict[str, Any]
@@ -86,11 +92,12 @@ class WorkerRequest(StrictModel):
         "segmentation_tracking_path",
         "global_reconstruction_path",
         "global_mesh_path",
+        "alignment_path",
         "output_directory",
     )
     @classmethod
-    def safe_request_paths(cls, value: str) -> str:
-        return relative_path(value)
+    def safe_request_paths(cls, value: str | None) -> str | None:
+        return relative_path(value) if value is not None else None
 
     @model_validator(mode="after")
     def raw_colmap_only(self) -> WorkerRequest:
@@ -109,6 +116,21 @@ class WorkerRequest(StrictModel):
         }
         if mismatches:
             raise ValueError(f"worker requires raw COLMAP coordinate semantics: {mismatches}")
+        if self.alignment_policy == "none":
+            if (
+                self.alignment_path is not None
+                or self.alignment_sha256 is not None
+                or self.alignment_accepted
+                or self.matrix_original_mesh_to_aligned_colmap is not None
+            ):
+                raise ValueError("alignment_policy=none cannot apply alignment")
+        else:
+            if self.alignment_path is None or self.alignment_sha256 is None:
+                raise ValueError("alignment-aware lifting requires alignment artifact")
+            if self.alignment_accepted != (self.matrix_original_mesh_to_aligned_colmap is not None):
+                raise ValueError("accepted alignment must carry exactly one matrix")
+            if self.alignment_policy == "require_accepted" and not self.alignment_accepted:
+                raise ValueError("require_accepted requires accepted alignment")
         return self
 
 

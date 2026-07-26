@@ -1,0 +1,133 @@
+seed: 42
+stages:
+  ingest:
+    adapter:
+      name: ffmpeg_ingest
+      timeout_s: 3600
+      env: [PATH, HOME, TMPDIR, LD_LIBRARY_PATH]
+      config:
+        input_mode: auto
+        target_fps: 3.0
+        max_frames: 32
+        resize_max_edge: 1920
+        blur_threshold: 0.0
+        duplicate_threshold: 0.0
+        min_brightness: 5.0
+        max_brightness: 250.0
+    depends_on: []
+
+  camera_recovery:
+    adapter:
+      name: colmap_camera_recovery
+      timeout_s: 14400
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local
+        executable: colmap
+        matcher: sequential
+        camera_model: OPENCV
+        single_camera: true
+        use_gpu: true
+        min_registered_frames: 12
+        min_registration_ratio: 0.4
+    depends_on: [ingest]
+
+  segmentation_tracking:
+    adapter:
+      name: sam3_segmentation_tracking
+      timeout_s: 14400
+      env: [PATH, HOME, TMPDIR, HF_HOME, HF_TOKEN, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/sam3-env/bin/python
+        worker_module: sam3_worker
+        prompt_manifest: configs/prompts/tabletop.yaml
+        checkpoint_repository: facebook/sam3.1
+        checkpoint_revision: daa63191845a41281374e725f4c9e51c7a824460
+        model_mode: sam3.1
+        device: cuda
+        precision: bfloat16
+        strategy: detect_then_track
+        anchor_strategy: best_quality_registered_frame
+        anchor_count: 1
+        tracking_direction: forward_backward
+    depends_on: [ingest, camera_recovery]
+
+  genrecon_camera_package:
+    adapter:
+      name: genrecon_camera_package
+      config: {}
+    depends_on: [ingest, camera_recovery]
+
+  global_reconstruction:
+    adapter:
+      name: genrecon_global_reconstruction
+      timeout_s: 43200
+      env: [PATH, HOME, TMPDIR, HF_HOME, HF_TOKEN, CUDA_VISIBLE_DEVICES, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/genrecon-env/bin/python
+        worker_module: genrecon_worker
+        official_checkout_path: /absolute/path/to/GenRecon
+        sparse_structure_checkpoint: /absolute/path/to/sparse_structure.pt
+        shape_checkpoint: /absolute/path/to/shape_slat.pt
+        texture_checkpoint: /absolute/path/to/texture_slat.pt
+        device: cuda
+        precision: float16
+        requested_max_views: 32
+        working_transform_strategy: pca_scene_axes
+    depends_on: [ingest, camera_recovery, genrecon_camera_package]
+
+  camera_mesh_alignment:
+    adapter:
+      name: camera_mesh_alignment
+      timeout_s: 14400
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/genrecon-env/bin/python
+        worker_module: alignment_worker
+        device: cuda
+        raster_scale: 0.25
+        face_chunk_size: 1000000
+        maximum_iterations: 8
+        minimum_validation_observations: 100
+    depends_on:
+      - camera_recovery
+      - genrecon_camera_package
+      - global_reconstruction
+
+  object_surface_lifting:
+    adapter:
+      name: object_surface_lifting
+      timeout_s: 28800
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/genrecon-env/bin/python
+        worker_module: object_lifting_worker
+        device: cuda
+        alignment_policy: use_if_accepted
+        lifting_method: surface_sample_fusion_v2
+        raster_scale: 0.5
+        face_chunk_size: 1000000
+    depends_on:
+      - camera_recovery
+      - segmentation_tracking
+      - global_reconstruction
+      - camera_mesh_alignment
+
+  phase4_consistency_validation:
+    adapter:
+      name: phase4_consistency_validation
+      config: {}
+    depends_on: [object_surface_lifting]
+
+  phase4_2_consistency_validation:
+    adapter:
+      name: phase4_2_consistency_validation
+      config: {}
+    depends_on:
+      - camera_mesh_alignment
+      - object_surface_lifting
+      - phase4_consistency_validation

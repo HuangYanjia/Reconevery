@@ -113,6 +113,8 @@ def _load_inputs(
         request.global_reconstruction_sha256,
     )
     mesh_path = require_hash(input_root, request.global_mesh_path, request.global_mesh_sha256)
+    if request.alignment_path is not None and request.alignment_sha256 is not None:
+        require_hash(input_root, request.alignment_path, request.alignment_sha256)
     package_paths = {
         "manifest": require_hash(
             input_root,
@@ -511,6 +513,19 @@ def run_inference(
     manifest, camera, _tracks, mesh_path, package_paths = _load_inputs(request, input_root)
     load_start = time.monotonic()
     vertices, faces = _load_mesh(mesh_path)
+    if request.alignment_accepted:
+        matrix = np.asarray(
+            request.matrix_original_mesh_to_aligned_colmap,
+            dtype=np.float64,
+        )
+        homogeneous = np.concatenate(
+            [vertices.astype(np.float64), np.ones((len(vertices), 1), dtype=np.float64)],
+            axis=1,
+        )
+        transformed = homogeneous @ matrix.T
+        if not np.isfinite(transformed).all() or np.any(np.abs(transformed[:, 3]) < 1e-12):
+            raise ValueError("alignment transform produced invalid homogeneous vertices")
+        vertices = (transformed[:, :3] / transformed[:, 3:4]).astype(np.float32)
     mesh_load_seconds = time.monotonic() - load_start
     expected_vertices = int(request.rasterization_configuration["global_vertex_count"])
     expected_faces = int(request.rasterization_configuration["global_face_count"])
@@ -1130,6 +1145,10 @@ def run_inference(
         "segmentation_tracking_sha256": request.segmentation_tracking_sha256,
         "global_reconstruction_sha256": request.global_reconstruction_sha256,
         "global_mesh_sha256": request.global_mesh_sha256,
+        "alignment_policy": request.alignment_policy,
+        "alignment_sha256": request.alignment_sha256,
+        "alignment_status": request.alignment_status,
+        "alignment_accepted": request.alignment_accepted,
         "coordinate_convention": request.coordinate_convention,
         "scale_status": "scale_ambiguous",
         "geometry_status": "partial_observation_supported",
@@ -1266,6 +1285,10 @@ def run_inference(
         "segmentation_tracking_sha256": request.segmentation_tracking_sha256,
         "global_reconstruction_sha256": request.global_reconstruction_sha256,
         "global_mesh_sha256": request.global_mesh_sha256,
+        "alignment_policy": request.alignment_policy,
+        "alignment_sha256": request.alignment_sha256,
+        "alignment_status": request.alignment_status,
+        "alignment_accepted": request.alignment_accepted,
         "processed_registered_frame_ids": [frame.frame_id for frame in frames],
         "global_vertex_count": len(vertices),
         "global_face_count": len(faces),

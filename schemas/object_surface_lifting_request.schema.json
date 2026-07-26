@@ -169,6 +169,59 @@
   },
   "additionalProperties": false,
   "properties": {
+    "alignment_accepted": {
+      "default": false,
+      "title": "Alignment Accepted",
+      "type": "boolean"
+    },
+    "alignment_path": {
+      "anyOf": [
+        {
+          "const": "reconstruction/alignment/alignment.json",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Alignment Path"
+    },
+    "alignment_policy": {
+      "default": "none",
+      "enum": [
+        "none",
+        "use_if_accepted",
+        "require_accepted"
+      ],
+      "title": "Alignment Policy",
+      "type": "string"
+    },
+    "alignment_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Alignment Sha256"
+    },
+    "alignment_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Alignment Status"
+    },
     "camera_package_images_path": {
       "const": "camera/genrecon_package/images.txt",
       "default": "camera/genrecon_package/images.txt",
@@ -290,6 +343,24 @@
       "minItems": 1,
       "title": "Master Frame Order",
       "type": "array"
+    },
+    "matrix_original_mesh_to_aligned_colmap": {
+      "anyOf": [
+        {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Matrix Original Mesh To Aligned Colmap"
     },
     "normalized_frame_hashes": {
       "additionalProperties": {

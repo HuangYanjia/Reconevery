@@ -211,6 +211,30 @@ def infer(request_path: Path, output_dir: Path) -> int:
             "M_genrecon_working_to_colmap": transform["matrix_working_to_colmap"],
         },
     )
+    write_json(output_dir / "working_transform.json", transform)
+    write_json(
+        output_dir / "cameras.json",
+        {
+            "scene": [
+                {
+                    "img_path": f"/workspace/frames/{frame_id}.png",
+                    "extrinsics_c0": [
+                        [1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, 0.0, 1.0, 0.0],
+                        [0.0, 0.0, 0.0, 1.0],
+                    ],
+                    "intrinsics": [
+                        [1.0, 0.0, 0.5],
+                        [0.0, 1.0, 0.5],
+                        [0.0, 0.0, 1.0],
+                    ],
+                }
+                for frame_id in selected
+            ],
+            "chunks": [],
+        },
+    )
     layout = Image.new("RGB", (320, 240), "white")
     draw = ImageDraw.Draw(layout)
     draw.rectangle((40, 40, 180, 180), outline="black", fill="#a8dadc")
@@ -257,6 +281,8 @@ def infer(request_path: Path, output_dir: Path) -> int:
         "raw_output_paths": [
             "reconstruction/global/raw/args.json",
             "reconstruction/global/raw/chunk_transforms.json",
+            "reconstruction/global/raw/working_transform.json",
+            "reconstruction/global/raw/cameras.json",
             "reconstruction/global/raw/chunk_layout.png",
             "reconstruction/global/raw/clean_points.ply",
             "reconstruction/global/raw/mesh.ply",

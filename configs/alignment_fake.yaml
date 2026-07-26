@@ -1,0 +1,56 @@
+seed: 42
+allow_existing_artifacts_for_disabled_dependencies: true
+stages:
+  ingest:
+    enabled: false
+    adapter:
+      name: ffmpeg_ingest
+      config:
+        input_mode: auto
+    depends_on: []
+
+  camera_recovery:
+    enabled: false
+    adapter:
+      name: colmap_camera_recovery
+      config:
+        execution_mode: local
+        executable: colmap
+    depends_on: [ingest]
+
+  genrecon_camera_package:
+    enabled: false
+    adapter:
+      name: genrecon_camera_package
+      config: {}
+    depends_on: [ingest, camera_recovery]
+
+  global_reconstruction:
+    enabled: false
+    adapter:
+      name: genrecon_global_reconstruction
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_genrecon_worker.py
+        sparse_structure_checkpoint: tests/fixtures/genrecon_checkpoints/sparse_structure.pt
+        shape_checkpoint: tests/fixtures/genrecon_checkpoints/shape_slat.pt
+        texture_checkpoint: tests/fixtures/genrecon_checkpoints/texture_slat.pt
+    depends_on: [ingest, camera_recovery, genrecon_camera_package]
+
+  camera_mesh_alignment:
+    adapter:
+      name: camera_mesh_alignment
+      timeout_s: 30
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_alignment_worker.py
+        device: cpu
+        fake_mode: success_full_sim3
+        minimum_validation_observations: 100
+    depends_on:
+      - camera_recovery
+      - genrecon_camera_package
+      - global_reconstruction

@@ -147,6 +147,25 @@ Checkpoint `InputSpec` entries use `reference_only`: they contribute bytes and h
 signatures but are not copied. The attempt contains only registered frames and the normalized
 camera package. See `docs/phase_3_genrecon.md` for commands and failure handling.
 
+## Camera-mesh alignment
+
+`camera_mesh_alignment` supports `local_worker`, `docker`, and `fake_worker`. Its declared inputs
+are the typed manifest/cameras, selected COLMAP text package, global metadata/worker manifest,
+working and chunk transforms, camera debug record, and a reflink/copy of `mesh.ply`. The canonical
+run is never mounted. The core imports no NumPy, SciPy, OpenCV, trimesh, PyTorch, CUDA, or
+nvdiffrast.
+
+Outputs under `reconstruction/alignment/` include the request, transform-chain audit, filtered
+sparse observations, disjoint dataset split, candidates/iterations, accepted or rejected typed
+alignment, per-camera/per-chunk diagnostics, and deterministic previews. `alignment.json` maps the
+original Phase 3 mesh to the corrected arbitrary COLMAP frame. Cameras stay fixed.
+
+`object_surface_lifting.alignment_policy` is `none`, `use_if_accepted`, or `require_accepted`.
+When an accepted transform is available, the worker applies it to an in-memory vertex copy and
+runs a second unaligned baseline for `object_lifting_comparison.json`. Rejected alignment retains
+the Phase 4 path. `phase4_2_consistency_validation` rechecks hashes, held-out separation,
+coordinate semantics, topology, face IDs, selective materialization, and capability boundaries.
+
 ## Future real adapters
 
 A real adapter must document and test inputs, outputs, schema IDs, command template, environment

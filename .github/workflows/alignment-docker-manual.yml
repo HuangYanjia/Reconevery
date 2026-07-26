@@ -1,0 +1,22 @@
+name: Alignment Docker (manual)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build alignment image
+        run: >-
+          docker build
+          -f docker/alignment/Dockerfile
+          -t reconevery/alignment:phase4.2
+          .
+      - name: Verify installed worker without requiring a GPU
+        run: >-
+          docker run --rm --entrypoint python3.10
+          reconevery/alignment:phase4.2
+          -c
+          "import alignment_worker, scipy, torch; print(alignment_worker.__version__, scipy.__version__, torch.__version__)"

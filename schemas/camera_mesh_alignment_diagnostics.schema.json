@@ -1,0 +1,416 @@
+{
+  "$defs": {
+    "AlignmentInitialization": {
+      "additionalProperties": false,
+      "properties": {
+        "initial_rotation_degrees": {
+          "minimum": 0,
+          "title": "Initial Rotation Degrees",
+          "type": "number"
+        },
+        "initial_scale": {
+          "exclusiveMinimum": 0,
+          "title": "Initial Scale",
+          "type": "number"
+        },
+        "initial_translation_scene_diagonal_ratio": {
+          "minimum": 0,
+          "title": "Initial Translation Scene Diagonal Ratio",
+          "type": "number"
+        },
+        "initialization_id": {
+          "minLength": 1,
+          "title": "Initialization Id",
+          "type": "string"
+        },
+        "matrix": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Matrix",
+          "type": "array"
+        },
+        "rationale": {
+          "minLength": 1,
+          "title": "Rationale",
+          "type": "string"
+        },
+        "selected_for_optimization": {
+          "title": "Selected For Optimization",
+          "type": "boolean"
+        },
+        "strategy": {
+          "enum": [
+            "identity",
+            "robust_extent_scale",
+            "centroid_alignment",
+            "pca_axis_hypothesis"
+          ],
+          "title": "Strategy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "initialization_id",
+        "strategy",
+        "matrix",
+        "initial_scale",
+        "initial_rotation_degrees",
+        "initial_translation_scene_diagonal_ratio",
+        "selected_for_optimization",
+        "rationale"
+      ],
+      "title": "AlignmentInitialization",
+      "type": "object"
+    },
+    "CameraAlignmentMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "aligned_inlier_fraction": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aligned Inlier Fraction"
+        },
+        "aligned_median_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aligned Median Residual"
+        },
+        "aligned_p90_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aligned P90 Residual"
+        },
+        "baseline_inlier_fraction": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline Inlier Fraction"
+        },
+        "baseline_median_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline Median Residual"
+        },
+        "baseline_p90_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline P90 Residual"
+        },
+        "camera_id": {
+          "minLength": 1,
+          "title": "Camera Id",
+          "type": "string"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "mesh_pixel_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mesh Pixel Coverage",
+          "type": "number"
+        },
+        "outlier": {
+          "title": "Outlier",
+          "type": "boolean"
+        },
+        "outlier_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outlier Reason"
+        },
+        "split": {
+          "enum": [
+            "training",
+            "validation"
+          ],
+          "title": "Split",
+          "type": "string"
+        },
+        "valid_sparse_observations": {
+          "minimum": 0,
+          "title": "Valid Sparse Observations",
+          "type": "integer"
+        },
+        "visible_mesh_face_count": {
+          "minimum": 0,
+          "title": "Visible Mesh Face Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "frame_id",
+        "camera_id",
+        "valid_sparse_observations",
+        "mesh_pixel_coverage",
+        "visible_mesh_face_count",
+        "outlier",
+        "split"
+      ],
+      "title": "CameraAlignmentMetrics",
+      "type": "object"
+    },
+    "ChunkAlignmentMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "aligned_inlier_fraction": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aligned Inlier Fraction"
+        },
+        "aligned_median_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aligned Median Residual"
+        },
+        "aligned_p90_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aligned P90 Residual"
+        },
+        "baseline_median_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline Median Residual"
+        },
+        "chunk_id": {
+          "minLength": 1,
+          "title": "Chunk Id",
+          "type": "string"
+        },
+        "observation_count": {
+          "minimum": 0,
+          "title": "Observation Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "chunk_id",
+        "observation_count"
+      ],
+      "title": "ChunkAlignmentMetrics",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "best_candidate_id": {
+      "minLength": 1,
+      "title": "Best Candidate Id",
+      "type": "string"
+    },
+    "camera_metrics": {
+      "items": {
+        "$ref": "#/$defs/CameraAlignmentMetrics"
+      },
+      "title": "Camera Metrics",
+      "type": "array"
+    },
+    "camera_outlier_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Camera Outlier Frame Ids",
+      "type": "array"
+    },
+    "candidate_solution_ambiguous": {
+      "title": "Candidate Solution Ambiguous",
+      "type": "boolean"
+    },
+    "chunk_metrics": {
+      "items": {
+        "$ref": "#/$defs/ChunkAlignmentMetrics"
+      },
+      "title": "Chunk Metrics",
+      "type": "array"
+    },
+    "competing_candidate_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Competing Candidate Ids",
+      "type": "array"
+    },
+    "diagnosis": {
+      "minLength": 1,
+      "title": "Diagnosis",
+      "type": "string"
+    },
+    "global_similarity_sufficient": {
+      "title": "Global Similarity Sufficient",
+      "type": "boolean"
+    },
+    "initializations": {
+      "items": {
+        "$ref": "#/$defs/AlignmentInitialization"
+      },
+      "title": "Initializations",
+      "type": "array"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "performance_seconds": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Performance Seconds",
+      "type": "object"
+    },
+    "residual_is_locally_structured": {
+      "title": "Residual Is Locally Structured",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "transform_chain_consistent": {
+      "title": "Transform Chain Consistent",
+      "type": "boolean"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "initializations",
+    "camera_metrics",
+    "chunk_metrics",
+    "residual_is_locally_structured",
+    "candidate_solution_ambiguous",
+    "competing_candidate_ids",
+    "global_similarity_sufficient",
+    "transform_chain_consistent",
+    "camera_outlier_frame_ids",
+    "best_candidate_id",
+    "diagnosis",
+    "performance_seconds"
+  ],
+  "title": "CameraMeshAlignmentDiagnostics",
+  "type": "object"
+}

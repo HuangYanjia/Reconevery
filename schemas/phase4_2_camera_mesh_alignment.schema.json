@@ -1,0 +1,120 @@
+{
+  "$defs": {
+    "Phase4_2ConsistencyCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check_id": {
+          "minLength": 1,
+          "title": "Check Id",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "check_id",
+        "passed",
+        "message"
+      ],
+      "title": "Phase4_2ConsistencyCheck",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_poses_modified": {
+      "const": false,
+      "default": false,
+      "title": "Camera Poses Modified",
+      "type": "boolean"
+    },
+    "canonical_gravity_alignment_known": {
+      "const": false,
+      "default": false,
+      "title": "Canonical Gravity Alignment Known",
+      "type": "boolean"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/Phase4_2ConsistencyCheck"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "global_similarity_accepted": {
+      "title": "Global Similarity Accepted",
+      "type": "boolean"
+    },
+    "global_similarity_sufficient": {
+      "title": "Global Similarity Sufficient",
+      "type": "boolean"
+    },
+    "global_similarity_tested": {
+      "const": true,
+      "default": true,
+      "title": "Global Similarity Tested",
+      "type": "boolean"
+    },
+    "hidden_surface_completion_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Hidden Surface Completion Implemented",
+      "type": "boolean"
+    },
+    "mesh_topology_modified": {
+      "const": false,
+      "default": false,
+      "title": "Mesh Topology Modified",
+      "type": "boolean"
+    },
+    "metric_scale_known": {
+      "const": false,
+      "default": false,
+      "title": "Metric Scale Known",
+      "type": "boolean"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sim_ready_scene_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Sim Ready Scene Implemented",
+      "type": "boolean"
+    },
+    "transform_chain_consistent": {
+      "title": "Transform Chain Consistent",
+      "type": "boolean"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "passed",
+    "checks",
+    "transform_chain_consistent",
+    "global_similarity_accepted",
+    "global_similarity_sufficient"
+  ],
+  "title": "Phase4_2ConsistencyReport",
+  "type": "object"
+}

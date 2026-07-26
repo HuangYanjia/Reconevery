@@ -1,9 +1,28 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import numpy as np
 import trimesh
+
+
+def _reflink_or_copy(source: Path, destination: Path) -> None:
+    result = subprocess.run(
+        [
+            "cp",
+            "--reflink=auto",
+            "--preserve=mode,timestamps",
+            str(source),
+            str(destination),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        shutil.copy2(source, destination)
 
 
 def transform_outputs_to_colmap(output_dir: Path, working_to_colmap: np.ndarray) -> None:
@@ -11,6 +30,8 @@ def transform_outputs_to_colmap(output_dir: Path, working_to_colmap: np.ndarray)
     scene_path = output_dir / "scene.glb"
     if not mesh_path.is_file() or not scene_path.is_file():
         raise RuntimeError("official GenRecon output is missing mesh.ply or scene.glb")
+    _reflink_or_copy(mesh_path, output_dir / "mesh_working.ply")
+    _reflink_or_copy(scene_path, output_dir / "scene_working.glb")
     mesh = trimesh.load(mesh_path, force="mesh", process=False)
     if not isinstance(mesh, trimesh.Trimesh) or len(mesh.vertices) == 0 or len(mesh.faces) == 0:
         raise RuntimeError("official GenRecon mesh is empty or unreadable")

@@ -1,0 +1,303 @@
+{
+  "$defs": {
+    "CameraIntrinsics": {
+      "additionalProperties": false,
+      "properties": {
+        "cx": {
+          "minimum": 0,
+          "title": "Cx",
+          "type": "number"
+        },
+        "cy": {
+          "minimum": 0,
+          "title": "Cy",
+          "type": "number"
+        },
+        "distortion": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Distortion",
+          "type": "array"
+        },
+        "fx": {
+          "exclusiveMinimum": 0,
+          "title": "Fx",
+          "type": "number"
+        },
+        "fy": {
+          "exclusiveMinimum": 0,
+          "title": "Fy",
+          "type": "number"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "fx",
+        "fy",
+        "cx",
+        "cy"
+      ],
+      "title": "CameraIntrinsics",
+      "type": "object"
+    },
+    "CameraUndistortionRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "crop_policy": {
+          "const": "full_image_alpha_0",
+          "default": "full_image_alpha_0",
+          "title": "Crop Policy",
+          "type": "string"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "map_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Map Hash",
+          "type": "string"
+        },
+        "roi_xywh": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Roi Xywh",
+          "type": "array"
+        },
+        "source_camera_model": {
+          "minLength": 1,
+          "title": "Source Camera Model",
+          "type": "string"
+        },
+        "source_distortion": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Source Distortion",
+          "type": "array"
+        },
+        "source_intrinsics": {
+          "$ref": "#/$defs/CameraIntrinsics"
+        },
+        "undistorted_height": {
+          "exclusiveMinimum": 0,
+          "title": "Undistorted Height",
+          "type": "integer"
+        },
+        "undistorted_intrinsics": {
+          "$ref": "#/$defs/CameraIntrinsics"
+        },
+        "undistorted_width": {
+          "exclusiveMinimum": 0,
+          "title": "Undistorted Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "frame_id",
+        "source_camera_model",
+        "source_intrinsics",
+        "source_distortion",
+        "undistorted_width",
+        "undistorted_height",
+        "undistorted_intrinsics",
+        "roi_xywh",
+        "map_hash"
+      ],
+      "title": "CameraUndistortionRecord",
+      "type": "object"
+    },
+    "SparseDepthObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "camera_depth": {
+          "exclusiveMinimum": 0,
+          "title": "Camera Depth",
+          "type": "number"
+        },
+        "camera_model": {
+          "minLength": 1,
+          "title": "Camera Model",
+          "type": "string"
+        },
+        "colmap_reprojection_error": {
+          "minimum": 0,
+          "title": "Colmap Reprojection Error",
+          "type": "number"
+        },
+        "distorted_pixel": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Distorted Pixel",
+          "type": "array"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "point2d_index": {
+          "minimum": 0,
+          "title": "Point2D Index",
+          "type": "integer"
+        },
+        "point3d_id": {
+          "exclusiveMinimum": 0,
+          "title": "Point3D Id",
+          "type": "integer"
+        },
+        "point_world": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Point World",
+          "type": "array"
+        },
+        "track_length": {
+          "exclusiveMinimum": 0,
+          "title": "Track Length",
+          "type": "integer"
+        },
+        "undistorted_pixel": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Undistorted Pixel",
+          "type": "array"
+        }
+      },
+      "required": [
+        "point3d_id",
+        "frame_id",
+        "point2d_index",
+        "distorted_pixel",
+        "undistorted_pixel",
+        "point_world",
+        "camera_depth",
+        "colmap_reprojection_error",
+        "track_length",
+        "camera_model"
+      ],
+      "title": "SparseDepthObservation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "filtering_configuration": {
+      "additionalProperties": true,
+      "title": "Filtering Configuration",
+      "type": "object"
+    },
+    "observations": {
+      "items": {
+        "$ref": "#/$defs/SparseDepthObservation"
+      },
+      "title": "Observations",
+      "type": "array"
+    },
+    "rejected_observations": {
+      "minimum": 0,
+      "title": "Rejected Observations",
+      "type": "integer"
+    },
+    "retained_observations": {
+      "minimum": 0,
+      "title": "Retained Observations",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "total_colmap_points": {
+      "minimum": 0,
+      "title": "Total Colmap Points",
+      "type": "integer"
+    },
+    "total_raw_observations": {
+      "minimum": 0,
+      "title": "Total Raw Observations",
+      "type": "integer"
+    },
+    "undistortion_records": {
+      "items": {
+        "$ref": "#/$defs/CameraUndistortionRecord"
+      },
+      "title": "Undistortion Records",
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "observations",
+    "total_colmap_points",
+    "total_raw_observations",
+    "retained_observations",
+    "rejected_observations",
+    "filtering_configuration",
+    "undistortion_records"
+  ],
+  "title": "SparseDepthObservationManifest",
+  "type": "object"
+}

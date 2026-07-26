@@ -1,0 +1,554 @@
+{
+  "$defs": {
+    "AlignmentMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "bad_frame_fraction": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Bad Frame Fraction",
+          "type": "number"
+        },
+        "inlier_fractions": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Inlier Fractions",
+          "type": "object"
+        },
+        "log_depth_residual_median": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Log Depth Residual Median"
+        },
+        "mesh_pixel_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mesh Pixel Coverage",
+          "type": "number"
+        },
+        "observation_count": {
+          "minimum": 0,
+          "title": "Observation Count",
+          "type": "integer"
+        },
+        "point_to_plane_median_scene_diagonal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Point To Plane Median Scene Diagonal"
+        },
+        "point_to_surface_median_scene_diagonal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Point To Surface Median Scene Diagonal"
+        },
+        "point_to_surface_p90_scene_diagonal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Point To Surface P90 Scene Diagonal"
+        },
+        "sparse_depth_residual_median": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sparse Depth Residual Median"
+        },
+        "sparse_depth_residual_p75": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sparse Depth Residual P75"
+        },
+        "sparse_depth_residual_p90": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sparse Depth Residual P90"
+        },
+        "sparse_depth_residual_p95": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sparse Depth Residual P95"
+        }
+      },
+      "required": [
+        "observation_count",
+        "inlier_fractions",
+        "mesh_pixel_coverage",
+        "bad_frame_fraction"
+      ],
+      "title": "AlignmentMetrics",
+      "type": "object"
+    },
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "AlignmentTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "determinant": {
+          "title": "Determinant",
+          "type": "number"
+        },
+        "inverse_matrix": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Inverse Matrix",
+          "type": "array"
+        },
+        "matrix_original_mesh_to_aligned_colmap": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Matrix Original Mesh To Aligned Colmap",
+          "type": "array"
+        },
+        "rotation_axis_angle": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Rotation Axis Angle",
+          "type": "array"
+        },
+        "rotation_degrees": {
+          "minimum": 0,
+          "title": "Rotation Degrees",
+          "type": "number"
+        },
+        "rotation_matrix": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Rotation Matrix",
+          "type": "array"
+        },
+        "roundtrip_error": {
+          "minimum": 0,
+          "title": "Roundtrip Error",
+          "type": "number"
+        },
+        "scale": {
+          "exclusiveMinimum": 0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "translation": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Translation",
+          "type": "array"
+        },
+        "translation_scene_diagonal_ratio": {
+          "minimum": 0,
+          "title": "Translation Scene Diagonal Ratio",
+          "type": "number"
+        }
+      },
+      "required": [
+        "matrix_original_mesh_to_aligned_colmap",
+        "inverse_matrix",
+        "scale",
+        "rotation_matrix",
+        "rotation_axis_angle",
+        "rotation_degrees",
+        "translation",
+        "translation_scene_diagonal_ratio",
+        "determinant",
+        "roundtrip_error"
+      ],
+      "title": "AlignmentTransform",
+      "type": "object"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "ConfidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "minLength": 1,
+          "title": "Method",
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "score",
+        "method"
+      ],
+      "title": "ConfidenceRecord",
+      "type": "object"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "GeometrySourceType": {
+      "enum": [
+        "measured",
+        "radiance_field",
+        "generated",
+        "retrieved",
+        "fused",
+        "mock"
+      ],
+      "title": "GeometrySourceType",
+      "type": "string"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "ProvenanceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_name": {
+          "minLength": 1,
+          "title": "Adapter Name",
+          "type": "string"
+        },
+        "adapter_version": {
+          "minLength": 1,
+          "title": "Adapter Version",
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ConfidenceRecord"
+        },
+        "configuration": {
+          "additionalProperties": true,
+          "title": "Configuration",
+          "type": "object"
+        },
+        "input_artifact_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Artifact Paths",
+          "type": "array"
+        },
+        "output_artifact_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Artifact Paths",
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/$defs/GeometrySourceType"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter_name",
+        "adapter_version",
+        "confidence",
+        "source"
+      ],
+      "title": "ProvenanceRecord",
+      "type": "object"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "acceptance_checks": {
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "title": "Acceptance Checks",
+      "type": "object"
+    },
+    "accepted": {
+      "title": "Accepted",
+      "type": "boolean"
+    },
+    "aligned_training_metrics": {
+      "$ref": "#/$defs/AlignmentMetrics"
+    },
+    "aligned_validation_metrics": {
+      "$ref": "#/$defs/AlignmentMetrics"
+    },
+    "baseline_training_metrics": {
+      "$ref": "#/$defs/AlignmentMetrics"
+    },
+    "baseline_validation_metrics": {
+      "$ref": "#/$defs/AlignmentMetrics"
+    },
+    "candidate_id": {
+      "minLength": 1,
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "coordinate_convention": {
+      "$ref": "#/$defs/CoordinateConvention"
+    },
+    "dataset_split_path": {
+      "const": "reconstruction/alignment/dataset_split.json",
+      "default": "reconstruction/alignment/dataset_split.json",
+      "title": "Dataset Split Path",
+      "type": "string"
+    },
+    "failure_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Failure Reason"
+    },
+    "provenance": {
+      "$ref": "#/$defs/ProvenanceRecord"
+    },
+    "scale_status": {
+      "const": "scale_ambiguous",
+      "default": "scale_ambiguous",
+      "title": "Scale Status",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "identity_already_consistent",
+        "accepted_global_sim3",
+        "rejected_no_validation_improvement",
+        "rejected_implausible_transform",
+        "global_sim3_insufficient",
+        "transform_chain_bug_fixed",
+        "generecon_geometry_inconsistent_with_colmap"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "transform": {
+      "$ref": "#/$defs/AlignmentTransform"
+    },
+    "transform_chain_audit_path": {
+      "const": "reconstruction/alignment/transform_chain_audit.json",
+      "default": "reconstruction/alignment/transform_chain_audit.json",
+      "title": "Transform Chain Audit Path",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "status",
+    "accepted",
+    "transform",
+    "baseline_training_metrics",
+    "aligned_training_metrics",
+    "baseline_validation_metrics",
+    "aligned_validation_metrics",
+    "acceptance_checks",
+    "coordinate_convention",
+    "candidate_id",
+    "provenance"
+  ],
+  "title": "CameraMeshAlignmentResult",
+  "type": "object"
+}

@@ -69,6 +69,28 @@ for three tracks. V2 did not improve the v1 IoU. Sparse-point/rendered-depth res
 camera/global-mesh alignment as the dominant current bottleneck. The low quality remains explicit:
 Phase 4 proves observation-grounded association, not complete or accurate object reconstruction.
 
+## Phase 4.2 implementation
+
+- immutable audit of COLMAP, GenRecon PCA/chunk, working, GLB, and canonical mesh transforms;
+- consistent sparse-observation undistortion and exact depth rendering;
+- deterministic disjoint training/validation frame and point splits;
+- identity, extent, centroid, and right-handed PCA initialization records;
+- robust bounded global Sim(3) fitting with held-out acceptance gates;
+- explicit accepted, rejected, insufficient, and transform-chain-bug statuses;
+- per-camera/per-chunk residual and local-structure diagnosis;
+- root-transform Scene IR representation without rewriting cameras, mesh, topology, or PBR GLB;
+- accepted-alignment object lifting plus an unaligned/aligned comparison;
+- isolated GPU worker, CPU fake protocol, previews, CLI, and Phase 4.2 consistency validation.
+
+Phase 4.2 answers whether a single global transform is sufficient. It intentionally does not
+perform per-chunk or non-rigid correction and does not turn arbitrary scale into meters.
+
+The recorded H100 audit classified the real Phase 4.1 lineage as `global_sim3_insufficient`.
+A bounded candidate reduced held-out median normalized depth residual from approximately `0.662`
+to `0.373`, but the `0.10` inlier fraction remained approximately `0.141` and residuals stayed
+structured by chunk. The candidate was therefore retained as diagnostic evidence and not applied
+to canonical object lifting.
+
 ## Recommended Phase 2.5
 
 Design optional VLM-assisted scene inventory as a separate prompt-generation stage. It must

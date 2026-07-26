@@ -1,0 +1,374 @@
+{
+  "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "acceptance_configuration": {
+      "additionalProperties": true,
+      "title": "Acceptance Configuration",
+      "type": "object"
+    },
+    "audit_configuration": {
+      "additionalProperties": true,
+      "title": "Audit Configuration",
+      "type": "object"
+    },
+    "camera_package_manifest_path": {
+      "const": "camera/genrecon_package/package_manifest.json",
+      "default": "camera/genrecon_package/package_manifest.json",
+      "title": "Camera Package Manifest Path",
+      "type": "string"
+    },
+    "camera_package_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Sha256",
+      "type": "string"
+    },
+    "camera_reconstruction_path": {
+      "const": "camera/reconstruction.json",
+      "default": "camera/reconstruction.json",
+      "title": "Camera Reconstruction Path",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "cameras_txt_path": {
+      "const": "camera/genrecon_package/cameras.txt",
+      "default": "camera/genrecon_package/cameras.txt",
+      "title": "Cameras Txt Path",
+      "type": "string"
+    },
+    "cameras_txt_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Cameras Txt Sha256",
+      "type": "string"
+    },
+    "chunk_transforms_path": {
+      "title": "Chunk Transforms Path",
+      "type": "string"
+    },
+    "chunk_transforms_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Chunk Transforms Sha256",
+      "type": "string"
+    },
+    "coordinate_convention": {
+      "$ref": "#/$defs/CoordinateConvention"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "genrecon_camera_debug_path": {
+      "title": "Genrecon Camera Debug Path",
+      "type": "string"
+    },
+    "genrecon_camera_debug_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Genrecon Camera Debug Sha256",
+      "type": "string"
+    },
+    "global_mesh_path": {
+      "const": "reconstruction/global/mesh.ply",
+      "default": "reconstruction/global/mesh.ply",
+      "title": "Global Mesh Path",
+      "type": "string"
+    },
+    "global_mesh_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Mesh Sha256",
+      "type": "string"
+    },
+    "global_reconstruction_path": {
+      "const": "reconstruction/global/metadata.json",
+      "default": "reconstruction/global/metadata.json",
+      "title": "Global Reconstruction Path",
+      "type": "string"
+    },
+    "global_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Reconstruction Sha256",
+      "type": "string"
+    },
+    "global_worker_manifest_path": {
+      "const": "reconstruction/global/worker_manifest.json",
+      "default": "reconstruction/global/worker_manifest.json",
+      "title": "Global Worker Manifest Path",
+      "type": "string"
+    },
+    "global_worker_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Worker Manifest Sha256",
+      "type": "string"
+    },
+    "images_txt_path": {
+      "const": "camera/genrecon_package/images.txt",
+      "default": "camera/genrecon_package/images.txt",
+      "title": "Images Txt Path",
+      "type": "string"
+    },
+    "images_txt_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Images Txt Sha256",
+      "type": "string"
+    },
+    "manifest_path": {
+      "const": "inputs/manifest.json",
+      "default": "inputs/manifest.json",
+      "title": "Manifest Path",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "mesh_sampling_configuration": {
+      "additionalProperties": true,
+      "title": "Mesh Sampling Configuration",
+      "type": "object"
+    },
+    "optimization_configuration": {
+      "additionalProperties": true,
+      "title": "Optimization Configuration",
+      "type": "object"
+    },
+    "output_directory": {
+      "const": "reconstruction/alignment",
+      "default": "reconstruction/alignment",
+      "title": "Output Directory",
+      "type": "string"
+    },
+    "points3d_txt_path": {
+      "const": "camera/genrecon_package/points3D.txt",
+      "default": "camera/genrecon_package/points3D.txt",
+      "title": "Points3D Txt Path",
+      "type": "string"
+    },
+    "points3d_txt_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Points3D Txt Sha256",
+      "type": "string"
+    },
+    "registered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Registered Frame Ids",
+      "type": "array"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "sparse_observation_configuration": {
+      "additionalProperties": true,
+      "title": "Sparse Observation Configuration",
+      "type": "object"
+    },
+    "unregistered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unregistered Frame Ids",
+      "type": "array"
+    },
+    "working_mesh_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Working Mesh Path"
+    },
+    "working_mesh_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Working Mesh Sha256"
+    },
+    "working_scene_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Working Scene Path"
+    },
+    "working_scene_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Working Scene Sha256"
+    },
+    "working_transform_path": {
+      "title": "Working Transform Path",
+      "type": "string"
+    },
+    "working_transform_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Working Transform Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "registered_frame_ids",
+    "unregistered_frame_ids",
+    "coordinate_convention",
+    "camera_package_sha256",
+    "cameras_txt_sha256",
+    "images_txt_sha256",
+    "points3d_txt_sha256",
+    "global_reconstruction_sha256",
+    "global_mesh_sha256",
+    "global_worker_manifest_sha256",
+    "working_transform_path",
+    "working_transform_sha256",
+    "chunk_transforms_path",
+    "chunk_transforms_sha256",
+    "genrecon_camera_debug_path",
+    "genrecon_camera_debug_sha256",
+    "audit_configuration",
+    "sparse_observation_configuration",
+    "mesh_sampling_configuration",
+    "optimization_configuration",
+    "acceptance_configuration",
+    "seed"
+  ],
+  "title": "CameraMeshAlignmentRequest",
+  "type": "object"
+}
