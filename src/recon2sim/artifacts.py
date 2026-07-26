@@ -1042,6 +1042,12 @@ class ObjectSurfaceLiftingRequest(StrictModel):
     global_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     global_mesh_path: Literal["reconstruction/global/mesh.ply"] = "reconstruction/global/mesh.ply"
     global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    alignment_policy: Literal["none", "use_if_accepted", "require_accepted"] = "none"
+    alignment_path: Literal["reconstruction/alignment/alignment.json"] | None = None
+    alignment_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    alignment_status: str | None = None
+    alignment_accepted: bool = False
+    matrix_original_mesh_to_aligned_colmap: list[list[float]] | None = None
     lifting_method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"]
     rasterization_configuration: dict[str, object]
     mask_processing_configuration: dict[str, object]
@@ -1057,6 +1063,21 @@ class ObjectSurfaceLiftingRequest(StrictModel):
     @classmethod
     def relative_normalized_frames(cls, values: dict[str, str]) -> dict[str, str]:
         return {frame_id: _relative_artifact_path(path) for frame_id, path in values.items()}
+
+    @field_validator("matrix_original_mesh_to_aligned_colmap")
+    @classmethod
+    def finite_optional_alignment_matrix(
+        cls, value: list[list[float]] | None
+    ) -> list[list[float]] | None:
+        if value is None:
+            return None
+        import math
+
+        if len(value) != 4 or any(len(row) != 4 for row in value):
+            raise ValueError("object-lifting alignment transform must be a 4x4 matrix")
+        if any(not math.isfinite(component) for row in value for component in row):
+            raise ValueError("object-lifting alignment transform must be finite")
+        return value
 
     @model_validator(mode="after")
     def consistent_lineage(self) -> Self:
@@ -1079,6 +1100,21 @@ class ObjectSurfaceLiftingRequest(StrictModel):
                 raise ValueError(
                     f"object {track.object_id!r} references unknown frames: {sorted(unknown)}"
                 )
+        if self.alignment_policy == "none":
+            if (
+                self.alignment_path is not None
+                or self.alignment_sha256 is not None
+                or self.alignment_accepted
+                or self.matrix_original_mesh_to_aligned_colmap is not None
+            ):
+                raise ValueError("alignment_policy=none cannot carry an alignment transform")
+        else:
+            if self.alignment_path is None or self.alignment_sha256 is None:
+                raise ValueError("alignment-aware lifting requires a typed alignment artifact")
+            if self.alignment_accepted != (self.matrix_original_mesh_to_aligned_colmap is not None):
+                raise ValueError("accepted alignment and applied matrix must agree")
+            if self.alignment_policy == "require_accepted" and not self.alignment_accepted:
+                raise ValueError("require_accepted lifting requires an accepted alignment")
         return self
 
 
@@ -1236,6 +1272,10 @@ class ObjectSurfaceWorkerManifest(StrictModel):
     segmentation_tracking_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     global_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    alignment_policy: Literal["none", "use_if_accepted", "require_accepted"] = "none"
+    alignment_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    alignment_status: str | None = None
+    alignment_accepted: bool = False
     processed_registered_frame_ids: list[str]
     global_vertex_count: int = Field(gt=0)
     global_face_count: int = Field(gt=0)
@@ -1294,6 +1334,10 @@ class ObjectSurfaceEvidenceArtifact(StrictModel):
     segmentation_tracking_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     global_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    alignment_policy: Literal["none", "use_if_accepted", "require_accepted"] = "none"
+    alignment_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    alignment_status: str | None = None
+    alignment_accepted: bool = False
     coordinate_convention: CoordinateConvention
     scale_status: Literal[ScaleStatus.SCALE_AMBIGUOUS] = ScaleStatus.SCALE_AMBIGUOUS
     geometry_status: Literal["partial_observation_supported"] = "partial_observation_supported"
@@ -1454,6 +1498,534 @@ class Phase4ConsistencyReport(StrictModel):
         expected = all(check.passed for check in self.checks)
         if self.passed != expected:
             raise ValueError("Phase 4 report passed must equal all individual checks")
+        return self
+
+
+class TransformChainStage(StrictModel):
+    stage_id: Annotated[str, Field(min_length=1)]
+    transform_source: Annotated[str, Field(min_length=1)]
+    matrix_from_previous: list[list[float]]
+    matrix_to_previous: list[list[float]]
+    determinant: float
+    rotation_orthogonality_error: float = Field(ge=0)
+    scale: float = Field(gt=0)
+    translation: tuple[float, float, float]
+    roundtrip_error: float = Field(ge=0)
+    mesh_bounds_min: tuple[float, float, float] | None = None
+    mesh_bounds_max: tuple[float, float, float] | None = None
+    camera_center_bounds_min: tuple[float, float, float] | None = None
+    camera_center_bounds_max: tuple[float, float, float] | None = None
+    sparse_point_bounds_min: tuple[float, float, float] | None = None
+    sparse_point_bounds_max: tuple[float, float, float] | None = None
+
+    @field_validator("matrix_from_previous", "matrix_to_previous")
+    @classmethod
+    def finite_transform_stage_matrix(cls, value: list[list[float]]) -> list[list[float]]:
+        import math
+
+        if len(value) != 4 or any(len(row) != 4 for row in value):
+            raise ValueError("transform-chain matrices must be 4x4")
+        if any(not math.isfinite(component) for row in value for component in row):
+            raise ValueError("transform-chain matrices must contain finite values")
+        return value
+
+
+class TransformChainAudit(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    status: Literal["consistent", "transform_chain_bug"]
+    stages: Annotated[list[TransformChainStage], Field(min_length=1)]
+    colmap_working_roundtrip_error: float = Field(ge=0)
+    camera_basis_roundtrip_error: float = Field(ge=0)
+    sampled_mesh_roundtrip_error: float = Field(ge=0)
+    pre_post_render_depth_error: float | None = Field(default=None, ge=0)
+    pre_post_render_silhouette_iou: float | None = Field(default=None, ge=0, le=1)
+    pre_post_render_equivalent: bool
+    raw_working_mesh_available: bool
+    raw_working_scene_available: bool
+    checks: dict[str, bool]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SparseDepthObservation(StrictModel):
+    point3d_id: int = Field(gt=0)
+    frame_id: Annotated[str, Field(min_length=1)]
+    point2d_index: int = Field(ge=0)
+    distorted_pixel: tuple[float, float]
+    undistorted_pixel: tuple[float, float]
+    point_world: tuple[float, float, float]
+    camera_depth: float = Field(gt=0)
+    colmap_reprojection_error: float = Field(ge=0)
+    track_length: int = Field(gt=0)
+    camera_model: Annotated[str, Field(min_length=1)]
+
+
+class CameraUndistortionRecord(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    source_camera_model: Annotated[str, Field(min_length=1)]
+    source_intrinsics: CameraIntrinsics
+    source_distortion: list[float]
+    undistorted_width: int = Field(gt=0)
+    undistorted_height: int = Field(gt=0)
+    undistorted_intrinsics: CameraIntrinsics
+    roi_xywh: tuple[int, int, int, int]
+    crop_policy: Literal["full_image_alpha_0"] = "full_image_alpha_0"
+    map_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+class SparseDepthObservationManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    observations: list[SparseDepthObservation]
+    total_colmap_points: int = Field(ge=0)
+    total_raw_observations: int = Field(ge=0)
+    retained_observations: int = Field(ge=0)
+    rejected_observations: int = Field(ge=0)
+    filtering_configuration: dict[str, object]
+    undistortion_records: list[CameraUndistortionRecord]
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def observation_counts_match(self) -> Self:
+        if self.retained_observations != len(self.observations):
+            raise ValueError("retained sparse observation count must match records")
+        if self.total_raw_observations != self.retained_observations + self.rejected_observations:
+            raise ValueError("sparse observation accounting is inconsistent")
+        return self
+
+
+class AlignmentDatasetSplit(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    strategy: Literal["alternating_registered_frames_and_point_ids"]
+    training_frame_ids: list[str]
+    validation_frame_ids: list[str]
+    training_point_ids: list[int]
+    validation_point_ids: list[int]
+    training_observation_count: int = Field(ge=0)
+    validation_observation_count: int = Field(ge=0)
+    split_seed: int
+
+    @model_validator(mode="after")
+    def split_is_disjoint(self) -> Self:
+        if set(self.training_frame_ids) & set(self.validation_frame_ids):
+            raise ValueError("alignment training and validation frames must be disjoint")
+        if set(self.training_point_ids) & set(self.validation_point_ids):
+            raise ValueError("alignment training and validation point IDs must be disjoint")
+        return self
+
+
+class AlignmentMetrics(StrictModel):
+    observation_count: int = Field(ge=0)
+    sparse_depth_residual_median: float | None = Field(default=None, ge=0)
+    sparse_depth_residual_p75: float | None = Field(default=None, ge=0)
+    sparse_depth_residual_p90: float | None = Field(default=None, ge=0)
+    sparse_depth_residual_p95: float | None = Field(default=None, ge=0)
+    log_depth_residual_median: float | None = Field(default=None, ge=0)
+    inlier_fractions: dict[str, float]
+    mesh_pixel_coverage: float = Field(ge=0, le=1)
+    point_to_surface_median_scene_diagonal: float | None = Field(default=None, ge=0)
+    point_to_surface_p90_scene_diagonal: float | None = Field(default=None, ge=0)
+    point_to_plane_median_scene_diagonal: float | None = Field(default=None, ge=0)
+    bad_frame_fraction: float = Field(ge=0, le=1)
+
+    @field_validator("inlier_fractions")
+    @classmethod
+    def valid_alignment_inlier_fractions(cls, values: dict[str, float]) -> dict[str, float]:
+        if any(value < 0 or value > 1 for value in values.values()):
+            raise ValueError("alignment inlier fractions must be in [0, 1]")
+        return values
+
+
+class CameraAlignmentMetrics(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    camera_id: Annotated[str, Field(min_length=1)]
+    valid_sparse_observations: int = Field(ge=0)
+    mesh_pixel_coverage: float = Field(ge=0, le=1)
+    baseline_median_residual: float | None = Field(default=None, ge=0)
+    aligned_median_residual: float | None = Field(default=None, ge=0)
+    baseline_p90_residual: float | None = Field(default=None, ge=0)
+    aligned_p90_residual: float | None = Field(default=None, ge=0)
+    baseline_inlier_fraction: float | None = Field(default=None, ge=0, le=1)
+    aligned_inlier_fraction: float | None = Field(default=None, ge=0, le=1)
+    visible_mesh_face_count: int = Field(ge=0)
+    outlier: bool
+    outlier_reason: str | None = None
+    split: Literal["training", "validation"]
+
+
+class ChunkAlignmentMetrics(StrictModel):
+    chunk_id: Annotated[str, Field(min_length=1)]
+    observation_count: int = Field(ge=0)
+    baseline_median_residual: float | None = Field(default=None, ge=0)
+    aligned_median_residual: float | None = Field(default=None, ge=0)
+    aligned_p90_residual: float | None = Field(default=None, ge=0)
+    aligned_inlier_fraction: float | None = Field(default=None, ge=0, le=1)
+
+
+class AlignmentInitialization(StrictModel):
+    initialization_id: Annotated[str, Field(min_length=1)]
+    strategy: Literal[
+        "identity",
+        "robust_extent_scale",
+        "centroid_alignment",
+        "pca_axis_hypothesis",
+    ]
+    matrix: list[list[float]]
+    initial_scale: float = Field(gt=0)
+    initial_rotation_degrees: float = Field(ge=0)
+    initial_translation_scene_diagonal_ratio: float = Field(ge=0)
+    selected_for_optimization: bool
+    rationale: Annotated[str, Field(min_length=1)]
+
+    @field_validator("matrix")
+    @classmethod
+    def finite_initialization_matrix(cls, value: list[list[float]]) -> list[list[float]]:
+        return TransformChainStage.finite_transform_stage_matrix(value)
+
+
+class AlignmentIteration(StrictModel):
+    candidate_id: Annotated[str, Field(min_length=1)]
+    iteration: int = Field(ge=0)
+    correspondence_count: int = Field(ge=0)
+    inlier_count: int = Field(ge=0)
+    loss: float = Field(ge=0)
+    scale: float = Field(gt=0)
+    rotation_degrees: float = Field(ge=0)
+    translation_scene_diagonal_ratio: float = Field(ge=0)
+    validation_point_to_surface_median: float | None = Field(default=None, ge=0)
+    converged: bool
+
+
+class AlignmentCandidate(StrictModel):
+    candidate_id: Annotated[str, Field(min_length=1)]
+    initialization_id: Annotated[str, Field(min_length=1)]
+    matrix_original_mesh_to_aligned_colmap: list[list[float]]
+    scale: float = Field(gt=0)
+    rotation_degrees: float = Field(ge=0)
+    translation_scene_diagonal_ratio: float = Field(ge=0)
+    finite: bool
+    hit_parameter_bound: bool
+    correspondence_collapsed: bool
+    training_metrics: AlignmentMetrics
+    validation_metrics: AlignmentMetrics
+    objective: float = Field(ge=0)
+    selected: bool
+    rejection_reason: str | None = None
+
+    @field_validator("matrix_original_mesh_to_aligned_colmap")
+    @classmethod
+    def finite_candidate_matrix(cls, value: list[list[float]]) -> list[list[float]]:
+        return TransformChainStage.finite_transform_stage_matrix(value)
+
+
+class AlignmentCandidateManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    candidates: Annotated[list[AlignmentCandidate], Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def one_selected_candidate(self) -> Self:
+        if sum(candidate.selected for candidate in self.candidates) != 1:
+            raise ValueError("exactly one alignment candidate must be selected")
+        return self
+
+
+class AlignmentIterationManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    iterations: list[AlignmentIteration]
+
+
+class AlignmentTransform(StrictModel):
+    matrix_original_mesh_to_aligned_colmap: list[list[float]]
+    inverse_matrix: list[list[float]]
+    scale: float = Field(gt=0)
+    rotation_matrix: list[list[float]]
+    rotation_axis_angle: tuple[float, float, float]
+    rotation_degrees: float = Field(ge=0)
+    translation: tuple[float, float, float]
+    translation_scene_diagonal_ratio: float = Field(ge=0)
+    determinant: float
+    roundtrip_error: float = Field(ge=0)
+
+    @field_validator("matrix_original_mesh_to_aligned_colmap", "inverse_matrix")
+    @classmethod
+    def finite_alignment_transform_matrix(cls, value: list[list[float]]) -> list[list[float]]:
+        return TransformChainStage.finite_transform_stage_matrix(value)
+
+    @field_validator("rotation_matrix")
+    @classmethod
+    def finite_rotation_matrix(cls, value: list[list[float]]) -> list[list[float]]:
+        import math
+
+        if len(value) != 3 or any(len(row) != 3 for row in value):
+            raise ValueError("alignment rotation must be a 3x3 matrix")
+        if any(not math.isfinite(component) for row in value for component in row):
+            raise ValueError("alignment rotation must contain finite values")
+        return value
+
+
+class CameraMeshAlignmentRequest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    run_id: Annotated[str, Field(min_length=1)]
+    manifest_path: Literal["inputs/manifest.json"] = "inputs/manifest.json"
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_path: Literal["camera/reconstruction.json"] = "camera/reconstruction.json"
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    registered_frame_ids: Annotated[list[str], Field(min_length=1)]
+    unregistered_frame_ids: list[str]
+    coordinate_convention: CoordinateConvention
+    camera_package_manifest_path: Literal["camera/genrecon_package/package_manifest.json"] = (
+        "camera/genrecon_package/package_manifest.json"
+    )
+    camera_package_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    cameras_txt_path: Literal["camera/genrecon_package/cameras.txt"] = (
+        "camera/genrecon_package/cameras.txt"
+    )
+    cameras_txt_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    images_txt_path: Literal["camera/genrecon_package/images.txt"] = (
+        "camera/genrecon_package/images.txt"
+    )
+    images_txt_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    points3d_txt_path: Literal["camera/genrecon_package/points3D.txt"] = (
+        "camera/genrecon_package/points3D.txt"
+    )
+    points3d_txt_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_reconstruction_path: Literal["reconstruction/global/metadata.json"] = (
+        "reconstruction/global/metadata.json"
+    )
+    global_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_mesh_path: Literal["reconstruction/global/mesh.ply"] = "reconstruction/global/mesh.ply"
+    global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_worker_manifest_path: Literal["reconstruction/global/worker_manifest.json"] = (
+        "reconstruction/global/worker_manifest.json"
+    )
+    global_worker_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    working_transform_path: str
+    working_transform_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    chunk_transforms_path: str
+    chunk_transforms_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    genrecon_camera_debug_path: str
+    genrecon_camera_debug_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    working_mesh_path: str | None = None
+    working_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    working_scene_path: str | None = None
+    working_scene_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")] | None = None
+    audit_configuration: dict[str, object]
+    sparse_observation_configuration: dict[str, object]
+    mesh_sampling_configuration: dict[str, object]
+    optimization_configuration: dict[str, object]
+    acceptance_configuration: dict[str, object]
+    output_directory: Literal["reconstruction/alignment"] = "reconstruction/alignment"
+    seed: int
+
+    @field_validator(
+        "working_transform_path",
+        "chunk_transforms_path",
+        "genrecon_camera_debug_path",
+        "working_mesh_path",
+        "working_scene_path",
+    )
+    @classmethod
+    def safe_alignment_request_paths(cls, value: str | None) -> str | None:
+        return _relative_artifact_path(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def consistent_alignment_request(self) -> Self:
+        if set(self.registered_frame_ids) & set(self.unregistered_frame_ids):
+            raise ValueError("alignment registration sets must not overlap")
+        if (self.working_mesh_path is None) != (self.working_mesh_sha256 is None):
+            raise ValueError("working mesh path and hash must be supplied together")
+        if (self.working_scene_path is None) != (self.working_scene_sha256 is None):
+            raise ValueError("working scene path and hash must be supplied together")
+        return self
+
+
+class CameraMeshAlignmentWorkerManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    worker_version: Annotated[str, Field(min_length=1)]
+    backend: Literal["nvdiffrast_scipy", "fake"]
+    python_version: Annotated[str, Field(min_length=1)]
+    numpy_version: str | None = None
+    scipy_version: str | None = None
+    torch_version: str | None = None
+    cuda_version: str | None = None
+    nvdiffrast_version: str | None = None
+    device: Annotated[str, Field(min_length=1)]
+    device_name: str | None = None
+    request_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_package_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    mesh_load_seconds: float = Field(ge=0)
+    sparse_observation_seconds: float = Field(ge=0)
+    baseline_render_seconds: float = Field(ge=0)
+    correspondence_seconds: float = Field(ge=0)
+    optimization_seconds: float = Field(ge=0)
+    validation_render_seconds: float = Field(ge=0)
+    preview_seconds: float = Field(ge=0)
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    peak_host_memory_bytes: int | None = Field(default=None, ge=0)
+    raw_output_paths: list[str]
+    warnings: list[str] = Field(default_factory=list)
+
+    @field_validator("raw_output_paths")
+    @classmethod
+    def safe_alignment_worker_outputs(cls, values: list[str]) -> list[str]:
+        return [_relative_artifact_path(value) for value in values]
+
+
+class CameraMeshAlignmentResult(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    status: Literal[
+        "identity_already_consistent",
+        "accepted_global_sim3",
+        "rejected_no_validation_improvement",
+        "rejected_implausible_transform",
+        "global_sim3_insufficient",
+        "transform_chain_bug_fixed",
+        "generecon_geometry_inconsistent_with_colmap",
+    ]
+    accepted: bool
+    transform: AlignmentTransform
+    baseline_training_metrics: AlignmentMetrics
+    aligned_training_metrics: AlignmentMetrics
+    baseline_validation_metrics: AlignmentMetrics
+    aligned_validation_metrics: AlignmentMetrics
+    acceptance_checks: dict[str, bool]
+    failure_reason: str | None = None
+    coordinate_convention: CoordinateConvention
+    scale_status: Literal[ScaleStatus.SCALE_AMBIGUOUS] = ScaleStatus.SCALE_AMBIGUOUS
+    transform_chain_audit_path: Literal["reconstruction/alignment/transform_chain_audit.json"] = (
+        "reconstruction/alignment/transform_chain_audit.json"
+    )
+    dataset_split_path: Literal["reconstruction/alignment/dataset_split.json"] = (
+        "reconstruction/alignment/dataset_split.json"
+    )
+    candidate_id: Annotated[str, Field(min_length=1)]
+    provenance: ProvenanceRecord
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def accepted_status_matches(self) -> Self:
+        accepted_statuses = {
+            "identity_already_consistent",
+            "accepted_global_sim3",
+            "transform_chain_bug_fixed",
+        }
+        if self.accepted != (self.status in accepted_statuses):
+            raise ValueError("alignment acceptance must match its status")
+        return self
+
+
+class CameraMeshAlignmentDiagnostics(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    initializations: list[AlignmentInitialization]
+    camera_metrics: list[CameraAlignmentMetrics]
+    chunk_metrics: list[ChunkAlignmentMetrics]
+    residual_is_locally_structured: bool
+    candidate_solution_ambiguous: bool
+    competing_candidate_ids: list[str]
+    global_similarity_sufficient: bool
+    transform_chain_consistent: bool
+    camera_outlier_frame_ids: list[str]
+    best_candidate_id: Annotated[str, Field(min_length=1)]
+    diagnosis: Annotated[str, Field(min_length=1)]
+    performance_seconds: dict[str, float]
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    peak_host_memory_bytes: int | None = Field(default=None, ge=0)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CameraMeshAlignmentPreviewManifest(StrictModel):
+    transform_chain_comparison_path: Literal[
+        "reconstruction/alignment/previews/transform_chain_comparison.png"
+    ]
+    baseline_depth_residual_path: Literal[
+        "reconstruction/alignment/previews/baseline_depth_residual.png"
+    ]
+    aligned_depth_residual_path: Literal[
+        "reconstruction/alignment/previews/aligned_depth_residual.png"
+    ]
+    baseline_vs_aligned_scatter_path: Literal[
+        "reconstruction/alignment/previews/baseline_vs_aligned_scatter.png"
+    ]
+    per_camera_residuals_path: Literal["reconstruction/alignment/previews/per_camera_residuals.png"]
+    per_chunk_residuals_path: Literal["reconstruction/alignment/previews/per_chunk_residuals.png"]
+    sparse_points_and_mesh_before_path: Literal[
+        "reconstruction/alignment/previews/sparse_points_and_mesh_before.png"
+    ]
+    sparse_points_and_mesh_after_path: Literal[
+        "reconstruction/alignment/previews/sparse_points_and_mesh_after.png"
+    ]
+    heldout_validation_summary_path: Literal[
+        "reconstruction/alignment/previews/heldout_validation_summary.png"
+    ]
+
+
+class ObjectLiftingAlignmentMetric(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    baseline_status: Literal["accepted", "partial", "ambiguous", "unresolved"]
+    aligned_status: Literal["accepted", "partial", "ambiguous", "unresolved"]
+    baseline_accepted_faces: int = Field(ge=0)
+    aligned_accepted_faces: int = Field(ge=0)
+    baseline_ambiguous_faces: int = Field(ge=0)
+    aligned_ambiguous_faces: int = Field(ge=0)
+    baseline_components: int = Field(ge=0)
+    aligned_components: int = Field(ge=0)
+    baseline_surface_area: float = Field(ge=0)
+    aligned_surface_area: float = Field(ge=0)
+    baseline_precision: float = Field(ge=0, le=1)
+    aligned_precision: float = Field(ge=0, le=1)
+    baseline_recall: float = Field(ge=0, le=1)
+    aligned_recall: float = Field(ge=0, le=1)
+    baseline_iou: float = Field(ge=0, le=1)
+    aligned_iou: float = Field(ge=0, le=1)
+    baseline_association_confidence: float = Field(ge=0, le=1)
+    aligned_association_confidence: float = Field(ge=0, le=1)
+    baseline_supporting_views: int = Field(ge=0)
+    aligned_supporting_views: int = Field(ge=0)
+
+
+class ObjectLiftingAlignmentComparison(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    alignment_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    alignment_status: Annotated[str, Field(min_length=1)]
+    alignment_accepted: bool
+    objects: list[ObjectLiftingAlignmentMetric]
+    baseline_scene_metrics: dict[str, float | int]
+    aligned_scene_metrics: dict[str, float | int]
+    conclusion: Annotated[str, Field(min_length=1)]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class Phase4_2ConsistencyCheck(StrictModel):
+    check_id: Annotated[str, Field(min_length=1)]
+    passed: bool
+    message: Annotated[str, Field(min_length=1)]
+
+
+class Phase4_2ConsistencyReport(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    passed: bool
+    checks: list[Phase4_2ConsistencyCheck]
+    transform_chain_consistent: bool
+    global_similarity_tested: Literal[True] = True
+    global_similarity_accepted: bool
+    global_similarity_sufficient: bool
+    camera_poses_modified: Literal[False] = False
+    mesh_topology_modified: Literal[False] = False
+    metric_scale_known: Literal[False] = False
+    canonical_gravity_alignment_known: Literal[False] = False
+    hidden_surface_completion_implemented: Literal[False] = False
+    sim_ready_scene_implemented: Literal[False] = False
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def phase4_2_summary_matches_checks(self) -> Self:
+        if self.passed != all(check.passed for check in self.checks):
+            raise ValueError("Phase 4.2 report passed must equal all checks")
         return self
 
 

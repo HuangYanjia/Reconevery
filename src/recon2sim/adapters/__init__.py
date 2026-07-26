@@ -1,3 +1,7 @@
+from recon2sim.adapters.alignment import (
+    CameraMeshAlignmentAdapter,
+    Phase4_2ConsistencyValidationAdapter,
+)
 from recon2sim.adapters.base import (
     Adapter,
     ArtifactRecord,
@@ -52,12 +56,15 @@ REGISTRY: dict[str, type[Adapter]] = {
     "phase3_e2e_consistency": Phase3EndToEndConsistencyAdapter,
     "object_surface_lifting": ObjectSurfaceLiftingAdapter,
     "phase4_consistency_validation": Phase4ConsistencyValidationAdapter,
+    "camera_mesh_alignment": CameraMeshAlignmentAdapter,
+    "phase4_2_consistency_validation": Phase4_2ConsistencyValidationAdapter,
 }
 
 __all__ = [
     "Adapter",
     "ArtifactRecord",
     "CommandAdapter",
+    "CameraMeshAlignmentAdapter",
     "ColmapCameraRecoveryAdapter",
     "DockerCommandAdapter",
     "FFmpegIngestAdapter",
@@ -70,6 +77,7 @@ __all__ = [
     "REGISTRY",
     "Phase3EndToEndConsistencyAdapter",
     "Phase4ConsistencyValidationAdapter",
+    "Phase4_2ConsistencyValidationAdapter",
     "Sam3SegmentationTrackingAdapter",
     "StageContext",
     "StageResult",

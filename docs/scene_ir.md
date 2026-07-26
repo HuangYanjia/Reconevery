@@ -84,6 +84,13 @@ mask recall, reprojection IoU, multiview support, connectedness, observed covera
 confidence, and completeness confidence in the typed evidence artifact. Completeness confidence
 remains zero and no collision asset is created.
 
+Phase 4.2 extends a geometry asset with optional `source_asset_id`,
+`alignment_transform_path`, and `geometry_alignment_status`. An aligned asset is a wrapper around
+the original Phase 3 visual asset, not a rewritten mesh. Its transform is expressed in the same
+`colmap_arbitrary` frame, remains `unoriented` and `scale_ambiguous`, and is never marked
+simulation-ready. `scene_ir/phase4_2_scene.json` retains original global and partial-surface assets
+and adds alignment-aware global wrappers only when held-out gates accept the transform.
+
 Pydantic v2 generates Scene IR plus segmentation, GenRecon, object-surface, reconstruction, and
 consistency schemas under `schemas/`, including nested `$defs`, enums, required fields, numeric
 constraints, and `additionalProperties: false` behavior.

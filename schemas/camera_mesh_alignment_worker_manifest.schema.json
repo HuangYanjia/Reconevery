@@ -1,0 +1,245 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "backend": {
+      "enum": [
+        "nvdiffrast_scipy",
+        "fake"
+      ],
+      "title": "Backend",
+      "type": "string"
+    },
+    "baseline_render_seconds": {
+      "minimum": 0,
+      "title": "Baseline Render Seconds",
+      "type": "number"
+    },
+    "camera_package_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Sha256",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "correspondence_seconds": {
+      "minimum": 0,
+      "title": "Correspondence Seconds",
+      "type": "number"
+    },
+    "cuda_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cuda Version"
+    },
+    "device": {
+      "minLength": 1,
+      "title": "Device",
+      "type": "string"
+    },
+    "device_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Device Name"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "global_mesh_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Mesh Sha256",
+      "type": "string"
+    },
+    "global_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Reconstruction Sha256",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "mesh_load_seconds": {
+      "minimum": 0,
+      "title": "Mesh Load Seconds",
+      "type": "number"
+    },
+    "numpy_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Numpy Version"
+    },
+    "nvdiffrast_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Nvdiffrast Version"
+    },
+    "optimization_seconds": {
+      "minimum": 0,
+      "title": "Optimization Seconds",
+      "type": "number"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "preview_seconds": {
+      "minimum": 0,
+      "title": "Preview Seconds",
+      "type": "number"
+    },
+    "python_version": {
+      "minLength": 1,
+      "title": "Python Version",
+      "type": "string"
+    },
+    "raw_output_paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Raw Output Paths",
+      "type": "array"
+    },
+    "request_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Request Sha256",
+      "type": "string"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scipy_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Scipy Version"
+    },
+    "sparse_observation_seconds": {
+      "minimum": 0,
+      "title": "Sparse Observation Seconds",
+      "type": "number"
+    },
+    "torch_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Torch Version"
+    },
+    "validation_render_seconds": {
+      "minimum": 0,
+      "title": "Validation Render Seconds",
+      "type": "number"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "worker_version": {
+      "minLength": 1,
+      "title": "Worker Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "worker_version",
+    "backend",
+    "python_version",
+    "device",
+    "request_sha256",
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "camera_package_sha256",
+    "global_reconstruction_sha256",
+    "global_mesh_sha256",
+    "mesh_load_seconds",
+    "sparse_observation_seconds",
+    "baseline_render_seconds",
+    "correspondence_seconds",
+    "optimization_seconds",
+    "validation_render_seconds",
+    "preview_seconds",
+    "runtime_seconds",
+    "raw_output_paths"
+  ],
+  "title": "CameraMeshAlignmentWorkerManifest",
+  "type": "object"
+}

@@ -26,9 +26,12 @@ from recon2sim.adapters.ingest import (
 )
 from recon2sim.artifacts import (
     CameraMeshAlignmentArtifact,
+    CameraMeshAlignmentResult,
     CameraReconstruction,
     GlobalSceneReconstructionArtifact,
     IngestManifest,
+    ObjectLiftingAlignmentComparison,
+    ObjectLiftingAlignmentMetric,
     ObjectSurfaceDiagnostics,
     ObjectSurfaceEvidenceArtifact,
     ObjectSurfaceLiftingRequest,
@@ -75,6 +78,7 @@ class ObjectLiftingAdapterConfig(StrictModel):
     docker_executable: str = "docker"
     docker_image: str = "reconevery/object-lifting:phase4"
     device: Literal["cuda", "cpu"] = "cuda"
+    alignment_policy: Literal["none", "use_if_accepted", "require_accepted"] = "none"
     lifting_method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"] = (
         "surface_sample_fusion_v2"
     )
@@ -151,6 +155,7 @@ class ObjectSurfaceLiftingAdapter:
     version = "0.1.1"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
+        config = ObjectLiftingAdapterConfig.model_validate(context.config.adapter.config)
         tracks_path = context.canonical_path("observations", "object_tracks.json")
         if not tracks_path.is_file():
             raise FileNotFoundError("object lifting requires canonical SAM object tracks")
@@ -192,6 +197,13 @@ class ObjectSurfaceLiftingAdapter:
             {observation.mask_path for track in tracks.tracks for observation in track.observations}
         )
         specs.extend(InputSpec(path, "canonical_object_mask") for path in mask_paths)
+        if config.alignment_policy != "none":
+            specs.append(
+                InputSpec(
+                    "reconstruction/alignment/alignment.json",
+                    "camera_mesh_alignment_result",
+                )
+            )
         return specs
 
     def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult:
@@ -301,7 +313,7 @@ class ObjectSurfaceLiftingAdapter:
 
     def expected_outputs(self, context: StageContext) -> list[OutputSpec]:
         root = "reconstruction/object_surfaces"
-        return [
+        outputs = [
             OutputSpec(
                 f"{root}/request.json",
                 "object_surface_lifting_request",
@@ -401,6 +413,20 @@ class ObjectSurfaceLiftingAdapter:
                 model=SceneIR,
             ),
         ]
+        config = ObjectLiftingAdapterConfig.model_validate(context.config.adapter.config)
+        if config.alignment_policy != "none":
+            outputs.append(
+                OutputSpec(
+                    "reconstruction/alignment/object_lifting_comparison.json",
+                    "object_lifting_alignment_comparison",
+                    "application/json",
+                    "object_lifting",
+                    validation="json",
+                    schema_identifier=("recon2sim/object-lifting-alignment-comparison/0.1.0"),
+                    model=ObjectLiftingAlignmentComparison,
+                )
+            )
+        return outputs
 
     def run(self, context: StageContext) -> StageResult:
         config = ObjectLiftingAdapterConfig.model_validate(context.config.adapter.config)
@@ -420,6 +446,17 @@ class ObjectSurfaceLiftingAdapter:
         global_scene = GlobalSceneReconstructionArtifact.model_validate_json(
             global_path.read_text(encoding="utf-8")
         )
+        alignment_result: CameraMeshAlignmentResult | None = None
+        alignment_path = context.path("reconstruction", "alignment", "alignment.json")
+        if config.alignment_policy != "none":
+            alignment_result = CameraMeshAlignmentResult.model_validate_json(
+                alignment_path.read_text(encoding="utf-8")
+            )
+            if config.alignment_policy == "require_accepted" and not alignment_result.accepted:
+                raise ValueError(
+                    "object lifting requires an accepted camera/mesh alignment, "
+                    f"but alignment status is {alignment_result.status}"
+                )
         self._validate_upstream_lineage(manifest, camera, tracks, global_scene, camera_path)
         request = self._request(
             context,
@@ -433,9 +470,50 @@ class ObjectSurfaceLiftingAdapter:
             tracks_path,
             global_path,
             mesh_path,
+            alignment_result,
+            alignment_path if alignment_result is not None else None,
         )
         request_path = context.path("reconstruction", "object_surfaces", "request.json")
         atomic_write_json(request_path, request)
+        baseline_evidence: ObjectSurfaceEvidenceArtifact | None = None
+        baseline_root = context.path(
+            "reconstruction", "object_surfaces", "raw", "alignment_baseline"
+        )
+        baseline_request_path = context.path(
+            "reconstruction", "object_surfaces", "alignment_baseline_request.json"
+        )
+        if alignment_result is not None and alignment_result.accepted:
+            baseline_request = request.model_copy(
+                update={
+                    "alignment_policy": "none",
+                    "alignment_path": None,
+                    "alignment_sha256": None,
+                    "alignment_status": None,
+                    "alignment_accepted": False,
+                    "matrix_original_mesh_to_aligned_colmap": None,
+                }
+            )
+            atomic_write_json(baseline_request_path, baseline_request)
+            baseline_command = self._inference_command(
+                context,
+                config,
+                request_relative=baseline_request_path.relative_to(context.run_dir),
+                output_relative=baseline_root.relative_to(context.run_dir),
+            )
+            try:
+                run_process(
+                    baseline_command,
+                    context=context,
+                    name="object_lifting_worker_unaligned_baseline",
+                    log_directory="reconstruction/object_surfaces/raw/baseline_logs",
+                )
+            except ProcessExecutionError as exc:
+                raise self._worker_failure(exc) from exc
+            baseline_evidence = self._load_model(
+                baseline_root / "evidence_manifest.json",
+                ObjectSurfaceEvidenceArtifact,
+                "unaligned object-surface baseline",
+            )
         command = self._inference_command(context, config)
         try:
             run_process(
@@ -487,6 +565,19 @@ class ObjectSurfaceLiftingAdapter:
             comparison,
             alignment,
         )
+        if alignment_result is not None:
+            atomic_write_json(
+                context.path("reconstruction", "alignment", "object_lifting_comparison.json"),
+                self._alignment_comparison(
+                    alignment_path,
+                    alignment_result,
+                    baseline_evidence or evidence,
+                    evidence,
+                ),
+            )
+        if baseline_root.exists():
+            shutil.rmtree(baseline_root)
+        baseline_request_path.unlink(missing_ok=True)
         if diagnostics.track_count != len(tracks.tracks):
             raise RuntimeError("object-lifting diagnostics track count is inconsistent")
         shutil.copy2(root / "evidence_manifest.json", root / "face_assignment_manifest.json")
@@ -590,6 +681,8 @@ class ObjectSurfaceLiftingAdapter:
         tracks_path: Path,
         global_path: Path,
         mesh_path: Path,
+        alignment: CameraMeshAlignmentResult | None,
+        alignment_path: Path | None,
     ) -> ObjectSurfaceLiftingRequest:
         camera_package_root = context.path("camera", "genrecon_package")
         return ObjectSurfaceLiftingRequest(
@@ -634,6 +727,18 @@ class ObjectSurfaceLiftingAdapter:
             ],
             global_reconstruction_sha256=sha256_file(global_path),
             global_mesh_sha256=sha256_file(mesh_path),
+            alignment_policy=config.alignment_policy,
+            alignment_path=(
+                "reconstruction/alignment/alignment.json" if alignment is not None else None
+            ),
+            alignment_sha256=(sha256_file(alignment_path) if alignment_path is not None else None),
+            alignment_status=alignment.status if alignment is not None else None,
+            alignment_accepted=alignment.accepted if alignment is not None else False,
+            matrix_original_mesh_to_aligned_colmap=(
+                alignment.transform.matrix_original_mesh_to_aligned_colmap
+                if alignment is not None and alignment.accepted
+                else None
+            ),
             lifting_method=config.lifting_method,
             rasterization_configuration={
                 "backend": "fake" if config.execution_mode == "fake_worker" else "nvdiffrast",
@@ -693,10 +798,12 @@ class ObjectSurfaceLiftingAdapter:
         self,
         context: StageContext,
         config: ObjectLiftingAdapterConfig,
+        *,
+        request_relative: Path = Path("reconstruction/object_surfaces/request.json"),
+        output_relative: Path = Path("reconstruction/object_surfaces"),
     ) -> list[str]:
-        request = Path("reconstruction/object_surfaces/request.json")
         if config.execution_mode != "docker":
-            command = self._local_command(config, "infer", request)
+            command = self._local_command(config, "infer", request_relative)
             if isinstance(command, str):
                 raise RuntimeError(command)
             command.extend(
@@ -704,7 +811,7 @@ class ObjectSurfaceLiftingAdapter:
                     "--input-root",
                     str(context.run_dir.resolve()),
                     "--output-dir",
-                    "reconstruction/object_surfaces",
+                    str(output_relative),
                 ]
             )
             return command
@@ -729,12 +836,99 @@ class ObjectSurfaceLiftingAdapter:
             config.worker_module,
             "infer",
             "--request",
-            "/workspace/reconstruction/object_surfaces/request.json",
+            f"/workspace/{request_relative.as_posix()}",
             "--input-root",
             "/workspace",
             "--output-dir",
-            "/workspace/reconstruction/object_surfaces",
+            f"/workspace/{output_relative.as_posix()}",
         ]
+
+    @staticmethod
+    def _alignment_comparison(
+        alignment_path: Path,
+        alignment: CameraMeshAlignmentResult,
+        baseline: ObjectSurfaceEvidenceArtifact,
+        aligned: ObjectSurfaceEvidenceArtifact,
+    ) -> ObjectLiftingAlignmentComparison:
+        baseline_by_id = {item.object_id: item for item in baseline.hypotheses}
+        aligned_by_id = {item.object_id: item for item in aligned.hypotheses}
+        if set(baseline_by_id) != set(aligned_by_id):
+            raise RuntimeError("aligned and baseline object lifting cover different tracks")
+
+        def retained_area(hypothesis: Any) -> float:
+            return float(
+                sum(
+                    component.surface_area_arbitrary_units_squared
+                    for component in hypothesis.components
+                    if component.retained
+                )
+            )
+
+        objects = []
+        for object_id in sorted(aligned_by_id):
+            before = baseline_by_id[object_id]
+            after = aligned_by_id[object_id]
+            objects.append(
+                ObjectLiftingAlignmentMetric(
+                    object_id=object_id,
+                    baseline_status=before.status,
+                    aligned_status=after.status,
+                    baseline_accepted_faces=before.accepted_global_face_ids.count,
+                    aligned_accepted_faces=after.accepted_global_face_ids.count,
+                    baseline_ambiguous_faces=before.ambiguous_global_face_ids.count,
+                    aligned_ambiguous_faces=after.ambiguous_global_face_ids.count,
+                    baseline_components=before.component_count,
+                    aligned_components=after.component_count,
+                    baseline_surface_area=retained_area(before),
+                    aligned_surface_area=retained_area(after),
+                    baseline_precision=before.association_precision,
+                    aligned_precision=after.association_precision,
+                    baseline_recall=before.mask_recall,
+                    aligned_recall=after.mask_recall,
+                    baseline_iou=before.reprojection_iou,
+                    aligned_iou=after.reprojection_iou,
+                    baseline_association_confidence=before.association_confidence,
+                    aligned_association_confidence=after.association_confidence,
+                    baseline_supporting_views=before.supporting_view_count,
+                    aligned_supporting_views=after.supporting_view_count,
+                )
+            )
+
+        def scene_metrics(
+            evidence: ObjectSurfaceEvidenceArtifact,
+        ) -> dict[str, float | int]:
+            statuses = [item.status for item in evidence.hypotheses]
+            ious = [item.reprojection_iou for item in evidence.hypotheses]
+            return {
+                "accepted_objects": statuses.count("accepted"),
+                "partial_objects": statuses.count("partial"),
+                "ambiguous_objects": statuses.count("ambiguous"),
+                "unresolved_objects": statuses.count("unresolved"),
+                "assigned_faces": sum(
+                    item.accepted_global_face_ids.count for item in evidence.hypotheses
+                ),
+                "unassigned_ratio": evidence.partition.unassigned_face_ratio,
+                "mean_reprojection_iou": sum(ious) / len(ious) if ious else 0.0,
+            }
+
+        return ObjectLiftingAlignmentComparison(
+            alignment_sha256=sha256_file(alignment_path),
+            alignment_status=alignment.status,
+            alignment_accepted=alignment.accepted,
+            objects=objects,
+            baseline_scene_metrics=scene_metrics(baseline),
+            aligned_scene_metrics=scene_metrics(aligned),
+            conclusion=(
+                "accepted alignment was applied and compared with an unaligned rerun"
+                if alignment.accepted
+                else "alignment was rejected; object lifting retained its original mesh frame"
+            ),
+            warnings=(
+                []
+                if alignment.accepted
+                else ["before/after metrics are identical because no transform was accepted"]
+            ),
+        )
 
     @staticmethod
     def _local_command(
@@ -806,6 +1000,17 @@ class ObjectSurfaceLiftingAdapter:
             if field != "request_sha256" and hasattr(evidence, field):
                 if getattr(evidence, field) != value:
                     raise RuntimeError(f"object-surface evidence {field} is inconsistent")
+        for field in (
+            "alignment_policy",
+            "alignment_sha256",
+            "alignment_status",
+            "alignment_accepted",
+        ):
+            expected_value = getattr(request, field)
+            if getattr(worker, field) != expected_value:
+                raise RuntimeError(f"object-lifting worker {field} is inconsistent")
+            if getattr(evidence, field) != expected_value:
+                raise RuntimeError(f"object-surface evidence {field} is inconsistent")
         if evidence.coordinate_convention != request.coordinate_convention:
             raise RuntimeError("object-surface evidence changed coordinate semantics")
         if not coordinate_metadata_is_raw_colmap(evidence.coordinate_convention):

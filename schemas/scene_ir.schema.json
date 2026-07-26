@@ -342,6 +342,18 @@
     "GeometryAsset": {
       "additionalProperties": false,
       "properties": {
+        "alignment_transform_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alignment Transform Path"
+        },
         "asset_id": {
           "minLength": 1,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
@@ -384,6 +396,23 @@
           "title": "Format",
           "type": "string"
         },
+        "geometry_alignment_status": {
+          "anyOf": [
+            {
+              "enum": [
+                "identity_already_consistent",
+                "accepted_global_sim3",
+                "alignment_rejected"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Geometry Alignment Status"
+        },
         "geometry_status": {
           "anyOf": [
             {
@@ -425,6 +454,20 @@
         },
         "source": {
           "$ref": "#/$defs/GeometrySourceType"
+        },
+        "source_asset_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Asset Id"
         },
         "uri": {
           "title": "Uri",
@@ -1273,7 +1316,8 @@
       "enum": [
         "0.1.0",
         "0.1.1",
-        "0.1.2"
+        "0.1.2",
+        "0.1.3"
       ],
       "title": "Schema Version",
       "type": "string"

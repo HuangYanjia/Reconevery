@@ -1,0 +1,63 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "aligned_depth_residual_path": {
+      "const": "reconstruction/alignment/previews/aligned_depth_residual.png",
+      "title": "Aligned Depth Residual Path",
+      "type": "string"
+    },
+    "baseline_depth_residual_path": {
+      "const": "reconstruction/alignment/previews/baseline_depth_residual.png",
+      "title": "Baseline Depth Residual Path",
+      "type": "string"
+    },
+    "baseline_vs_aligned_scatter_path": {
+      "const": "reconstruction/alignment/previews/baseline_vs_aligned_scatter.png",
+      "title": "Baseline Vs Aligned Scatter Path",
+      "type": "string"
+    },
+    "heldout_validation_summary_path": {
+      "const": "reconstruction/alignment/previews/heldout_validation_summary.png",
+      "title": "Heldout Validation Summary Path",
+      "type": "string"
+    },
+    "per_camera_residuals_path": {
+      "const": "reconstruction/alignment/previews/per_camera_residuals.png",
+      "title": "Per Camera Residuals Path",
+      "type": "string"
+    },
+    "per_chunk_residuals_path": {
+      "const": "reconstruction/alignment/previews/per_chunk_residuals.png",
+      "title": "Per Chunk Residuals Path",
+      "type": "string"
+    },
+    "sparse_points_and_mesh_after_path": {
+      "const": "reconstruction/alignment/previews/sparse_points_and_mesh_after.png",
+      "title": "Sparse Points And Mesh After Path",
+      "type": "string"
+    },
+    "sparse_points_and_mesh_before_path": {
+      "const": "reconstruction/alignment/previews/sparse_points_and_mesh_before.png",
+      "title": "Sparse Points And Mesh Before Path",
+      "type": "string"
+    },
+    "transform_chain_comparison_path": {
+      "const": "reconstruction/alignment/previews/transform_chain_comparison.png",
+      "title": "Transform Chain Comparison Path",
+      "type": "string"
+    }
+  },
+  "required": [
+    "transform_chain_comparison_path",
+    "baseline_depth_residual_path",
+    "aligned_depth_residual_path",
+    "baseline_vs_aligned_scatter_path",
+    "per_camera_residuals_path",
+    "per_chunk_residuals_path",
+    "sparse_points_and_mesh_before_path",
+    "sparse_points_and_mesh_after_path",
+    "heldout_validation_summary_path"
+  ],
+  "title": "CameraMeshAlignmentPreviewManifest",
+  "type": "object"
+}

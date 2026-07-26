@@ -1,10 +1,10 @@
 # Recon2Sim
 
-Recon2Sim Phase 3 is a typed observation pipeline with real video/image ingest, frame QA,
+Recon2Sim Phase 4.2 is a typed observation pipeline with real video/image ingest, frame QA,
 out-of-process COLMAP sparse camera recovery, prompt-driven SAM 3.1 tracking, and isolated
-official GenRecon global visual reconstruction. Heavy model runtimes remain outside the
-lightweight core. Object-level 2D/3D fusion, physical reconstruction, and simulator export are
-not implemented.
+official GenRecon global visual reconstruction. It lifts 2D tracks to partial visible surfaces
+and audits a bounded global camera-mesh Sim(3). Heavy runtimes remain outside the lightweight
+core. Hidden-surface completion, physical reconstruction, and simulator export are not implemented.
 
 ## Quickstart
 
@@ -198,6 +198,31 @@ uv run recon2sim objects inspect-surfaces runs/phase4
 uv run recon2sim validation verify-phase4 runs/phase4
 ```
 
+## Camera-mesh alignment audit
+
+`camera_mesh_alignment` audits the complete COLMAP -> GenRecon working frame -> canonical mesh
+transform chain before fitting anything. It prepares filtered COLMAP sparse observations in the
+same undistorted projection space used by GenRecon and object lifting, separates training and
+held-out cameras/point IDs, and evaluates identity plus bounded global Sim(3) candidates. A
+candidate is accepted only when held-out depth, inlier, coverage, plausibility, and
+point-to-surface gates all pass.
+
+The original cameras, PLY, GLB, topology, and face IDs are immutable. An accepted transform is
+stored in `reconstruction/alignment/alignment.json` and applied only to an in-memory vertex copy
+during downstream rasterization. A rejected transform is a valid outcome. The fitted scale
+remains an arbitrary gauge correction: it does not establish meters or gravity.
+
+```bash
+uv run recon2sim run \
+  --input /path/to/scene \
+  --config configs/phase4_2_e2e.yaml \
+  --run-dir runs/phase4_2
+uv run recon2sim alignment inspect runs/phase4_2
+uv run recon2sim alignment inspect-transform-chain runs/phase4_2
+uv run recon2sim alignment compare-object-lifting runs/phase4_2
+uv run recon2sim validation verify-phase4-2 runs/phase4_2
+```
+
 ## Coordinate convention
 
 Raw Phase 1 COLMAP output is explicitly `world_frame="colmap_arbitrary"`,
@@ -229,6 +254,7 @@ uv run python scripts/generate_schema.py
 ## Adapter boundary
 
 Core code imports only lightweight dependencies. Official SAM and GenRecon code, PyTorch, CUDA
-packages, checkpoints, and GPU rasterization exist only in isolated workers or Docker images.
+packages, checkpoints, GPU rasterization, SciPy, and Sim(3) optimization exist only in isolated
+workers or Docker images.
 SceneSmith, hidden object completion, physics, simulators, MVS, NeRF, and automatic VLM prompt
-inventory remain outside Phase 4.
+inventory remain outside Phase 4.2.

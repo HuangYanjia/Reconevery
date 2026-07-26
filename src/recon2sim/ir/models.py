@@ -288,12 +288,22 @@ class GeometryAsset(StrictModel):
     geometry_status: Literal["partial_observation_supported"] | None = None
     completion_status: Literal["not_completed"] | None = None
     sim_ready: bool | None = None
+    source_asset_id: Identifier | None = None
+    alignment_transform_path: str | None = None
+    geometry_alignment_status: (
+        Literal[
+            "identity_already_consistent",
+            "accepted_global_sim3",
+            "alignment_rejected",
+        ]
+        | None
+    ) = None
     provenance: ProvenanceRecord
 
-    @field_validator("uri")
+    @field_validator("uri", "alignment_transform_path")
     @classmethod
-    def relative_uri(cls, value: str) -> str:
-        return _relative_path(value)
+    def relative_geometry_path(cls, value: str | None) -> str | None:
+        return _relative_path(value) if value is not None else None
 
 
 class MaterialAsset(StrictModel):
@@ -442,7 +452,7 @@ class ValidationReport(StrictModel):
 
 
 class SceneIR(StrictModel):
-    schema_version: Literal["0.1.0", "0.1.1", "0.1.2"] = "0.1.1"
+    schema_version: Literal["0.1.0", "0.1.1", "0.1.2", "0.1.3"] = "0.1.1"
     metadata: SceneMetadata
     cameras: list[Camera] = Field(default_factory=list)
     frames: list[FrameObservation] = Field(default_factory=list)

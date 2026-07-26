@@ -10,9 +10,13 @@ from pydantic import BaseModel, ValidationError
 
 from recon2sim.adapters import REGISTRY
 from recon2sim.adapters.base import StageContext
+from recon2sim.alignment import export_aligned_ply, render_alignment_previews
 from recon2sim.artifacts import (
     CameraDiagnostics,
     CameraMeshAlignmentArtifact,
+    CameraMeshAlignmentDiagnostics,
+    CameraMeshAlignmentPreviewManifest,
+    CameraMeshAlignmentResult,
     CameraReconstruction,
     EndToEndConsistencyReport,
     FrameQualityReport,
@@ -20,15 +24,18 @@ from recon2sim.artifacts import (
     GlobalSceneDiagnostics,
     GlobalSceneReconstructionArtifact,
     IngestManifest,
+    ObjectLiftingAlignmentComparison,
     ObjectSurfaceDiagnostics,
     ObjectSurfaceEvidenceArtifact,
     ObjectSurfaceHypothesis,
     ObjectSurfaceMethodComparison,
+    Phase4_2ConsistencyReport,
     Phase4ConsistencyReport,
     Sam3WorkerManifest,
     SegmentationDiagnostics,
     SegmentationPromptManifest,
     SegmentationTrackingArtifact,
+    TransformChainAudit,
 )
 from recon2sim.config import load_config
 from recon2sim.genrecon import read_colmap_text_points, render_global_previews
@@ -68,6 +75,10 @@ objects_app = typer.Typer(
     help="Inspect and export observation-supported partial object surfaces.",
     no_args_is_help=True,
 )
+alignment_app = typer.Typer(
+    help="Inspect and export camera-to-global-mesh alignment artifacts.",
+    no_args_is_help=True,
+)
 app.add_typer(adapters_app, name="adapters")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(camera_app, name="camera")
@@ -75,6 +86,7 @@ app.add_typer(segmentation_app, name="segmentation")
 app.add_typer(reconstruction_app, name="reconstruction")
 app.add_typer(validation_app, name="validation")
 app.add_typer(objects_app, name="objects")
+app.add_typer(alignment_app, name="alignment")
 
 
 @app.command()
@@ -921,3 +933,194 @@ def verify_phase4(
         failed = [check.check_id for check in report.checks if not check.passed]
         raise typer.BadParameter(f"Phase 4 consistency verification failed: {failed}")
     typer.echo(f"Phase 4 object-surface consistency passed ({len(report.checks)} checks)")
+
+
+def _alignment_result(run_dir: Path) -> CameraMeshAlignmentResult:
+    return _artifact_model(
+        run_dir,
+        "reconstruction/alignment/alignment.json",
+        CameraMeshAlignmentResult,
+    )
+
+
+@alignment_app.command("inspect")
+def inspect_alignment(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    result = _alignment_result(run_dir)
+    diagnostics = _artifact_model(
+        run_dir,
+        "reconstruction/alignment/diagnostics.json",
+        CameraMeshAlignmentDiagnostics,
+    )
+    baseline = result.baseline_validation_metrics
+    aligned = result.aligned_validation_metrics
+    typer.echo(
+        json.dumps(
+            {
+                "status": result.status,
+                "accepted": result.accepted,
+                "scale": result.transform.scale,
+                "rotation_degrees": result.transform.rotation_degrees,
+                "translation_scene_diagonal_ratio": (
+                    result.transform.translation_scene_diagonal_ratio
+                ),
+                "baseline_validation_residual": (baseline.sparse_depth_residual_median),
+                "aligned_validation_residual": aligned.sparse_depth_residual_median,
+                "baseline_p90_residual": baseline.sparse_depth_residual_p90,
+                "aligned_p90_residual": aligned.sparse_depth_residual_p90,
+                "baseline_inlier_fraction": baseline.inlier_fractions,
+                "aligned_inlier_fraction": aligned.inlier_fractions,
+                "mesh_coverage_before": baseline.mesh_pixel_coverage,
+                "mesh_coverage_after": aligned.mesh_pixel_coverage,
+                "bad_camera_fraction": aligned.bad_frame_fraction,
+                "residual_is_locally_structured": (diagnostics.residual_is_locally_structured),
+                "diagnosis": diagnostics.diagnosis,
+                "coordinate_convention": result.coordinate_convention.model_dump(mode="json"),
+                "warnings": [*result.warnings, *diagnostics.warnings],
+            },
+            indent=2,
+        )
+    )
+
+
+@alignment_app.command("inspect-transform-chain")
+def inspect_alignment_transform_chain(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    audit = _artifact_model(
+        run_dir,
+        "reconstruction/alignment/transform_chain_audit.json",
+        TransformChainAudit,
+    )
+    typer.echo(json.dumps(audit.model_dump(mode="json"), indent=2))
+
+
+@alignment_app.command("inspect-camera")
+def inspect_alignment_camera(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    frame_id: Annotated[str, typer.Argument(help="Registered canonical frame ID.")],
+) -> None:
+    diagnostics = _artifact_model(
+        run_dir,
+        "reconstruction/alignment/diagnostics.json",
+        CameraMeshAlignmentDiagnostics,
+    )
+    for camera in diagnostics.camera_metrics:
+        if camera.frame_id == frame_id:
+            typer.echo(json.dumps(camera.model_dump(mode="json"), indent=2))
+            return
+    raise typer.BadParameter(f"alignment diagnostics do not contain frame {frame_id!r}")
+
+
+@alignment_app.command("render-previews")
+def render_camera_mesh_alignment_previews(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    result = _alignment_result(run_dir)
+    diagnostics = _artifact_model(
+        run_dir,
+        "reconstruction/alignment/diagnostics.json",
+        CameraMeshAlignmentDiagnostics,
+    )
+    previews = _artifact_model(
+        run_dir,
+        "reconstruction/alignment/preview_manifest.json",
+        CameraMeshAlignmentPreviewManifest,
+    )
+    render_alignment_previews(run_dir, result, diagnostics, previews)
+    typer.echo("regenerated deterministic camera/mesh alignment previews")
+
+
+@alignment_app.command("export-transform")
+def export_camera_mesh_alignment_transform(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    output: Annotated[Path, typer.Option("--output", help="Destination JSON path.")],
+) -> None:
+    result = _alignment_result(run_dir)
+    atomic_write_json(output, result.transform)
+    typer.echo(f"exported camera/mesh alignment transform to {output}")
+
+
+@alignment_app.command("export-aligned-mesh")
+def export_camera_aligned_mesh(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    output: Annotated[Path, typer.Option("--output", help="Destination PLY path.")],
+) -> None:
+    result = _alignment_result(run_dir)
+    if not result.accepted:
+        raise typer.BadParameter(
+            f"alignment is not accepted ({result.status}); aligned mesh export refused"
+        )
+    export_aligned_ply(
+        run_dir / "reconstruction/global/mesh.ply",
+        output,
+        result.transform,
+    )
+    typer.echo(f"exported derived aligned mesh to {output}")
+
+
+@alignment_app.command("compare-object-lifting")
+def compare_aligned_object_lifting(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    comparison = _artifact_model(
+        run_dir,
+        "reconstruction/alignment/object_lifting_comparison.json",
+        ObjectLiftingAlignmentComparison,
+    )
+    typer.echo(json.dumps(comparison.model_dump(mode="json"), indent=2))
+
+
+@validation_app.command("inspect-phase4-2")
+def inspect_phase4_2(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase4_2_camera_mesh_alignment.json",
+        Phase4_2ConsistencyReport,
+    )
+    typer.echo(json.dumps(report.model_dump(mode="json"), indent=2))
+
+
+@validation_app.command("verify-phase4-2")
+def verify_phase4_2(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase4_2_camera_mesh_alignment.json",
+        Phase4_2ConsistencyReport,
+    )
+    if not report.passed:
+        failed = [check.check_id for check in report.checks if not check.passed]
+        raise typer.BadParameter(f"Phase 4.2 consistency verification failed: {failed}")
+    typer.echo(f"Phase 4.2 camera/mesh consistency passed ({len(report.checks)} checks)")

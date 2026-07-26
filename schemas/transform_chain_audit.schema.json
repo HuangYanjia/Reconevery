@@ -1,0 +1,344 @@
+{
+  "$defs": {
+    "TransformChainStage": {
+      "additionalProperties": false,
+      "properties": {
+        "camera_center_bounds_max": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Camera Center Bounds Max"
+        },
+        "camera_center_bounds_min": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Camera Center Bounds Min"
+        },
+        "determinant": {
+          "title": "Determinant",
+          "type": "number"
+        },
+        "matrix_from_previous": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Matrix From Previous",
+          "type": "array"
+        },
+        "matrix_to_previous": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Matrix To Previous",
+          "type": "array"
+        },
+        "mesh_bounds_max": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mesh Bounds Max"
+        },
+        "mesh_bounds_min": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mesh Bounds Min"
+        },
+        "rotation_orthogonality_error": {
+          "minimum": 0,
+          "title": "Rotation Orthogonality Error",
+          "type": "number"
+        },
+        "roundtrip_error": {
+          "minimum": 0,
+          "title": "Roundtrip Error",
+          "type": "number"
+        },
+        "scale": {
+          "exclusiveMinimum": 0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "sparse_point_bounds_max": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sparse Point Bounds Max"
+        },
+        "sparse_point_bounds_min": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sparse Point Bounds Min"
+        },
+        "stage_id": {
+          "minLength": 1,
+          "title": "Stage Id",
+          "type": "string"
+        },
+        "transform_source": {
+          "minLength": 1,
+          "title": "Transform Source",
+          "type": "string"
+        },
+        "translation": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Translation",
+          "type": "array"
+        }
+      },
+      "required": [
+        "stage_id",
+        "transform_source",
+        "matrix_from_previous",
+        "matrix_to_previous",
+        "determinant",
+        "rotation_orthogonality_error",
+        "scale",
+        "translation",
+        "roundtrip_error"
+      ],
+      "title": "TransformChainStage",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_basis_roundtrip_error": {
+      "minimum": 0,
+      "title": "Camera Basis Roundtrip Error",
+      "type": "number"
+    },
+    "checks": {
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "title": "Checks",
+      "type": "object"
+    },
+    "colmap_working_roundtrip_error": {
+      "minimum": 0,
+      "title": "Colmap Working Roundtrip Error",
+      "type": "number"
+    },
+    "pre_post_render_depth_error": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pre Post Render Depth Error"
+    },
+    "pre_post_render_equivalent": {
+      "title": "Pre Post Render Equivalent",
+      "type": "boolean"
+    },
+    "pre_post_render_silhouette_iou": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pre Post Render Silhouette Iou"
+    },
+    "raw_working_mesh_available": {
+      "title": "Raw Working Mesh Available",
+      "type": "boolean"
+    },
+    "raw_working_scene_available": {
+      "title": "Raw Working Scene Available",
+      "type": "boolean"
+    },
+    "sampled_mesh_roundtrip_error": {
+      "minimum": 0,
+      "title": "Sampled Mesh Roundtrip Error",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "stages": {
+      "items": {
+        "$ref": "#/$defs/TransformChainStage"
+      },
+      "minItems": 1,
+      "title": "Stages",
+      "type": "array"
+    },
+    "status": {
+      "enum": [
+        "consistent",
+        "transform_chain_bug"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "status",
+    "stages",
+    "colmap_working_roundtrip_error",
+    "camera_basis_roundtrip_error",
+    "sampled_mesh_roundtrip_error",
+    "pre_post_render_equivalent",
+    "raw_working_mesh_available",
+    "raw_working_scene_available",
+    "checks"
+  ],
+  "title": "TransformChainAudit",
+  "type": "object"
+}

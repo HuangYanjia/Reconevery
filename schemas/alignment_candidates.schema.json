@@ -1,0 +1,263 @@
+{
+  "$defs": {
+    "AlignmentCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "correspondence_collapsed": {
+          "title": "Correspondence Collapsed",
+          "type": "boolean"
+        },
+        "finite": {
+          "title": "Finite",
+          "type": "boolean"
+        },
+        "hit_parameter_bound": {
+          "title": "Hit Parameter Bound",
+          "type": "boolean"
+        },
+        "initialization_id": {
+          "minLength": 1,
+          "title": "Initialization Id",
+          "type": "string"
+        },
+        "matrix_original_mesh_to_aligned_colmap": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Matrix Original Mesh To Aligned Colmap",
+          "type": "array"
+        },
+        "objective": {
+          "minimum": 0,
+          "title": "Objective",
+          "type": "number"
+        },
+        "rejection_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rejection Reason"
+        },
+        "rotation_degrees": {
+          "minimum": 0,
+          "title": "Rotation Degrees",
+          "type": "number"
+        },
+        "scale": {
+          "exclusiveMinimum": 0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "selected": {
+          "title": "Selected",
+          "type": "boolean"
+        },
+        "training_metrics": {
+          "$ref": "#/$defs/AlignmentMetrics"
+        },
+        "translation_scene_diagonal_ratio": {
+          "minimum": 0,
+          "title": "Translation Scene Diagonal Ratio",
+          "type": "number"
+        },
+        "validation_metrics": {
+          "$ref": "#/$defs/AlignmentMetrics"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "initialization_id",
+        "matrix_original_mesh_to_aligned_colmap",
+        "scale",
+        "rotation_degrees",
+        "translation_scene_diagonal_ratio",
+        "finite",
+        "hit_parameter_bound",
+        "correspondence_collapsed",
+        "training_metrics",
+        "validation_metrics",
+        "objective",
+        "selected"
+      ],
+      "title": "AlignmentCandidate",
+      "type": "object"
+    },
+    "AlignmentMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "bad_frame_fraction": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Bad Frame Fraction",
+          "type": "number"
+        },
+        "inlier_fractions": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Inlier Fractions",
+          "type": "object"
+        },
+        "log_depth_residual_median": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Log Depth Residual Median"
+        },
+        "mesh_pixel_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Mesh Pixel Coverage",
+          "type": "number"
+        },
+        "observation_count": {
+          "minimum": 0,
+          "title": "Observation Count",
+          "type": "integer"
+        },
+        "point_to_plane_median_scene_diagonal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Point To Plane Median Scene Diagonal"
+        },
+        "point_to_surface_median_scene_diagonal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Point To Surface Median Scene Diagonal"
+        },
+        "point_to_surface_p90_scene_diagonal": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Point To Surface P90 Scene Diagonal"
+        },
+        "sparse_depth_residual_median": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sparse Depth Residual Median"
+        },
+        "sparse_depth_residual_p75": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sparse Depth Residual P75"
+        },
+        "sparse_depth_residual_p90": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sparse Depth Residual P90"
+        },
+        "sparse_depth_residual_p95": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sparse Depth Residual P95"
+        }
+      },
+      "required": [
+        "observation_count",
+        "inlier_fractions",
+        "mesh_pixel_coverage",
+        "bad_frame_fraction"
+      ],
+      "title": "AlignmentMetrics",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/AlignmentCandidate"
+      },
+      "minItems": 1,
+      "title": "Candidates",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidates"
+  ],
+  "title": "AlignmentCandidateManifest",
+  "type": "object"
+}

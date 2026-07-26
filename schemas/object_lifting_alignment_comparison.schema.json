@@ -1,0 +1,238 @@
+{
+  "$defs": {
+    "ObjectLiftingAlignmentMetric": {
+      "additionalProperties": false,
+      "properties": {
+        "aligned_accepted_faces": {
+          "minimum": 0,
+          "title": "Aligned Accepted Faces",
+          "type": "integer"
+        },
+        "aligned_ambiguous_faces": {
+          "minimum": 0,
+          "title": "Aligned Ambiguous Faces",
+          "type": "integer"
+        },
+        "aligned_association_confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Aligned Association Confidence",
+          "type": "number"
+        },
+        "aligned_components": {
+          "minimum": 0,
+          "title": "Aligned Components",
+          "type": "integer"
+        },
+        "aligned_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Aligned Iou",
+          "type": "number"
+        },
+        "aligned_precision": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Aligned Precision",
+          "type": "number"
+        },
+        "aligned_recall": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Aligned Recall",
+          "type": "number"
+        },
+        "aligned_status": {
+          "enum": [
+            "accepted",
+            "partial",
+            "ambiguous",
+            "unresolved"
+          ],
+          "title": "Aligned Status",
+          "type": "string"
+        },
+        "aligned_supporting_views": {
+          "minimum": 0,
+          "title": "Aligned Supporting Views",
+          "type": "integer"
+        },
+        "aligned_surface_area": {
+          "minimum": 0,
+          "title": "Aligned Surface Area",
+          "type": "number"
+        },
+        "baseline_accepted_faces": {
+          "minimum": 0,
+          "title": "Baseline Accepted Faces",
+          "type": "integer"
+        },
+        "baseline_ambiguous_faces": {
+          "minimum": 0,
+          "title": "Baseline Ambiguous Faces",
+          "type": "integer"
+        },
+        "baseline_association_confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Baseline Association Confidence",
+          "type": "number"
+        },
+        "baseline_components": {
+          "minimum": 0,
+          "title": "Baseline Components",
+          "type": "integer"
+        },
+        "baseline_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Baseline Iou",
+          "type": "number"
+        },
+        "baseline_precision": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Baseline Precision",
+          "type": "number"
+        },
+        "baseline_recall": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Baseline Recall",
+          "type": "number"
+        },
+        "baseline_status": {
+          "enum": [
+            "accepted",
+            "partial",
+            "ambiguous",
+            "unresolved"
+          ],
+          "title": "Baseline Status",
+          "type": "string"
+        },
+        "baseline_supporting_views": {
+          "minimum": 0,
+          "title": "Baseline Supporting Views",
+          "type": "integer"
+        },
+        "baseline_surface_area": {
+          "minimum": 0,
+          "title": "Baseline Surface Area",
+          "type": "number"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "object_id",
+        "baseline_status",
+        "aligned_status",
+        "baseline_accepted_faces",
+        "aligned_accepted_faces",
+        "baseline_ambiguous_faces",
+        "aligned_ambiguous_faces",
+        "baseline_components",
+        "aligned_components",
+        "baseline_surface_area",
+        "aligned_surface_area",
+        "baseline_precision",
+        "aligned_precision",
+        "baseline_recall",
+        "aligned_recall",
+        "baseline_iou",
+        "aligned_iou",
+        "baseline_association_confidence",
+        "aligned_association_confidence",
+        "baseline_supporting_views",
+        "aligned_supporting_views"
+      ],
+      "title": "ObjectLiftingAlignmentMetric",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "aligned_scene_metrics": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "title": "Aligned Scene Metrics",
+      "type": "object"
+    },
+    "alignment_accepted": {
+      "title": "Alignment Accepted",
+      "type": "boolean"
+    },
+    "alignment_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Alignment Sha256",
+      "type": "string"
+    },
+    "alignment_status": {
+      "minLength": 1,
+      "title": "Alignment Status",
+      "type": "string"
+    },
+    "baseline_scene_metrics": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "title": "Baseline Scene Metrics",
+      "type": "object"
+    },
+    "conclusion": {
+      "minLength": 1,
+      "title": "Conclusion",
+      "type": "string"
+    },
+    "objects": {
+      "items": {
+        "$ref": "#/$defs/ObjectLiftingAlignmentMetric"
+      },
+      "title": "Objects",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "alignment_sha256",
+    "alignment_status",
+    "alignment_accepted",
+    "objects",
+    "baseline_scene_metrics",
+    "aligned_scene_metrics",
+    "conclusion"
+  ],
+  "title": "ObjectLiftingAlignmentComparison",
+  "type": "object"
+}

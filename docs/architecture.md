@@ -143,3 +143,18 @@ translations to that canonical contract.
 GenRecon may use a recorded invertible PCA working transform because its official chunker assumes
 axis-aligned bounds. This remains unoriented preprocessing. Canonical PLY/GLB outputs are
 transformed back into the original COLMAP world before promotion.
+
+## Phase 4.2 alignment branch
+
+`camera_mesh_alignment` is a sibling of segmentation: it depends only on camera recovery, the
+minimal GenRecon camera package, and global reconstruction. Prompt changes therefore do not
+invalidate it. The isolated worker receives sparse COLMAP text, transform-chain diagnostics, and
+an attempt-local reflink/copy of the global PLY. It never receives SAM output, COLMAP databases,
+GenRecon checkpoints, or raw generation tensors.
+
+The worker audits coordinate round trips first, then evaluates identity and bounded Sim(3)
+initializations. Training and validation frame/point IDs are disjoint. The core independently
+checks held-out gates and publishes the original mesh plus a typed root transform; it never bakes
+the PBR GLB by default. Object lifting consumes the transform with `use_if_accepted`, keeps
+original face IDs, and records an unaligned/aligned comparison. The final validator writes
+`scene_ir/phase4_2_scene.json` without mutating Phase 3 or Phase 4 source artifacts.

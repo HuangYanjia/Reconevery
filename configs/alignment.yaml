@@ -1,0 +1,60 @@
+seed: 42
+allow_existing_artifacts_for_disabled_dependencies: true
+stages:
+  ingest:
+    enabled: false
+    adapter:
+      name: ffmpeg_ingest
+      config:
+        input_mode: auto
+    depends_on: []
+
+  camera_recovery:
+    enabled: false
+    adapter:
+      name: colmap_camera_recovery
+      config:
+        execution_mode: local
+        executable: colmap
+    depends_on: [ingest]
+
+  genrecon_camera_package:
+    enabled: false
+    adapter:
+      name: genrecon_camera_package
+      config: {}
+    depends_on: [ingest, camera_recovery]
+
+  global_reconstruction:
+    enabled: false
+    adapter:
+      name: genrecon_global_reconstruction
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/genrecon-env/bin/python
+    depends_on: [ingest, camera_recovery, genrecon_camera_package]
+
+  camera_mesh_alignment:
+    adapter:
+      name: camera_mesh_alignment
+      timeout_s: 14400
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/genrecon-env/bin/python
+        worker_module: alignment_worker
+        device: cuda
+        raster_scale: 0.25
+        face_chunk_size: 1000000
+        max_colmap_reprojection_error: 2.0
+        min_track_length: 3
+        maximum_iterations: 8
+        minimum_validation_observations: 100
+        min_scale: 0.25
+        max_scale: 4.0
+        max_rotation_degrees_from_identity: 60.0
+        max_translation_scene_diagonals: 1.0
+    depends_on:
+      - camera_recovery
+      - genrecon_camera_package
+      - global_reconstruction

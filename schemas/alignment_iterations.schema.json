@@ -1,0 +1,100 @@
+{
+  "$defs": {
+    "AlignmentIteration": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "converged": {
+          "title": "Converged",
+          "type": "boolean"
+        },
+        "correspondence_count": {
+          "minimum": 0,
+          "title": "Correspondence Count",
+          "type": "integer"
+        },
+        "inlier_count": {
+          "minimum": 0,
+          "title": "Inlier Count",
+          "type": "integer"
+        },
+        "iteration": {
+          "minimum": 0,
+          "title": "Iteration",
+          "type": "integer"
+        },
+        "loss": {
+          "minimum": 0,
+          "title": "Loss",
+          "type": "number"
+        },
+        "rotation_degrees": {
+          "minimum": 0,
+          "title": "Rotation Degrees",
+          "type": "number"
+        },
+        "scale": {
+          "exclusiveMinimum": 0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "translation_scene_diagonal_ratio": {
+          "minimum": 0,
+          "title": "Translation Scene Diagonal Ratio",
+          "type": "number"
+        },
+        "validation_point_to_surface_median": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validation Point To Surface Median"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "iteration",
+        "correspondence_count",
+        "inlier_count",
+        "loss",
+        "scale",
+        "rotation_degrees",
+        "translation_scene_diagonal_ratio",
+        "converged"
+      ],
+      "title": "AlignmentIteration",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "iterations": {
+      "items": {
+        "$ref": "#/$defs/AlignmentIteration"
+      },
+      "title": "Iterations",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "iterations"
+  ],
+  "title": "AlignmentIterationManifest",
+  "type": "object"
+}
