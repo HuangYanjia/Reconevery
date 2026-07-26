@@ -946,6 +946,517 @@ class EndToEndConsistencyReport(StrictModel):
         return self
 
 
+class CompactFaceIndexManifest(StrictModel):
+    relative_path: Annotated[str, Field(min_length=1)]
+    dtype: Literal["uint32", "uint64"]
+    byte_order: Literal["little"] = "little"
+    count: int = Field(ge=0)
+    global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    minimum_face_id: int | None = Field(default=None, ge=0)
+    maximum_face_id: int | None = Field(default=None, ge=0)
+    content_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+    @field_validator("relative_path")
+    @classmethod
+    def relative_face_index_path(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+    @model_validator(mode="after")
+    def consistent_range(self) -> Self:
+        if self.count == 0 and (
+            self.minimum_face_id is not None or self.maximum_face_id is not None
+        ):
+            raise ValueError("empty face-index arrays cannot declare a face-ID range")
+        if self.count > 0 and (self.minimum_face_id is None or self.maximum_face_id is None):
+            raise ValueError("non-empty face-index arrays require a face-ID range")
+        if (
+            self.minimum_face_id is not None
+            and self.maximum_face_id is not None
+            and self.minimum_face_id > self.maximum_face_id
+        ):
+            raise ValueError("face-index minimum must not exceed maximum")
+        return self
+
+
+class ObjectSurfaceTrackRequest(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    semantic_label: Annotated[str, Field(min_length=1)]
+    prompt_id: Annotated[str, Field(min_length=1)]
+    asset_type_hint: AssetType | None = None
+    track_coverage: float = Field(ge=0, le=1)
+    mask_paths_by_frame: dict[str, str]
+    frame_scores: dict[str, float]
+
+    @field_validator("mask_paths_by_frame")
+    @classmethod
+    def relative_track_masks(cls, values: dict[str, str]) -> dict[str, str]:
+        return {frame_id: _relative_artifact_path(path) for frame_id, path in values.items()}
+
+    @model_validator(mode="after")
+    def matching_observation_keys(self) -> Self:
+        if set(self.mask_paths_by_frame) != set(self.frame_scores):
+            raise ValueError("mask paths and frame scores must cover the same observations")
+        if any(score < 0 or score > 1 for score in self.frame_scores.values()):
+            raise ValueError("object lifting frame scores must be in [0, 1]")
+        return self
+
+
+class ObjectSurfaceLiftingRequest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    run_id: Annotated[str, Field(min_length=1)]
+    manifest_path: Literal["inputs/manifest.json"] = "inputs/manifest.json"
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    master_frame_order: Annotated[list[str], Field(min_length=1)]
+    normalized_frame_paths: dict[str, str]
+    normalized_frame_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    camera_reconstruction_path: Literal["camera/reconstruction.json"] = "camera/reconstruction.json"
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_package_manifest_path: Literal["camera/genrecon_package/package_manifest.json"] = (
+        "camera/genrecon_package/package_manifest.json"
+    )
+    camera_package_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_package_images_path: Literal["camera/genrecon_package/images.txt"] = (
+        "camera/genrecon_package/images.txt"
+    )
+    camera_package_images_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_package_points3d_path: Literal["camera/genrecon_package/points3D.txt"] = (
+        "camera/genrecon_package/points3D.txt"
+    )
+    camera_package_points3d_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_package_registered_frames_path: Literal[
+        "camera/genrecon_package/registered_frames.json"
+    ] = "camera/genrecon_package/registered_frames.json"
+    camera_package_registered_frames_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    registered_frame_ids: Annotated[list[str], Field(min_length=1)]
+    unregistered_frame_ids: list[str]
+    coordinate_convention: CoordinateConvention
+    segmentation_tracking_path: Literal["observations/object_tracks.json"] = (
+        "observations/object_tracks.json"
+    )
+    segmentation_tracking_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    object_tracks: list[ObjectSurfaceTrackRequest]
+    global_reconstruction_path: Literal["reconstruction/global/metadata.json"] = (
+        "reconstruction/global/metadata.json"
+    )
+    global_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_mesh_path: Literal["reconstruction/global/mesh.ply"] = "reconstruction/global/mesh.ply"
+    global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    lifting_method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"]
+    rasterization_configuration: dict[str, object]
+    mask_processing_configuration: dict[str, object]
+    face_evidence_configuration: dict[str, object]
+    surface_sample_configuration: dict[str, object]
+    surface_extraction_configuration: dict[str, object]
+    output_directory: Literal["reconstruction/object_surfaces/raw"] = (
+        "reconstruction/object_surfaces/raw"
+    )
+    seed: int
+
+    @field_validator("normalized_frame_paths")
+    @classmethod
+    def relative_normalized_frames(cls, values: dict[str, str]) -> dict[str, str]:
+        return {frame_id: _relative_artifact_path(path) for frame_id, path in values.items()}
+
+    @model_validator(mode="after")
+    def consistent_lineage(self) -> Self:
+        master = set(self.master_frame_order)
+        if len(master) != len(self.master_frame_order):
+            raise ValueError("object lifting master frame order must be unique")
+        if (
+            set(self.normalized_frame_paths) != master
+            or set(self.normalized_frame_hashes) != master
+        ):
+            raise ValueError("normalized paths and hashes must cover the master frame order")
+        if set(self.registered_frame_ids) | set(self.unregistered_frame_ids) != master:
+            raise ValueError("registered and unregistered sets must cover master frames")
+        if set(self.registered_frame_ids) & set(self.unregistered_frame_ids):
+            raise ValueError("registered and unregistered frames must not overlap")
+        known = master
+        for track in self.object_tracks:
+            unknown = set(track.mask_paths_by_frame) - known
+            if unknown:
+                raise ValueError(
+                    f"object {track.object_id!r} references unknown frames: {sorted(unknown)}"
+                )
+        return self
+
+
+class ObjectSurfaceObservationSupport(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    registered: Literal[True] = True
+    source_camera_model: Annotated[str, Field(min_length=1)]
+    source_distortion: list[float]
+    undistorted_width: int = Field(gt=0)
+    undistorted_height: int = Field(gt=0)
+    undistorted_intrinsics: CameraIntrinsics
+    undistortion_map_hash: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    visible_face_count: int = Field(ge=0)
+    supporting_face_count: int = Field(ge=0)
+    iou: float = Field(ge=0, le=1)
+    precision: float = Field(ge=0, le=1)
+    recall: float = Field(ge=0, le=1)
+    rendered_area_pixels: int = Field(ge=0)
+    mask_area_pixels: int = Field(ge=0)
+    false_positive_area_pixels: int = Field(ge=0)
+    false_negative_area_pixels: int = Field(ge=0)
+
+
+class ObjectSurfaceComponent(StrictModel):
+    component_id: Annotated[str, Field(min_length=1)]
+    face_count: int = Field(gt=0)
+    surface_area_arbitrary_units_squared: float = Field(ge=0)
+    relative_face_ratio: float = Field(gt=0, le=1)
+    relative_surface_area: float = Field(ge=0, le=1)
+    retained: bool
+    removal_reason: str | None = None
+
+
+class ObjectSurfaceConflict(StrictModel):
+    conflict_type: Literal["same_class_instance", "different_semantic_label"]
+    object_ids: Annotated[list[str], Field(min_length=2)]
+    face_count: int = Field(gt=0)
+    resolution: Literal[
+        "winner_by_support",
+        "ambiguous_below_margin",
+        "multi_label_retained",
+    ]
+
+
+class FaceEvidenceArrayRecord(StrictModel):
+    name: Annotated[str, Field(min_length=1)]
+    shape: list[int]
+    dtype: Annotated[str, Field(min_length=1)]
+    content_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+class ObjectSurfaceHypothesis(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    semantic_label: Annotated[str, Field(min_length=1)]
+    prompt_id: Annotated[str, Field(min_length=1)]
+    asset_type_hint: AssetType | None = None
+    status: Literal["accepted", "partial", "ambiguous", "unresolved"]
+    unresolved_reason: str | None = None
+    source_track_path: Literal["observations/object_tracks.json"]
+    source_mask_paths: list[str]
+    supporting_frame_ids: list[str]
+    supporting_registered_frame_ids: list[str]
+    global_mesh_path: Literal["reconstruction/global/mesh.ply"]
+    global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_face_count: int = Field(gt=0)
+    accepted_global_face_ids: CompactFaceIndexManifest
+    ambiguous_global_face_ids: CompactFaceIndexManifest
+    face_evidence_path: str
+    face_evidence_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    face_evidence_arrays: list[FaceEvidenceArrayRecord]
+    surface_mesh_path: str | None = None
+    surface_point_cloud_path: str | None = None
+    surface_visual_glb_path: str | None = None
+    vertex_count: int = Field(ge=0)
+    face_count: int = Field(ge=0)
+    component_count: int = Field(ge=0)
+    exact_component_count: int = Field(ge=0)
+    seam_aware_component_count: int = Field(ge=0)
+    potential_chunk_seam_merges: int = Field(ge=0)
+    components: list[ObjectSurfaceComponent]
+    bbox_min: tuple[float, float, float] | None = None
+    bbox_max: tuple[float, float, float] | None = None
+    bbox_extent: tuple[float, float, float] | None = None
+    centroid: tuple[float, float, float] | None = None
+    mean_face_support_score: float = Field(ge=0, le=1)
+    median_face_support_score: float = Field(ge=0, le=1)
+    supporting_view_count: int = Field(ge=0)
+    median_reprojection_iou: float = Field(ge=0, le=1)
+    mean_reprojection_iou: float = Field(ge=0, le=1)
+    track_coverage: float = Field(ge=0, le=1)
+    association_precision: float = Field(ge=0, le=1)
+    mask_recall: float = Field(ge=0, le=1)
+    reprojection_iou: float = Field(ge=0, le=1)
+    multiview_support: float = Field(ge=0, le=1)
+    surface_connectedness: float = Field(ge=0, le=1)
+    observed_surface_coverage: float = Field(ge=0, le=1)
+    association_confidence: float = Field(ge=0, le=1)
+    completeness_confidence: float = Field(default=0.0, ge=0.0, le=0.0)
+    observation_support: list[ObjectSurfaceObservationSupport]
+    geometry_status: Literal["partial_observation_supported"] = "partial_observation_supported"
+    completion_status: Literal["not_completed"] = "not_completed"
+    hidden_surface_completion: Literal["not_implemented"] = "not_implemented"
+    sim_ready: Literal[False] = False
+    metric_scale_known: Literal[False] = False
+    canonical_gravity_alignment_known: Literal[False] = False
+    coordinate_convention: CoordinateConvention
+    scale_status: Literal[ScaleStatus.SCALE_AMBIGUOUS] = ScaleStatus.SCALE_AMBIGUOUS
+    confidence: ConfidenceRecord
+    provenance: ProvenanceRecord
+    warnings: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "source_mask_paths",
+        "face_evidence_path",
+        "surface_mesh_path",
+        "surface_point_cloud_path",
+        "surface_visual_glb_path",
+    )
+    @classmethod
+    def relative_object_surface_paths(cls, value: list[str] | str | None) -> list[str] | str | None:
+        if value is None:
+            return None
+        if isinstance(value, list):
+            return [_relative_artifact_path(path) for path in value]
+        return _relative_artifact_path(value)
+
+    @model_validator(mode="after")
+    def consistent_surface_status(self) -> Self:
+        if self.status == "unresolved":
+            if self.accepted_global_face_ids.count != 0 or self.face_count != 0:
+                raise ValueError("unresolved objects cannot contain accepted surface faces")
+            if not self.unresolved_reason:
+                raise ValueError("unresolved objects require an actionable reason")
+        elif self.accepted_global_face_ids.count == 0 or self.face_count == 0:
+            raise ValueError("accepted or ambiguous objects require a non-empty surface")
+        if self.face_count != self.accepted_global_face_ids.count:
+            raise ValueError("surface face count must match accepted global face IDs")
+        return self
+
+
+class ObjectSurfaceWorkerManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    worker_version: Annotated[str, Field(min_length=1)]
+    backend: Literal["nvdiffrast", "fake"]
+    python_version: Annotated[str, Field(min_length=1)]
+    torch_version: str | None = None
+    cuda_version: str | None = None
+    nvdiffrast_version: str | None = None
+    device: Annotated[str, Field(min_length=1)]
+    device_name: str | None = None
+    request_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    segmentation_tracking_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    processed_registered_frame_ids: list[str]
+    global_vertex_count: int = Field(gt=0)
+    global_face_count: int = Field(gt=0)
+    lifting_method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"]
+    median_global_edge_length: float = Field(gt=0)
+    sample_voxel_edge_length: float | None = Field(default=None, gt=0)
+    fused_sample_cell_count: int = Field(ge=0)
+    processed_face_count_by_frame: dict[str, int]
+    culled_face_count_by_frame: dict[str, int]
+    mesh_load_seconds: float = Field(ge=0)
+    rasterization_seconds: float = Field(ge=0)
+    evidence_accumulation_seconds: float = Field(ge=0)
+    surface_extraction_seconds: float = Field(ge=0)
+    preview_seconds: float = Field(ge=0)
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    peak_host_memory_bytes: int | None = Field(default=None, ge=0)
+    raw_output_paths: list[str]
+    warnings: list[str] = Field(default_factory=list)
+
+    @field_validator("raw_output_paths")
+    @classmethod
+    def relative_worker_outputs(cls, values: list[str]) -> list[str]:
+        return [_relative_artifact_path(value) for value in values]
+
+
+class GlobalFacePartitionSummary(StrictModel):
+    global_face_count: int = Field(gt=0)
+    unassigned_face_count: int = Field(ge=0)
+    exactly_one_object_face_count: int = Field(ge=0)
+    multi_label_face_count: int = Field(ge=0)
+    same_class_conflict_face_count: int = Field(ge=0)
+    assigned_face_count_by_object: dict[str, int]
+    ambiguous_face_count_by_object: dict[str, int]
+    unassigned_face_ratio: float = Field(ge=0, le=1)
+
+
+class ObjectSurfaceEvidenceArtifact(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    request_path: Literal["reconstruction/object_surfaces/request.json"] = (
+        "reconstruction/object_surfaces/request.json"
+    )
+    worker_manifest_path: Literal["reconstruction/object_surfaces/worker_manifest.json"] = (
+        "reconstruction/object_surfaces/worker_manifest.json"
+    )
+    diagnostics_path: Literal["reconstruction/object_surfaces/diagnostics.json"] = (
+        "reconstruction/object_surfaces/diagnostics.json"
+    )
+    preview_manifest_path: Literal["reconstruction/object_surfaces/preview_manifest.json"] = (
+        "reconstruction/object_surfaces/preview_manifest.json"
+    )
+    scene_ir_path: Literal["scene_ir/phase4_scene.json"] = "scene_ir/phase4_scene.json"
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    segmentation_tracking_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    coordinate_convention: CoordinateConvention
+    scale_status: Literal[ScaleStatus.SCALE_AMBIGUOUS] = ScaleStatus.SCALE_AMBIGUOUS
+    geometry_status: Literal["partial_observation_supported"] = "partial_observation_supported"
+    hidden_surface_completion: Literal["not_implemented"] = "not_implemented"
+    sim_ready: Literal[False] = False
+    metric_scale_known: Literal[False] = False
+    canonical_gravity_alignment_known: Literal[False] = False
+    hypotheses: list[ObjectSurfaceHypothesis]
+    partition: GlobalFacePartitionSummary
+    conflicts: list[ObjectSurfaceConflict]
+    provenance: ProvenanceRecord
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def unique_hypotheses(self) -> Self:
+        object_ids = [hypothesis.object_id for hypothesis in self.hypotheses]
+        if len(object_ids) != len(set(object_ids)):
+            raise ValueError("object surface hypothesis IDs must be unique")
+        return self
+
+
+class ObjectSurfaceDiagnostics(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    track_count: int = Field(ge=0)
+    accepted_object_count: int = Field(ge=0)
+    partial_object_count: int = Field(ge=0)
+    ambiguous_object_count: int = Field(ge=0)
+    unresolved_object_count: int = Field(ge=0)
+    global_vertex_count: int = Field(gt=0)
+    global_face_count: int = Field(gt=0)
+    processed_camera_count: int = Field(ge=0)
+    canonical_mask_count: int = Field(ge=0)
+    accepted_face_count: int = Field(ge=0)
+    ambiguous_face_count: int = Field(ge=0)
+    same_class_conflict_count: int = Field(ge=0)
+    different_label_overlap_count: int = Field(ge=0)
+    unassigned_face_ratio: float = Field(ge=0, le=1)
+    mean_face_support: float = Field(ge=0, le=1)
+    median_face_support: float = Field(ge=0, le=1)
+    mean_reprojection_iou: float = Field(ge=0, le=1)
+    median_reprojection_iou: float = Field(ge=0, le=1)
+    alignment_sufficient_for_lifting: bool
+    diagnosed_bottleneck: Literal[
+        "camera_mesh_alignment",
+        "exact_face_granularity",
+        "missing_or_hallucinated_geometry",
+        "mixed_or_inconclusive",
+    ]
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+    timings_seconds: dict[str, float]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ObjectSurfacePreviewManifest(StrictModel):
+    global_face_assignment_path: Literal[
+        "reconstruction/object_surfaces/previews/global_face_assignment.png"
+    ]
+    object_surface_contact_sheet_path: Literal[
+        "reconstruction/object_surfaces/previews/object_surface_contact_sheet.png"
+    ]
+    reprojection_contact_sheet_path: Literal[
+        "reconstruction/object_surfaces/previews/reprojection_contact_sheet.png"
+    ]
+    conflict_heatmap_path: Literal["reconstruction/object_surfaces/previews/conflict_heatmap.png"]
+    global_mesh_depth_contact_sheet_path: Literal[
+        "reconstruction/object_surfaces/previews/global_mesh_depth_contact_sheet.png"
+    ]
+    global_mesh_edge_overlay_path: Literal[
+        "reconstruction/object_surfaces/previews/global_mesh_edge_overlay.png"
+    ]
+    sparse_point_vs_mesh_depth_path: Literal[
+        "reconstruction/object_surfaces/previews/sparse_point_vs_mesh_depth.png"
+    ]
+    surface_sample_fusion_path: Literal[
+        "reconstruction/object_surfaces/previews/surface_sample_fusion.png"
+    ]
+    object_preview_paths: dict[str, str]
+
+    @field_validator("object_preview_paths")
+    @classmethod
+    def relative_object_previews(cls, values: dict[str, str]) -> dict[str, str]:
+        return {object_id: _relative_artifact_path(path) for object_id, path in values.items()}
+
+
+class ObjectSurfaceMethodMetrics(StrictModel):
+    object_id: Annotated[str, Field(min_length=1)]
+    method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"]
+    accepted_faces: int = Field(ge=0)
+    ambiguous_faces: int = Field(ge=0)
+    component_count: int = Field(ge=0)
+    surface_area_arbitrary_units_squared: float = Field(ge=0)
+    reprojection_iou: float = Field(ge=0, le=1)
+    precision: float = Field(ge=0, le=1)
+    recall: float = Field(ge=0, le=1)
+    supporting_views: int = Field(ge=0)
+    runtime_seconds: float = Field(ge=0)
+    peak_gpu_memory_bytes: int | None = Field(default=None, ge=0)
+
+
+class ObjectSurfaceMethodComparison(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    selected_method: Literal["exact_face_vote_v1", "surface_sample_fusion_v2"]
+    metrics: list[ObjectSurfaceMethodMetrics]
+    conclusion: Annotated[str, Field(min_length=1)]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CameraMeshFrameAlignment(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    mesh_pixel_coverage: float = Field(ge=0, le=1)
+    depth_finite_ratio: float = Field(ge=0, le=1)
+    visible_global_face_count: int = Field(ge=0)
+    depth_percentiles: dict[str, float]
+    sparse_observation_count: int = Field(ge=0)
+    normalized_depth_residual_median: float | None = Field(default=None, ge=0)
+    normalized_depth_residual_p90: float | None = Field(default=None, ge=0)
+    depth_inlier_fraction: float | None = Field(default=None, ge=0, le=1)
+
+
+class CameraMeshAlignmentArtifact(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    global_mesh_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frames: list[CameraMeshFrameAlignment]
+    mesh_pixel_coverage_mean: float = Field(ge=0, le=1)
+    sparse_depth_residual_median: float | None = Field(default=None, ge=0)
+    sparse_depth_residual_p90: float | None = Field(default=None, ge=0)
+    sparse_depth_inlier_fraction: float | None = Field(default=None, ge=0, le=1)
+    alignment_sufficient_for_lifting: bool
+    diagnosis: Annotated[str, Field(min_length=1)]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class Phase4ConsistencyCheck(StrictModel):
+    check_id: Annotated[str, Field(min_length=1)]
+    passed: bool
+    message: Annotated[str, Field(min_length=1)]
+
+
+class Phase4ConsistencyReport(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    passed: bool
+    checks: list[Phase4ConsistencyCheck]
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    real_2d_tracks_lifted_to_global_3d: bool
+    hidden_surface_completion_implemented: Literal[False] = False
+    object_replacement_implemented: Literal[False] = False
+    sim_ready_scene_implemented: Literal[False] = False
+    metric_scale_known: Literal[False] = False
+    canonical_gravity_alignment_known: Literal[False] = False
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def summary_matches_checks(self) -> Self:
+        expected = all(check.passed for check in self.checks)
+        if self.passed != expected:
+            raise ValueError("Phase 4 report passed must equal all individual checks")
+        return self
+
+
 class TrackObservation(StrictModel):
     frame_id: Annotated[str, Field(min_length=1)]
     bbox_xywh: tuple[int, int, int, int]

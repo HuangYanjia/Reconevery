@@ -12,6 +12,7 @@ from recon2sim.adapters import REGISTRY
 from recon2sim.adapters.base import StageContext
 from recon2sim.artifacts import (
     CameraDiagnostics,
+    CameraMeshAlignmentArtifact,
     CameraReconstruction,
     EndToEndConsistencyReport,
     FrameQualityReport,
@@ -19,6 +20,11 @@ from recon2sim.artifacts import (
     GlobalSceneDiagnostics,
     GlobalSceneReconstructionArtifact,
     IngestManifest,
+    ObjectSurfaceDiagnostics,
+    ObjectSurfaceEvidenceArtifact,
+    ObjectSurfaceHypothesis,
+    ObjectSurfaceMethodComparison,
+    Phase4ConsistencyReport,
     Sam3WorkerManifest,
     SegmentationDiagnostics,
     SegmentationPromptManifest,
@@ -27,6 +33,11 @@ from recon2sim.artifacts import (
 from recon2sim.config import load_config
 from recon2sim.genrecon import read_colmap_text_points, render_global_previews
 from recon2sim.ir import SceneIR
+from recon2sim.object_lifting import (
+    export_object_face_ids,
+    export_object_surface,
+    render_summary_previews,
+)
 from recon2sim.pipeline import PipelineConfigurationError, PipelineRunner
 from recon2sim.segmentation import export_coco, render_previews
 from recon2sim.storage import atomic_write_json
@@ -53,12 +64,17 @@ validation_app = typer.Typer(
     help="Inspect and verify cross-stage consistency reports.",
     no_args_is_help=True,
 )
+objects_app = typer.Typer(
+    help="Inspect and export observation-supported partial object surfaces.",
+    no_args_is_help=True,
+)
 app.add_typer(adapters_app, name="adapters")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(camera_app, name="camera")
 app.add_typer(segmentation_app, name="segmentation")
 app.add_typer(reconstruction_app, name="reconstruction")
 app.add_typer(validation_app, name="validation")
+app.add_typer(objects_app, name="objects")
 
 
 @app.command()
@@ -691,3 +707,217 @@ def verify_phase3_e2e(
         failed = [check.check_id for check in report.checks if not check.passed]
         raise typer.BadParameter(f"Phase 3 consistency verification failed: {failed}")
     typer.echo(f"Phase 3 end-to-end consistency passed ({len(report.checks)} checks)")
+
+
+def _surface_artifact(run_dir: Path) -> ObjectSurfaceEvidenceArtifact:
+    return _artifact_model(
+        run_dir,
+        "reconstruction/object_surfaces/evidence_manifest.json",
+        ObjectSurfaceEvidenceArtifact,
+    )
+
+
+def _surface_hypothesis(
+    artifact: ObjectSurfaceEvidenceArtifact,
+    object_id: str,
+) -> ObjectSurfaceHypothesis:
+    for hypothesis in artifact.hypotheses:
+        if hypothesis.object_id == object_id:
+            return hypothesis
+    raise typer.BadParameter(f"unknown Phase 4 object ID: {object_id}")
+
+
+@objects_app.command("inspect-surfaces")
+def inspect_surfaces(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    artifact = _surface_artifact(run_dir)
+    diagnostics = _artifact_model(
+        run_dir,
+        "reconstruction/object_surfaces/diagnostics.json",
+        ObjectSurfaceDiagnostics,
+    )
+    comparison = _artifact_model(
+        run_dir,
+        "reconstruction/object_surfaces/method_comparison.json",
+        ObjectSurfaceMethodComparison,
+    )
+    alignment = _artifact_model(
+        run_dir,
+        "reconstruction/object_surfaces/camera_mesh_alignment.json",
+        CameraMeshAlignmentArtifact,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "track_count": diagnostics.track_count,
+                "accepted_objects": diagnostics.accepted_object_count,
+                "partial_objects": diagnostics.partial_object_count,
+                "ambiguous_objects": diagnostics.ambiguous_object_count,
+                "unresolved_objects": diagnostics.unresolved_object_count,
+                "global_face_count": diagnostics.global_face_count,
+                "assigned_face_count": diagnostics.accepted_face_count,
+                "unassigned_face_ratio": diagnostics.unassigned_face_ratio,
+                "multi_label_overlap_count": diagnostics.different_label_overlap_count,
+                "same_class_conflict_count": diagnostics.same_class_conflict_count,
+                "runtime_seconds": diagnostics.runtime_seconds,
+                "peak_gpu_memory_bytes": diagnostics.peak_gpu_memory_bytes,
+                "lifting_method": comparison.selected_method,
+                "method_comparison": comparison.conclusion,
+                "alignment_sufficient_for_lifting": (alignment.alignment_sufficient_for_lifting),
+                "mesh_pixel_coverage_mean": alignment.mesh_pixel_coverage_mean,
+                "sparse_depth_residual_median": alignment.sparse_depth_residual_median,
+                "sparse_depth_inlier_fraction": alignment.sparse_depth_inlier_fraction,
+                "diagnosed_bottleneck": diagnostics.diagnosed_bottleneck,
+                "coordinate_convention": artifact.coordinate_convention.model_dump(mode="json"),
+                "geometry_status": artifact.geometry_status,
+                "hidden_surface_completion": artifact.hidden_surface_completion,
+                "sim_ready": artifact.sim_ready,
+                "warnings": [*artifact.warnings, *diagnostics.warnings],
+            },
+            indent=2,
+        )
+    )
+
+
+@objects_app.command("inspect-surface")
+def inspect_surface(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Canonical SAM object ID.")],
+) -> None:
+    hypothesis = _surface_hypothesis(_surface_artifact(run_dir), object_id)
+    typer.echo(
+        json.dumps(
+            {
+                "object_id": hypothesis.object_id,
+                "semantic_label": hypothesis.semantic_label,
+                "supporting_frames": hypothesis.supporting_registered_frame_ids,
+                "accepted_faces": hypothesis.accepted_global_face_ids.count,
+                "ambiguous_faces": hypothesis.ambiguous_global_face_ids.count,
+                "components": hypothesis.component_count,
+                "exact_components": hypothesis.exact_component_count,
+                "seam_aware_components": hypothesis.seam_aware_component_count,
+                "bbox_min": hypothesis.bbox_min,
+                "bbox_max": hypothesis.bbox_max,
+                "mean_support_score": hypothesis.mean_face_support_score,
+                "mean_reprojection_iou": hypothesis.mean_reprojection_iou,
+                "association_precision": hypothesis.association_precision,
+                "mask_recall": hypothesis.mask_recall,
+                "multiview_support": hypothesis.multiview_support,
+                "observed_surface_coverage": hypothesis.observed_surface_coverage,
+                "association_confidence": hypothesis.association_confidence,
+                "completeness_confidence": hypothesis.completeness_confidence,
+                "status": hypothesis.status,
+                "geometry_status": hypothesis.geometry_status,
+                "sim_ready": hypothesis.sim_ready,
+                "warnings": hypothesis.warnings,
+            },
+            indent=2,
+        )
+    )
+
+
+@objects_app.command("render-surface-previews")
+def render_surface_previews(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    artifact = _surface_artifact(run_dir)
+    render_summary_previews(run_dir, artifact)
+    typer.echo("regenerated deterministic Phase 4 summary previews")
+
+
+@objects_app.command("export-surface")
+def export_surface(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Canonical SAM object ID.")],
+    output: Annotated[Path, typer.Option("--output", help="Destination PLY path.")],
+) -> None:
+    hypothesis = _surface_hypothesis(_surface_artifact(run_dir), object_id)
+    export_object_surface(run_dir, hypothesis, output)
+    typer.echo(f"exported {object_id} partial surface to {output}")
+
+
+@objects_app.command("export-face-ids")
+def export_face_ids(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Canonical SAM object ID.")],
+    output: Annotated[Path, typer.Option("--output", help="Destination binary path.")],
+) -> None:
+    hypothesis = _surface_hypothesis(_surface_artifact(run_dir), object_id)
+    export_object_face_ids(run_dir, hypothesis, output)
+    typer.echo(f"exported {object_id} original global face IDs to {output}")
+
+
+@validation_app.command("inspect-phase4")
+def inspect_phase4(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase4_object_surface_consistency.json",
+        Phase4ConsistencyReport,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "passed": report.passed,
+                "checks": {
+                    check.check_id: {
+                        "passed": check.passed,
+                        "message": check.message,
+                    }
+                    for check in report.checks
+                },
+                "capability_boundary": {
+                    "real_2d_tracks_lifted_to_global_3d": (
+                        report.real_2d_tracks_lifted_to_global_3d
+                    ),
+                    "hidden_surface_completion_implemented": (
+                        report.hidden_surface_completion_implemented
+                    ),
+                    "object_replacement_implemented": report.object_replacement_implemented,
+                    "sim_ready_scene_implemented": report.sim_ready_scene_implemented,
+                    "metric_scale_known": report.metric_scale_known,
+                    "canonical_gravity_alignment_known": (report.canonical_gravity_alignment_known),
+                },
+                "warnings": report.warnings,
+            },
+            indent=2,
+        )
+    )
+
+
+@validation_app.command("verify-phase4")
+def verify_phase4(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase4_object_surface_consistency.json",
+        Phase4ConsistencyReport,
+    )
+    if not report.passed:
+        failed = [check.check_id for check in report.checks if not check.passed]
+        raise typer.BadParameter(f"Phase 4 consistency verification failed: {failed}")
+    typer.echo(f"Phase 4 object-surface consistency passed ({len(report.checks)} checks)")

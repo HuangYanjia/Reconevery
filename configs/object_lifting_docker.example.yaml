@@ -1,0 +1,60 @@
+seed: 42
+allow_existing_artifacts_for_disabled_dependencies: true
+stages:
+  camera_recovery:
+    enabled: false
+    adapter:
+      name: colmap_camera_recovery
+      config:
+        execution_mode: local
+        executable: colmap
+    depends_on: []
+
+  segmentation_tracking:
+    enabled: false
+    adapter:
+      name: sam3_segmentation_tracking
+      config:
+        execution_mode: docker
+        docker_image: reconevery/sam3:phase2
+        prompt_manifest: configs/prompts/tabletop.yaml
+        device: cuda
+        precision: bfloat16
+    depends_on: [camera_recovery]
+
+  global_reconstruction:
+    enabled: false
+    adapter:
+      name: genrecon_global_reconstruction
+      config:
+        execution_mode: docker
+        docker_image: reconevery/genrecon:phase3
+        sparse_structure_checkpoint: /absolute/path/to/sparse_structure.pt
+        shape_checkpoint: /absolute/path/to/shape_slat.pt
+        texture_checkpoint: /absolute/path/to/texture_slat.pt
+    depends_on: [camera_recovery]
+
+  object_surface_lifting:
+    adapter:
+      name: object_surface_lifting
+      timeout_s: 14400
+      env: [PATH, HOME, TMPDIR, CUDA_VISIBLE_DEVICES]
+      config:
+        execution_mode: docker
+        docker_image: reconevery/object-lifting:phase4
+        docker_executable: docker
+        device: cuda
+        lifting_method: surface_sample_fusion_v2
+        raster_scale: 0.5
+        face_chunk_size: 1000000
+        sample_voxel_edge_multiplier: 4.0
+        sample_min_supporting_views: 2
+        sample_min_positive_weight: 2.0
+        sample_negative_margin_multiplier: 2.0
+    depends_on: [camera_recovery, segmentation_tracking, global_reconstruction]
+
+  phase4_consistency_validation:
+    adapter:
+      name: phase4_consistency_validation
+      config: {}
+    depends_on: [object_surface_lifting]

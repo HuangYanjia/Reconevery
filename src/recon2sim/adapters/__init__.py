@@ -26,6 +26,10 @@ from recon2sim.adapters.mock import (
     MockSceneIRAssemblyAdapter,
     MockSegmentationTrackingAdapter,
 )
+from recon2sim.adapters.object_lifting import (
+    ObjectSurfaceLiftingAdapter,
+    Phase4ConsistencyValidationAdapter,
+)
 from recon2sim.adapters.sam3 import Sam3SegmentationTrackingAdapter
 
 REGISTRY: dict[str, type[Adapter]] = {
@@ -46,6 +50,8 @@ REGISTRY: dict[str, type[Adapter]] = {
     "genrecon_camera_package": GenReconCameraPackageAdapter,
     "genrecon_global_reconstruction": GenReconGlobalReconstructionAdapter,
     "phase3_e2e_consistency": Phase3EndToEndConsistencyAdapter,
+    "object_surface_lifting": ObjectSurfaceLiftingAdapter,
+    "phase4_consistency_validation": Phase4ConsistencyValidationAdapter,
 }
 
 __all__ = [
@@ -60,8 +66,10 @@ __all__ = [
     "HealthcheckResult",
     "InputSpec",
     "OutputSpec",
+    "ObjectSurfaceLiftingAdapter",
     "REGISTRY",
     "Phase3EndToEndConsistencyAdapter",
+    "Phase4ConsistencyValidationAdapter",
     "Sam3SegmentationTrackingAdapter",
     "StageContext",
     "StageResult",

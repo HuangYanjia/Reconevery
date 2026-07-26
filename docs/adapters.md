@@ -49,6 +49,30 @@ sends termination to the process group and escalates to kill if necessary.
 `AdapterConfig.expected_outputs` declares command output paths and validation modes. A zero return
 code with missing or invalid output is a failed attempt.
 
+## Object surface lifting
+
+`object_surface_lifting` consumes typed camera reconstruction, the minimal selected-model COLMAP
+text package, canonical object tracks and their referenced masks, global reconstruction metadata,
+and an attempt-local reflink/copy of the global PLY. The unused GLB is validated by the core but
+is not passed to the worker. It does not consume SAM raw output, COLMAP databases/models/logs,
+GenRecon chunk tensors, or any checkpoint. Local and Docker workers receive only the stage
+attempt root. Execution modes are `local_worker`, `docker`, and `fake_worker`.
+
+The isolated worker undistorts masks for `SIMPLE_PINHOLE`, `PINHOLE`, `SIMPLE_RADIAL`, `RADIAL`,
+and `OPENCV`, then uses exact homogeneous clip coordinates and nvdiffrast to recover
+nearest-visible original face IDs. Conservative culling drops a triangle only when all vertices
+are outside one clip half-space. Both `exact_face_vote_v1` and
+`surface_sample_fusion_v2` are measured in each run. Canonical outputs contain compact
+little-endian face-ID arrays, true geometric component areas, seam diagnostics, spatial sample
+support, alignment diagnostics, partial PLY assets, reprojection metrics, and previews. The
+adapter independently rejects hash mismatches, face bounds, non-finite/empty surfaces, path
+escape, coordinate changes, malformed worker output, OOM, timeout, and unsupported camera
+models.
+
+`phase4_consistency_validation` checks lineage, registered-frame eligibility, compact array
+integrity, original-face mapping, raw COLMAP semantics, selective materialization, absence of
+collisions/completion claims, and Phase 4 Scene IR references.
+
 ## FFmpeg ingest
 
 `ffmpeg_ingest` detects `video` or `image_directory` input. Video mode checks FFmpeg and FFprobe,

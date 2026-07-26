@@ -1,0 +1,279 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "backend": {
+      "enum": [
+        "nvdiffrast",
+        "fake"
+      ],
+      "title": "Backend",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "cuda_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cuda Version"
+    },
+    "culled_face_count_by_frame": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Culled Face Count By Frame",
+      "type": "object"
+    },
+    "device": {
+      "minLength": 1,
+      "title": "Device",
+      "type": "string"
+    },
+    "device_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Device Name"
+    },
+    "evidence_accumulation_seconds": {
+      "minimum": 0,
+      "title": "Evidence Accumulation Seconds",
+      "type": "number"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "fused_sample_cell_count": {
+      "minimum": 0,
+      "title": "Fused Sample Cell Count",
+      "type": "integer"
+    },
+    "global_face_count": {
+      "exclusiveMinimum": 0,
+      "title": "Global Face Count",
+      "type": "integer"
+    },
+    "global_mesh_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Mesh Sha256",
+      "type": "string"
+    },
+    "global_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Reconstruction Sha256",
+      "type": "string"
+    },
+    "global_vertex_count": {
+      "exclusiveMinimum": 0,
+      "title": "Global Vertex Count",
+      "type": "integer"
+    },
+    "lifting_method": {
+      "enum": [
+        "exact_face_vote_v1",
+        "surface_sample_fusion_v2"
+      ],
+      "title": "Lifting Method",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "median_global_edge_length": {
+      "exclusiveMinimum": 0,
+      "title": "Median Global Edge Length",
+      "type": "number"
+    },
+    "mesh_load_seconds": {
+      "minimum": 0,
+      "title": "Mesh Load Seconds",
+      "type": "number"
+    },
+    "nvdiffrast_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Nvdiffrast Version"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "preview_seconds": {
+      "minimum": 0,
+      "title": "Preview Seconds",
+      "type": "number"
+    },
+    "processed_face_count_by_frame": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Processed Face Count By Frame",
+      "type": "object"
+    },
+    "processed_registered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Processed Registered Frame Ids",
+      "type": "array"
+    },
+    "python_version": {
+      "minLength": 1,
+      "title": "Python Version",
+      "type": "string"
+    },
+    "rasterization_seconds": {
+      "minimum": 0,
+      "title": "Rasterization Seconds",
+      "type": "number"
+    },
+    "raw_output_paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Raw Output Paths",
+      "type": "array"
+    },
+    "request_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Request Sha256",
+      "type": "string"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "sample_voxel_edge_length": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sample Voxel Edge Length"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "segmentation_tracking_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Segmentation Tracking Sha256",
+      "type": "string"
+    },
+    "surface_extraction_seconds": {
+      "minimum": 0,
+      "title": "Surface Extraction Seconds",
+      "type": "number"
+    },
+    "torch_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Torch Version"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "worker_version": {
+      "minLength": 1,
+      "title": "Worker Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "worker_version",
+    "backend",
+    "python_version",
+    "device",
+    "request_sha256",
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_sha256",
+    "segmentation_tracking_sha256",
+    "global_reconstruction_sha256",
+    "global_mesh_sha256",
+    "processed_registered_frame_ids",
+    "global_vertex_count",
+    "global_face_count",
+    "lifting_method",
+    "median_global_edge_length",
+    "fused_sample_cell_count",
+    "processed_face_count_by_frame",
+    "culled_face_count_by_frame",
+    "mesh_load_seconds",
+    "rasterization_seconds",
+    "evidence_accumulation_seconds",
+    "surface_extraction_seconds",
+    "preview_seconds",
+    "runtime_seconds",
+    "raw_output_paths"
+  ],
+  "title": "ObjectSurfaceWorkerManifest",
+  "type": "object"
+}

@@ -1,0 +1,112 @@
+seed: 42
+stages:
+  ingest:
+    adapter:
+      name: ffmpeg_ingest
+      timeout_s: 60
+      env: [PATH, HOME, TMPDIR]
+      config:
+        input_mode: image_directory
+        max_frames: 32
+        resize_max_edge: 32
+        blur_threshold: 0.0
+        duplicate_threshold: 0.0
+        min_brightness: 0.0
+        max_brightness: 255.0
+    depends_on: []
+
+  camera_recovery:
+    adapter:
+      name: colmap_camera_recovery
+      timeout_s: 30
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: local
+        executable: tests/fixtures/fake_colmap_executable.py
+        matcher: sequential
+        camera_model: PINHOLE
+        single_camera: true
+        use_gpu: false
+        min_registered_frames: 3
+        min_registration_ratio: 1.0
+        mapper:
+          multiple_models: false
+    depends_on: [ingest]
+
+  segmentation_tracking:
+    adapter:
+      name: sam3_segmentation_tracking
+      timeout_s: 30
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_sam3_worker.py
+        prompt_manifest: configs/prompts/tabletop.yaml
+        device: cpu
+        precision: float32
+        strategy: detect_then_track
+        anchor_strategy: best_quality_registered_frame
+        anchor_count: 1
+        tracking_direction: forward_backward
+        score_threshold: 0.5
+        mask_threshold: 0.5
+        min_mask_area_pixels: 8
+        max_mask_area_ratio: 0.98
+        min_track_observations: 2
+        min_track_coverage: 0.1
+        same_prompt_duplicate_iou: 0.9
+        fake_mode: success_multi
+    depends_on: [ingest, camera_recovery]
+
+  genrecon_camera_package:
+    adapter:
+      name: genrecon_camera_package
+      config: {}
+    depends_on: [ingest, camera_recovery]
+
+  global_reconstruction:
+    adapter:
+      name: genrecon_global_reconstruction
+      timeout_s: 30
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_genrecon_worker.py
+        sparse_structure_checkpoint: tests/fixtures/genrecon_checkpoints/sparse_structure.pt
+        shape_checkpoint: tests/fixtures/genrecon_checkpoints/shape_slat.pt
+        texture_checkpoint: tests/fixtures/genrecon_checkpoints/texture_slat.pt
+        requested_max_views: 32
+        working_transform_strategy: pca_scene_axes
+        fake_mode: success
+    depends_on: [ingest, camera_recovery, genrecon_camera_package]
+
+  object_surface_lifting:
+    adapter:
+      name: object_surface_lifting
+      timeout_s: 30
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_object_lifting_worker.py
+        device: cpu
+        lifting_method: surface_sample_fusion_v2
+        raster_scale: 0.5
+        min_supporting_views: 2
+        fake_mode: success
+    depends_on:
+      - camera_recovery
+      - segmentation_tracking
+      - global_reconstruction
+
+  phase4_consistency_validation:
+    adapter:
+      name: phase4_consistency_validation
+      config: {}
+    depends_on:
+      - camera_recovery
+      - segmentation_tracking
+      - global_reconstruction
+      - object_surface_lifting

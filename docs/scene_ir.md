@@ -75,7 +75,16 @@ Phase 3 adds generated global visual `GeometryAsset` records for PBR GLB and ins
 Each carries its own coordinate convention and scale status. No `CollisionAsset` is inferred from
 the GenRecon mesh, and no physical truth is attached to generated triangles.
 
-Pydantic v2 generates Scene IR plus segmentation, GenRecon, global reconstruction, and
+Phase 4 adds optional `geometry_status`, `completion_status`, and `sim_ready` fields without
+changing older payload requirements. Resolved surface hypotheses use `source=fused`,
+`asset_type=unclassified`, `geometry_status=partial_observation_supported`,
+`completion_status=not_completed`, and `sim_ready=false`. Prompt asset-type hints remain typed
+evidence and are not promoted to measured physical truth. Phase 4.1 splits association precision,
+mask recall, reprojection IoU, multiview support, connectedness, observed coverage, association
+confidence, and completeness confidence in the typed evidence artifact. Completeness confidence
+remains zero and no collision asset is created.
+
+Pydantic v2 generates Scene IR plus segmentation, GenRecon, object-surface, reconstruction, and
 consistency schemas under `schemas/`, including nested `$defs`, enums, required fields, numeric
 constraints, and `additionalProperties: false` behavior.
 

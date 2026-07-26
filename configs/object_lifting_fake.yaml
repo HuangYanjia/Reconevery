@@ -1,0 +1,60 @@
+seed: 42
+allow_existing_artifacts_for_disabled_dependencies: true
+stages:
+  camera_recovery:
+    enabled: false
+    adapter:
+      name: colmap_camera_recovery
+      config:
+        execution_mode: local
+        executable: colmap
+    depends_on: []
+
+  segmentation_tracking:
+    enabled: false
+    adapter:
+      name: sam3_segmentation_tracking
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_sam3_worker.py
+        prompt_manifest: configs/prompts/tabletop.yaml
+        device: cpu
+        precision: float32
+    depends_on: [camera_recovery]
+
+  global_reconstruction:
+    enabled: false
+    adapter:
+      name: genrecon_global_reconstruction
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_genrecon_worker.py
+        sparse_structure_checkpoint: tests/fixtures/genrecon_checkpoints/sparse_structure.pt
+        shape_checkpoint: tests/fixtures/genrecon_checkpoints/shape_slat.pt
+        texture_checkpoint: tests/fixtures/genrecon_checkpoints/texture_slat.pt
+    depends_on: [camera_recovery]
+
+  object_surface_lifting:
+    adapter:
+      name: object_surface_lifting
+      timeout_s: 30
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_script: tests/fixtures/fake_object_lifting_worker.py
+        device: cpu
+        lifting_method: surface_sample_fusion_v2
+        fake_mode: success
+    depends_on:
+      - camera_recovery
+      - segmentation_tracking
+      - global_reconstruction
+
+  phase4_consistency_validation:
+    adapter:
+      name: phase4_consistency_validation
+      config: {}
+    depends_on: [object_surface_lifting]

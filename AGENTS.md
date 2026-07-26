@@ -2,11 +2,12 @@
 
 ## Current scope
 
-Phase 3 provides real FFmpeg ingest, out-of-process COLMAP camera recovery, isolated official
-SAM 3.1 tracking, and isolated official GenRecon global visual reconstruction. Do not import
-COLMAP, SAM, GenRecon, torch, torchvision, CUDA runtimes, or checkpoint loaders into the core
-package. Do not add VLM scene inventory, object-level 2D/3D fusion, SceneSmith, physics,
-simulators, or model checkpoints. Heavy integrations belong behind filesystem adapters.
+Phase 4 provides real FFmpeg ingest, out-of-process COLMAP recovery, isolated official SAM 3.1
+tracking, isolated official GenRecon global reconstruction, and observation-grounded lifting
+of SAM tracks onto visible global mesh faces. Do not import COLMAP, SAM, GenRecon, NumPy,
+OpenCV, trimesh, torch, nvdiffrast, CUDA runtimes, or checkpoint loaders into the core package.
+Do not add VLM inventory, hidden-surface completion, SceneSmith, physics, simulators, or model
+checkpoints. Heavy integrations belong behind filesystem adapters.
 
 ## Architecture map
 
@@ -17,11 +18,14 @@ simulators, or model checkpoints. Heavy integrations belong behind filesystem ad
 - `src/recon2sim/frame_qa.py`: deterministic CPU frame-quality metrics.
 - `src/recon2sim/segmentation.py`: prompt validation, anchors, masks, IDs, QA, previews, and COCO.
 - `src/recon2sim/genrecon.py`: lineage, COLMAP text export, lightweight mesh checks, and previews.
+- `src/recon2sim/object_lifting.py`: compact face IDs, validation, summaries, and exports.
 - `src/recon2sim/pipeline`: DAG validation, signatures, cache/resume, retries, and manifests.
 - `workers/sam3`: isolated pinned official SAM runtime; never imported by core.
 - `docker/sam3`: optional NVIDIA/CUDA worker image with no embedded checkpoint.
 - `workers/genrecon`: isolated pinned official GenRecon runtime; never imported by core.
 - `docker/genrecon`: optional CUDA 12.6/H100 worker image with no embedded checkpoint.
+- `workers/object_lifting`: isolated distortion, rasterization, face evidence, and extraction.
+- `docker/object-lifting`: optional CUDA/nvdiffrast image with no model checkpoints.
 - `src/recon2sim/images.py`: dependency-free test PNG generation and validation.
 - `src/recon2sim/storage`: atomic JSON, YAML, and text writes.
 - `configs`, `schemas`, `examples`, `tests`, `docs`: reproducible Phase 0.1 assets.
@@ -37,6 +41,7 @@ uv run recon2sim adapters healthcheck --config configs/colmap.yaml
 uv run recon2sim adapters healthcheck --config configs/sam3_fake.yaml
 uv run recon2sim run --input examples/tabletop --config configs/sam3_fake.yaml --run-dir runs/tabletop_sam3_fake
 uv run recon2sim run --input examples/tabletop --config configs/phase3_e2e_fake.yaml --run-dir runs/phase3_e2e_fake
+uv run recon2sim run --input examples/tabletop --config configs/phase4_e2e_fake.yaml --run-dir runs/phase4_e2e_fake
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
@@ -77,6 +82,18 @@ uv run mypy src
   Checkpoints are read-only references identified by SHA-256.
 - A GenRecon PCA working transform is internal, reversible preprocessing. Final visual geometry
   must be returned to the original arbitrary, unoriented, scale-ambiguous COLMAP frame.
+- Object lifting uses only registered cameras for 3D evidence. It preserves original global face
+  IDs, allows cross-label overlap, resolves same-label instance conflicts deterministically, and
+  never materializes raw COLMAP/SAM/GenRecon model workspaces.
+- Object-lifting workers receive only their attempt root. The canonical run must not be mounted;
+  the global mesh is an attempt-local reflink/copy and the unused GLB is not a worker input.
+- Rasterization uses exact homogeneous clip coordinates. Never clamp nonpositive camera depth to
+  make vertices renderable. Component area thresholds use true triangle surface area.
+- Keep `exact_face_vote_v1` as a measured baseline beside `surface_sample_fusion_v2`. Surface
+  samples may map only to original global face IDs and may not create bridging or hidden geometry.
+- Phase 4 geometry is `partial_observation_supported`, `not_completed`, and `sim_ready=false`.
+  It uses `GeometrySourceType.FUSED`, creates no collisions, and keeps unregistered SAM masks as
+  valid 2D evidence only.
 
 ## Change discipline
 
@@ -84,5 +101,5 @@ Behavior changes require tests and documentation. Typed artifact changes require
 checked-in schemas. Adapter changes must document inputs, outputs, schema identifiers, environment
 allowlists, timeout, retry behavior, healthcheck, provenance, and tests.
 
-The next task after real Phase 3 acceptance is object-level 2D/3D fusion design. Do not mix it
-with VLM inventory generation, SceneSmith, physical estimation, or simulator export.
+The next task after Phase 4 is a separately reviewed completion or object-reconstruction design.
+Do not conflate visible surface attribution with hidden geometry, physics, or simulator export.

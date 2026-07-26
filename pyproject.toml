@@ -45,3 +45,7 @@ warn_unreachable = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+  "integration: optional integration tests that require external tools or hardware",
+  "requires_object_lifting_gpu: requires CUDA and nvdiffrast",
+]

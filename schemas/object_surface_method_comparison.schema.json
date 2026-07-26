@@ -1,0 +1,141 @@
+{
+  "$defs": {
+    "ObjectSurfaceMethodMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_faces": {
+          "minimum": 0,
+          "title": "Accepted Faces",
+          "type": "integer"
+        },
+        "ambiguous_faces": {
+          "minimum": 0,
+          "title": "Ambiguous Faces",
+          "type": "integer"
+        },
+        "component_count": {
+          "minimum": 0,
+          "title": "Component Count",
+          "type": "integer"
+        },
+        "method": {
+          "enum": [
+            "exact_face_vote_v1",
+            "surface_sample_fusion_v2"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "peak_gpu_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Peak Gpu Memory Bytes"
+        },
+        "precision": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Precision",
+          "type": "number"
+        },
+        "recall": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Recall",
+          "type": "number"
+        },
+        "reprojection_iou": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Reprojection Iou",
+          "type": "number"
+        },
+        "runtime_seconds": {
+          "minimum": 0,
+          "title": "Runtime Seconds",
+          "type": "number"
+        },
+        "supporting_views": {
+          "minimum": 0,
+          "title": "Supporting Views",
+          "type": "integer"
+        },
+        "surface_area_arbitrary_units_squared": {
+          "minimum": 0,
+          "title": "Surface Area Arbitrary Units Squared",
+          "type": "number"
+        }
+      },
+      "required": [
+        "object_id",
+        "method",
+        "accepted_faces",
+        "ambiguous_faces",
+        "component_count",
+        "surface_area_arbitrary_units_squared",
+        "reprojection_iou",
+        "precision",
+        "recall",
+        "supporting_views",
+        "runtime_seconds"
+      ],
+      "title": "ObjectSurfaceMethodMetrics",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "conclusion": {
+      "minLength": 1,
+      "title": "Conclusion",
+      "type": "string"
+    },
+    "metrics": {
+      "items": {
+        "$ref": "#/$defs/ObjectSurfaceMethodMetrics"
+      },
+      "title": "Metrics",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_method": {
+      "enum": [
+        "exact_face_vote_v1",
+        "surface_sample_fusion_v2"
+      ],
+      "title": "Selected Method",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "selected_method",
+    "metrics",
+    "conclusion"
+  ],
+  "title": "ObjectSurfaceMethodComparison",
+  "type": "object"
+}

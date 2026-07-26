@@ -1,0 +1,408 @@
+{
+  "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "AssetType": {
+      "enum": [
+        "unclassified",
+        "static_structure",
+        "rigid",
+        "articulated",
+        "deformable",
+        "fluid_or_particle",
+        "ignore"
+      ],
+      "title": "AssetType",
+      "type": "string"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "ObjectSurfaceTrackRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_type_hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssetType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "frame_scores": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Frame Scores",
+          "type": "object"
+        },
+        "mask_paths_by_frame": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Mask Paths By Frame",
+          "type": "object"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "prompt_id": {
+          "minLength": 1,
+          "title": "Prompt Id",
+          "type": "string"
+        },
+        "semantic_label": {
+          "minLength": 1,
+          "title": "Semantic Label",
+          "type": "string"
+        },
+        "track_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Track Coverage",
+          "type": "number"
+        }
+      },
+      "required": [
+        "object_id",
+        "semantic_label",
+        "prompt_id",
+        "track_coverage",
+        "mask_paths_by_frame",
+        "frame_scores"
+      ],
+      "title": "ObjectSurfaceTrackRequest",
+      "type": "object"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "camera_package_images_path": {
+      "const": "camera/genrecon_package/images.txt",
+      "default": "camera/genrecon_package/images.txt",
+      "title": "Camera Package Images Path",
+      "type": "string"
+    },
+    "camera_package_images_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Images Sha256",
+      "type": "string"
+    },
+    "camera_package_manifest_path": {
+      "const": "camera/genrecon_package/package_manifest.json",
+      "default": "camera/genrecon_package/package_manifest.json",
+      "title": "Camera Package Manifest Path",
+      "type": "string"
+    },
+    "camera_package_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Manifest Sha256",
+      "type": "string"
+    },
+    "camera_package_points3d_path": {
+      "const": "camera/genrecon_package/points3D.txt",
+      "default": "camera/genrecon_package/points3D.txt",
+      "title": "Camera Package Points3D Path",
+      "type": "string"
+    },
+    "camera_package_points3d_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Points3D Sha256",
+      "type": "string"
+    },
+    "camera_package_registered_frames_path": {
+      "const": "camera/genrecon_package/registered_frames.json",
+      "default": "camera/genrecon_package/registered_frames.json",
+      "title": "Camera Package Registered Frames Path",
+      "type": "string"
+    },
+    "camera_package_registered_frames_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Package Registered Frames Sha256",
+      "type": "string"
+    },
+    "camera_reconstruction_path": {
+      "const": "camera/reconstruction.json",
+      "default": "camera/reconstruction.json",
+      "title": "Camera Reconstruction Path",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "coordinate_convention": {
+      "$ref": "#/$defs/CoordinateConvention"
+    },
+    "face_evidence_configuration": {
+      "additionalProperties": true,
+      "title": "Face Evidence Configuration",
+      "type": "object"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "global_mesh_path": {
+      "const": "reconstruction/global/mesh.ply",
+      "default": "reconstruction/global/mesh.ply",
+      "title": "Global Mesh Path",
+      "type": "string"
+    },
+    "global_mesh_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Mesh Sha256",
+      "type": "string"
+    },
+    "global_reconstruction_path": {
+      "const": "reconstruction/global/metadata.json",
+      "default": "reconstruction/global/metadata.json",
+      "title": "Global Reconstruction Path",
+      "type": "string"
+    },
+    "global_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Global Reconstruction Sha256",
+      "type": "string"
+    },
+    "lifting_method": {
+      "enum": [
+        "exact_face_vote_v1",
+        "surface_sample_fusion_v2"
+      ],
+      "title": "Lifting Method",
+      "type": "string"
+    },
+    "manifest_path": {
+      "const": "inputs/manifest.json",
+      "default": "inputs/manifest.json",
+      "title": "Manifest Path",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "mask_processing_configuration": {
+      "additionalProperties": true,
+      "title": "Mask Processing Configuration",
+      "type": "object"
+    },
+    "master_frame_order": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Master Frame Order",
+      "type": "array"
+    },
+    "normalized_frame_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Normalized Frame Hashes",
+      "type": "object"
+    },
+    "normalized_frame_paths": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Normalized Frame Paths",
+      "type": "object"
+    },
+    "object_tracks": {
+      "items": {
+        "$ref": "#/$defs/ObjectSurfaceTrackRequest"
+      },
+      "title": "Object Tracks",
+      "type": "array"
+    },
+    "output_directory": {
+      "const": "reconstruction/object_surfaces/raw",
+      "default": "reconstruction/object_surfaces/raw",
+      "title": "Output Directory",
+      "type": "string"
+    },
+    "rasterization_configuration": {
+      "additionalProperties": true,
+      "title": "Rasterization Configuration",
+      "type": "object"
+    },
+    "registered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Registered Frame Ids",
+      "type": "array"
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "segmentation_tracking_path": {
+      "const": "observations/object_tracks.json",
+      "default": "observations/object_tracks.json",
+      "title": "Segmentation Tracking Path",
+      "type": "string"
+    },
+    "segmentation_tracking_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Segmentation Tracking Sha256",
+      "type": "string"
+    },
+    "surface_extraction_configuration": {
+      "additionalProperties": true,
+      "title": "Surface Extraction Configuration",
+      "type": "object"
+    },
+    "surface_sample_configuration": {
+      "additionalProperties": true,
+      "title": "Surface Sample Configuration",
+      "type": "object"
+    },
+    "unregistered_frame_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unregistered Frame Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "master_frame_order",
+    "normalized_frame_paths",
+    "normalized_frame_hashes",
+    "camera_reconstruction_sha256",
+    "camera_package_manifest_sha256",
+    "camera_package_images_sha256",
+    "camera_package_points3d_sha256",
+    "camera_package_registered_frames_sha256",
+    "registered_frame_ids",
+    "unregistered_frame_ids",
+    "coordinate_convention",
+    "segmentation_tracking_sha256",
+    "object_tracks",
+    "global_reconstruction_sha256",
+    "global_mesh_sha256",
+    "lifting_method",
+    "rasterization_configuration",
+    "mask_processing_configuration",
+    "face_evidence_configuration",
+    "surface_sample_configuration",
+    "surface_extraction_configuration",
+    "seed"
+  ],
+  "title": "ObjectSurfaceLiftingRequest",
+  "type": "object"
+}

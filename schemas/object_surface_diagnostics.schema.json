@@ -1,0 +1,178 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "accepted_face_count": {
+      "minimum": 0,
+      "title": "Accepted Face Count",
+      "type": "integer"
+    },
+    "accepted_object_count": {
+      "minimum": 0,
+      "title": "Accepted Object Count",
+      "type": "integer"
+    },
+    "alignment_sufficient_for_lifting": {
+      "title": "Alignment Sufficient For Lifting",
+      "type": "boolean"
+    },
+    "ambiguous_face_count": {
+      "minimum": 0,
+      "title": "Ambiguous Face Count",
+      "type": "integer"
+    },
+    "ambiguous_object_count": {
+      "minimum": 0,
+      "title": "Ambiguous Object Count",
+      "type": "integer"
+    },
+    "canonical_mask_count": {
+      "minimum": 0,
+      "title": "Canonical Mask Count",
+      "type": "integer"
+    },
+    "diagnosed_bottleneck": {
+      "enum": [
+        "camera_mesh_alignment",
+        "exact_face_granularity",
+        "missing_or_hallucinated_geometry",
+        "mixed_or_inconclusive"
+      ],
+      "title": "Diagnosed Bottleneck",
+      "type": "string"
+    },
+    "different_label_overlap_count": {
+      "minimum": 0,
+      "title": "Different Label Overlap Count",
+      "type": "integer"
+    },
+    "global_face_count": {
+      "exclusiveMinimum": 0,
+      "title": "Global Face Count",
+      "type": "integer"
+    },
+    "global_vertex_count": {
+      "exclusiveMinimum": 0,
+      "title": "Global Vertex Count",
+      "type": "integer"
+    },
+    "mean_face_support": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Mean Face Support",
+      "type": "number"
+    },
+    "mean_reprojection_iou": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Mean Reprojection Iou",
+      "type": "number"
+    },
+    "median_face_support": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Median Face Support",
+      "type": "number"
+    },
+    "median_reprojection_iou": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Median Reprojection Iou",
+      "type": "number"
+    },
+    "partial_object_count": {
+      "minimum": 0,
+      "title": "Partial Object Count",
+      "type": "integer"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "processed_camera_count": {
+      "minimum": 0,
+      "title": "Processed Camera Count",
+      "type": "integer"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "same_class_conflict_count": {
+      "minimum": 0,
+      "title": "Same Class Conflict Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "timings_seconds": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Timings Seconds",
+      "type": "object"
+    },
+    "track_count": {
+      "minimum": 0,
+      "title": "Track Count",
+      "type": "integer"
+    },
+    "unassigned_face_ratio": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Unassigned Face Ratio",
+      "type": "number"
+    },
+    "unresolved_object_count": {
+      "minimum": 0,
+      "title": "Unresolved Object Count",
+      "type": "integer"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "track_count",
+    "accepted_object_count",
+    "partial_object_count",
+    "ambiguous_object_count",
+    "unresolved_object_count",
+    "global_vertex_count",
+    "global_face_count",
+    "processed_camera_count",
+    "canonical_mask_count",
+    "accepted_face_count",
+    "ambiguous_face_count",
+    "same_class_conflict_count",
+    "different_label_overlap_count",
+    "unassigned_face_ratio",
+    "mean_face_support",
+    "median_face_support",
+    "mean_reprojection_iou",
+    "median_reprojection_iou",
+    "alignment_sufficient_for_lifting",
+    "diagnosed_bottleneck",
+    "runtime_seconds",
+    "timings_seconds"
+  ],
+  "title": "ObjectSurfaceDiagnostics",
+  "type": "object"
+}
