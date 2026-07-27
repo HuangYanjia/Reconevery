@@ -210,6 +210,21 @@ def _geometry_format(path: str) -> Literal["obj", "glb", "ply"]:
     return suffix  # type: ignore[return-value]
 
 
+def articulated_candidate_geometry_source(
+    source_family: ArticulatedSourceFamily,
+) -> GeometrySourceType:
+    if source_family in {
+        ArticulatedSourceFamily.ARTVIP,
+        ArticulatedSourceFamily.PARTNET_MOBILITY,
+    }:
+        return GeometrySourceType.RETRIEVED
+    if source_family is ArticulatedSourceFamily.PARTICULATE:
+        return GeometrySourceType.GENERATED
+    if source_family is ArticulatedSourceFamily.MEASURED_MOTION:
+        return GeometrySourceType.MEASURED
+    raise ValueError(f"unsupported articulated source family: {source_family}")
+
+
 def _selected_artifact_reference(path: Path, run_root: Path) -> SelectedArtifactReference:
     return SelectedArtifactReference(
         path=path.relative_to(run_root).as_posix(),
@@ -301,7 +316,7 @@ def _preview_urdf_asset_transforms_match(
 
 class ArticulationSelectionAdapter:
     name = "articulation_selection"
-    version = "0.3.0"
+    version = "0.4.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         candidates = ArticulatedCandidateManifest.model_validate_json(
@@ -1144,6 +1159,9 @@ class ArticulationSelectionAdapter:
             selected_candidate is not None
             and selected_candidate.source_family is not ArticulatedSourceFamily.MEASURED_MOTION
         ):
+            geometry_source = articulated_candidate_geometry_source(
+                selected_candidate.source_family
+            )
             for link in selected_candidate.links:
                 for index, path in enumerate(link.visual_asset_paths):
                     selected_assets.append(
@@ -1152,7 +1170,7 @@ class ArticulationSelectionAdapter:
                             asset_type=AssetType.ARTICULATED,
                             uri=path,
                             format=_geometry_format(path),
-                            source=GeometrySourceType.GENERATED,
+                            source=geometry_source,
                             coordinate_convention=scene.metadata.coordinate_convention,
                             scale_status=ScaleStatus.SCALE_AMBIGUOUS,
                             geometry_status="articulated_visual_candidate",
@@ -1169,7 +1187,9 @@ class ArticulationSelectionAdapter:
                             usage_policy="research_evaluation",
                             production_selectable=selected_candidate.production_selectable,
                             sim_ready=False,
-                            provenance=selected_candidate.provenance,
+                            provenance=selected_candidate.provenance.model_copy(
+                                update={"source": geometry_source}
+                            ),
                         )
                     )
         preserved_assets = [
@@ -1439,7 +1459,7 @@ class ArticulationSelectionAdapter:
 
 class Phase5CConsistencyValidationAdapter:
     name = "phase5c_consistency_validation"
-    version = "0.3.0"
+    version = "0.4.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         geometry = ArticulatedPartStateGeometryManifest.model_validate_json(
@@ -2438,6 +2458,30 @@ class Phase5CConsistencyValidationAdapter:
                 if asset.asset_role == "articulated_visual_link"
             ),
             "Scene IR candidate visuals preserve explicit spaces and exact content hashes",
+        )
+        articulated_visual_assets = [
+            asset
+            for asset in scene.geometry_assets
+            if asset.asset_role == "articulated_visual_link"
+        ]
+        expected_visual_source = (
+            articulated_candidate_geometry_source(selected_candidate_file.source_family)
+            if selected_candidate_file is not None
+            and selected_candidate_file.source_family is not ArticulatedSourceFamily.MEASURED_MOTION
+            else None
+        )
+        check(
+            "scene_ir_visual_asset_provenance",
+            (
+                not articulated_visual_assets
+                if expected_visual_source is None
+                else all(
+                    asset.source is expected_visual_source
+                    and asset.provenance.source is expected_visual_source
+                    for asset in articulated_visual_assets
+                )
+            ),
+            "retrieval visuals are retrieved and Particulate visuals are generated",
         )
         measured_asset_ids = {
             f"{item.part_id}.measured.phase5c": item

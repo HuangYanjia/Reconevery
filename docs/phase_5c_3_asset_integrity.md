@@ -15,6 +15,10 @@ only candidate-base or link-local visuals. This prevents the fitted object Sim(3
 from being applied a second time to measured evidence. No measured bytes are
 rewritten in Phase 5C.3.
 
+Scene IR preserves candidate origin as well as asset space: ArtVIP and
+PartNet-Mobility visuals are `retrieved`, while Particulate visuals are `generated`.
+The corresponding provenance record carries the same source value.
+
 ## Selected records
 
 Selection writes one deterministic record per selected identity:

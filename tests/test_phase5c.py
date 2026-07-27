@@ -10,7 +10,10 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from recon2sim.adapters.articulation_selection import ArticulationSelectionAdapter
+from recon2sim.adapters.articulation_selection import (
+    ArticulationSelectionAdapter,
+    articulated_candidate_geometry_source,
+)
 from recon2sim.articulation import (
     capture_evidence_tier,
     effective_evidence_level,
@@ -53,7 +56,7 @@ from recon2sim.artifacts import (
 )
 from recon2sim.cli import app
 from recon2sim.config import load_config
-from recon2sim.ir import SceneIR
+from recon2sim.ir import GeometrySourceType, SceneIR
 from recon2sim.pipeline import PipelineRunner
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -919,6 +922,22 @@ def test_license_aware_articulated_selection() -> None:
     assert result == ("partnet", "approved", "approved")
 
 
+@pytest.mark.parametrize(
+    ("source_family", "expected_source"),
+    [
+        (ArticulatedSourceFamily.ARTVIP, GeometrySourceType.RETRIEVED),
+        (ArticulatedSourceFamily.PARTNET_MOBILITY, GeometrySourceType.RETRIEVED),
+        (ArticulatedSourceFamily.PARTICULATE, GeometrySourceType.GENERATED),
+        (ArticulatedSourceFamily.MEASURED_MOTION, GeometrySourceType.MEASURED),
+    ],
+)
+def test_articulated_candidate_scene_source_mapping(
+    source_family: ArticulatedSourceFamily,
+    expected_source: GeometrySourceType,
+) -> None:
+    assert articulated_candidate_geometry_source(source_family) is expected_source
+
+
 def test_offline_retrieval_normalizes_selected_candidate_assets(tmp_path: Path) -> None:
     worker = _retrieval_worker_module("articulated_retrieval_worker.cli")
     root = tmp_path
@@ -1137,6 +1156,18 @@ def test_fake_phase5c_pipeline_resume_and_cli(tmp_path: Path) -> None:
     scene = SceneIR.model_validate_json((run_dir / "scene_ir/phase5c_scene.json").read_text())
     assert scene.collision_assets == []
     assert all(not item.sim_ready for item in scene.objects)
+    selected_candidate = next(
+        item
+        for item in candidates.candidates
+        if item.candidate_id == selection.objects[0].selected_candidate_id
+    )
+    expected_visual_source = articulated_candidate_geometry_source(selected_candidate.source_family)
+    articulated_visuals = [
+        item for item in scene.geometry_assets if item.asset_role == "articulated_visual_link"
+    ]
+    assert articulated_visuals
+    assert all(item.source is expected_visual_source for item in articulated_visuals)
+    assert all(item.provenance.source is expected_visual_source for item in articulated_visuals)
     assert (
         run_dir / "reconstruction/articulation/selected/cabinet_0001/preview_only.urdf"
     ).is_file()

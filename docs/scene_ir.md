@@ -128,6 +128,11 @@ remain top-level `reference_world` evidence when a fitted candidate transform is
 active; retrieved/generated links contain only `candidate_base` or `link_local`
 visuals. Link-local measured evidence would require a newly transformed derived
 asset with its own hash and provenance.
+
+ArtVIP and PartNet-Mobility link visuals use `GeometrySourceType.RETRIEVED`.
+Particulate link visuals use `GeometrySourceType.GENERATED`. The geometry asset and
+its provenance record must agree; source-family identity is never inferred from a
+filename.
 # Articulated asset spaces
 
 Phase 5C.3 distinguishes `reference_world`, `candidate_base`, and `link_local`.
