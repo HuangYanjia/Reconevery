@@ -24,15 +24,21 @@ from recon2sim.articulation import (
     stable_digest,
 )
 from recon2sim.artifacts import (
+    ArticulatedAssetSpace,
+    ArticulatedCandidate,
+    ArticulatedCandidateEvaluation,
     ArticulatedCandidateManifest,
     ArticulatedCandidateSelection,
     ArticulatedCandidateStatus,
     ArticulatedEligibilityArtifact,
     ArticulatedEvaluationManifest,
     ArticulatedJointType,
+    ArticulatedKinematicBundle,
     ArticulatedLicenseMode,
+    ArticulatedLinkAssignment,
     ArticulatedObjectSelection,
     ArticulatedPartStateGeometryManifest,
+    ArticulatedSelectedIdentityManifest,
     ArticulatedSourceFamily,
     ArticulationCaptureManifest,
     ArticulationDiagnostics,
@@ -44,8 +50,10 @@ from recon2sim.artifacts import (
     ArticulationStateAlignmentArtifact,
     EndToEndConsistencyCheck,
     FittedArticulatedJoint,
+    FittedArticulatedKinematicModel,
     MeasuredPartMotionArtifact,
     Phase5CConsistencyReport,
+    SelectedArtifactReference,
 )
 from recon2sim.ir import (
     Articulation,
@@ -143,6 +151,58 @@ def _matrix_to_transform(values: tuple[float, ...]) -> Transform:
     )
 
 
+def _matrix_to_urdf_origin(
+    values: tuple[float, ...],
+) -> tuple[tuple[float, float, float], tuple[float, float, float], float]:
+    if len(values) != 16:
+        raise ValueError("articulated visual transform must contain 16 values")
+    scale = math.sqrt(values[0] ** 2 + values[4] ** 2 + values[8] ** 2)
+    if scale <= 0:
+        raise ValueError("articulated visual transform scale must be positive")
+    rotation = (
+        (values[0] / scale, values[1] / scale, values[2] / scale),
+        (values[4] / scale, values[5] / scale, values[6] / scale),
+        (values[8] / scale, values[9] / scale, values[10] / scale),
+    )
+    pitch = math.asin(max(-1.0, min(1.0, -rotation[2][0])))
+    if abs(math.cos(pitch)) > 1e-8:
+        roll = math.atan2(rotation[2][1], rotation[2][2])
+        yaw = math.atan2(rotation[1][0], rotation[0][0])
+    else:
+        roll = math.atan2(-rotation[1][2], rotation[1][1])
+        yaw = 0.0
+    return (
+        (values[3], values[7], values[11]),
+        (roll, pitch, yaw),
+        scale,
+    )
+
+
+def _identity_matrix(values: tuple[float, ...], tolerance: float = 1e-8) -> bool:
+    identity = (
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    )
+    return len(values) == 16 and all(
+        abs(actual - expected) <= tolerance
+        for actual, expected in zip(values, identity, strict=True)
+    )
+
+
 def _geometry_format(path: str) -> Literal["obj", "glb", "ply"]:
     suffix = Path(path).suffix.lower().removeprefix(".")
     if suffix not in {"obj", "glb", "ply"}:
@@ -150,9 +210,98 @@ def _geometry_format(path: str) -> Literal["obj", "glb", "ply"]:
     return suffix  # type: ignore[return-value]
 
 
+def _selected_artifact_reference(path: Path, run_root: Path) -> SelectedArtifactReference:
+    return SelectedArtifactReference(
+        path=path.relative_to(run_root).as_posix(),
+        sha256=sha256_file(path),
+    )
+
+
+def _optional_selected_artifact_reference(
+    path: str | None,
+    digest: str | None,
+) -> SelectedArtifactReference | None:
+    if path is None or digest is None:
+        return None
+    return SelectedArtifactReference(path=path, sha256=digest)
+
+
+def _float_vector(value: str | None, count: int) -> tuple[float, ...] | None:
+    if value is None:
+        return None
+    try:
+        result = tuple(float(item) for item in value.split())
+    except ValueError:
+        return None
+    return result if len(result) == count else None
+
+
+def _preview_urdf_asset_transforms_match(
+    path: Path,
+    candidate: ArticulatedCandidate,
+    fitted_model: FittedArticulatedKinematicModel,
+) -> bool:
+    try:
+        root = ElementTree.parse(path).getroot()
+    except (ElementTree.ParseError, OSError):
+        return False
+    metadata = root.find("reconevery_metadata")
+    if metadata is None:
+        return False
+    recorded_base = _float_vector(metadata.get("matrix_reference_world_from_candidate_base"), 16)
+    if recorded_base is None or any(
+        abs(actual - expected) > 1e-8
+        for actual, expected in zip(
+            recorded_base,
+            fitted_model.matrix_reference_world_from_candidate_base,
+            strict=True,
+        )
+    ):
+        return False
+    xml_links = {item.get("name"): item for item in root.findall("link")}
+    for link in candidate.links:
+        xml_link = xml_links.get(link.link_id)
+        if xml_link is None:
+            return False
+        visuals_by_path: dict[str, ElementTree.Element] = {}
+        for visual in xml_link.findall("visual"):
+            mesh = visual.find("geometry/mesh")
+            if mesh is not None and mesh.get("filename") is not None:
+                visuals_by_path[mesh.get("filename", "")] = visual
+        if set(visuals_by_path) != set(link.visual_asset_paths):
+            return False
+        for visual_path in link.visual_asset_paths:
+            visual = visuals_by_path[visual_path]
+            if visual.get("reconevery_asset_space") != link.visual_asset_spaces[visual_path].value:
+                return False
+            origin = visual.find("origin")
+            mesh = visual.find("geometry/mesh")
+            if origin is None or mesh is None:
+                return False
+            actual_xyz = _float_vector(origin.get("xyz"), 3)
+            actual_rpy = _float_vector(origin.get("rpy"), 3)
+            actual_scale = _float_vector(mesh.get("scale"), 3)
+            expected_xyz, expected_rpy, expected_scale = _matrix_to_urdf_origin(
+                link.visual_asset_transforms_candidate_base[visual_path]
+            )
+            if actual_xyz is None or actual_rpy is None or actual_scale is None:
+                return False
+            if any(
+                abs(actual - expected) > 1e-8
+                for actual, expected in zip(actual_xyz, expected_xyz, strict=True)
+            ) or any(
+                abs(actual - expected) > 1e-8
+                for actual, expected in zip(actual_rpy, expected_rpy, strict=True)
+            ):
+                return False
+            if any(abs(value - expected_scale) > 1e-8 for value in actual_scale):
+                return False
+    return True
+
+
 class ArticulationSelectionAdapter:
     name = "articulation_selection"
-    version = "0.2.0"
+    version = "0.3.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         candidates = ArticulatedCandidateManifest.model_validate_json(
@@ -408,6 +557,146 @@ class ArticulationSelectionAdapter:
         else:
             status = ArticulatedCandidateStatus.UNRESOLVED
             rationale = ["no articulated candidate was available"]
+        scene = SceneIR.model_validate_json(
+            (root / "reference_phase5a_scene.json").read_text(encoding="utf-8")
+        )
+        selected_candidate_reference: SelectedArtifactReference | None = None
+        fitted_model_reference: SelectedArtifactReference | None = None
+        link_assignment_reference: SelectedArtifactReference | None = None
+        evaluation_reference: SelectedArtifactReference | None = None
+        identity_reference: SelectedArtifactReference | None = None
+        bundle_reference: SelectedArtifactReference | None = None
+        dynamic_outputs: list[OutputSpec] = []
+        if (
+            selected_candidate is not None
+            and selected_fitting is not None
+            and selected_fitting.fitted_model is not None
+            and selected_assignment is not None
+            and selected_evaluation is not None
+        ):
+            selected_root = root / "selected" / capture.articulated_object_id
+            selected_root.mkdir(parents=True, exist_ok=True)
+            candidate_path = selected_root / "selected_candidate.json"
+            fitted_model_path = selected_root / "fitted_kinematic_model.json"
+            link_assignment_path = selected_root / "selected_link_assignment.json"
+            evaluation_path = selected_root / "selected_evaluation.json"
+            identity_path = selected_root / "selected_identity_manifest.json"
+            bundle_path = selected_root / "kinematic_bundle.json"
+            urdf_path = selected_root / "preview_only.urdf"
+
+            atomic_write_json(candidate_path, selected_candidate)
+            atomic_write_json(fitted_model_path, selected_fitting.fitted_model)
+            atomic_write_json(link_assignment_path, selected_assignment)
+            atomic_write_json(evaluation_path, selected_evaluation)
+            selected_candidate_reference = _selected_artifact_reference(
+                candidate_path, context.run_dir
+            )
+            fitted_model_reference = _selected_artifact_reference(
+                fitted_model_path, context.run_dir
+            )
+            link_assignment_reference = _selected_artifact_reference(
+                link_assignment_path, context.run_dir
+            )
+            evaluation_reference = _selected_artifact_reference(evaluation_path, context.run_dir)
+            identity = ArticulatedSelectedIdentityManifest(
+                articulated_object_id=capture.articulated_object_id,
+                candidate_id=selected_candidate.candidate_id,
+                selected_candidate=selected_candidate_reference,
+                fitted_kinematic_model=fitted_model_reference,
+                selected_link_assignment=link_assignment_reference,
+                selected_evaluation=evaluation_reference,
+            )
+            atomic_write_json(identity_path, identity)
+            identity_reference = _selected_artifact_reference(identity_path, context.run_dir)
+            bundle = ArticulatedKinematicBundle(
+                articulated_object_id=capture.articulated_object_id,
+                candidate_id=selected_candidate.candidate_id,
+                selected_identity_manifest=identity_reference,
+                selected_candidate=selected_candidate_reference,
+                fitted_kinematic_model=fitted_model_reference,
+                selected_link_assignment=link_assignment_reference,
+                selected_evaluation=evaluation_reference,
+                base_sim3=(
+                    selected_fitting.fitted_model.matrix_reference_world_from_candidate_base
+                ),
+                fitting_state_q=selected_fitting.fitted_joint_positions,
+                heldout_inferred_q={
+                    state.state_id: state.inferred_joint_positions
+                    for state in selected_evaluation.state_evaluations
+                },
+                license_record=selected_candidate.license_record,
+                measured_joint_hypotheses=measured.joint_hypotheses,
+                evidence_level=selected_validation_level,
+                coordinate_convention=scene.metadata.coordinate_convention,
+            )
+            atomic_write_json(bundle_path, bundle)
+            bundle_reference = _selected_artifact_reference(bundle_path, context.run_dir)
+            self._write_preview_urdf(
+                urdf_path,
+                capture.articulated_object_id,
+                selected_candidate,
+                selected_fitting,
+            )
+            relative_root = f"reconstruction/articulation/selected/{capture.articulated_object_id}"
+            dynamic_outputs.extend(
+                [
+                    OutputSpec(
+                        f"{relative_root}/selected_candidate.json",
+                        "selected_articulated_candidate",
+                        "application/json",
+                        self.name,
+                        validation="json",
+                        model=ArticulatedCandidate,
+                    ),
+                    OutputSpec(
+                        f"{relative_root}/fitted_kinematic_model.json",
+                        "selected_fitted_kinematic_model",
+                        "application/json",
+                        self.name,
+                        validation="json",
+                        model=FittedArticulatedKinematicModel,
+                    ),
+                    OutputSpec(
+                        f"{relative_root}/selected_link_assignment.json",
+                        "selected_articulated_link_assignment",
+                        "application/json",
+                        self.name,
+                        validation="json",
+                        model=ArticulatedLinkAssignment,
+                    ),
+                    OutputSpec(
+                        f"{relative_root}/selected_evaluation.json",
+                        "selected_articulated_evaluation",
+                        "application/json",
+                        self.name,
+                        validation="json",
+                        model=ArticulatedCandidateEvaluation,
+                    ),
+                    OutputSpec(
+                        f"{relative_root}/selected_identity_manifest.json",
+                        "selected_articulated_identity_manifest",
+                        "application/json",
+                        self.name,
+                        validation="json",
+                        model=ArticulatedSelectedIdentityManifest,
+                    ),
+                    OutputSpec(
+                        f"{relative_root}/kinematic_bundle.json",
+                        "articulated_kinematic_bundle",
+                        "application/json",
+                        self.name,
+                        validation="json",
+                        model=ArticulatedKinematicBundle,
+                    ),
+                    OutputSpec(
+                        f"{relative_root}/preview_only.urdf",
+                        "visual_only_articulation_preview",
+                        "application/xml",
+                        self.name,
+                        validation="exists",
+                    ),
+                ]
+            )
         selected = ArticulatedObjectSelection(
             articulated_object_id=capture.articulated_object_id,
             status=status,
@@ -420,23 +709,43 @@ class ArticulationSelectionAdapter:
             best_production_eligible_articulated_candidate=production_id,
             selected_candidate_id=selected_id,
             candidate_manifest_sha256=sha256_file(root / "candidate_manifest.json"),
-            fitted_model_sha256=(
-                selected_fitting.fitted_model_sha256 if selected_fitting is not None else None
-            ),
-            link_assignment_sha256=(
-                stable_digest(selected_assignment.model_dump(mode="json"))
-                if selected_assignment is not None
-                else None
-            ),
-            evaluation_sha256=(
-                stable_digest(selected_evaluation.model_dump(mode="json"))
-                if selected_evaluation is not None
+            selected_candidate_path=(
+                selected_candidate_reference.path
+                if selected_candidate_reference is not None
                 else None
             ),
             selected_candidate_sha256=(
-                stable_digest(selected_candidate.model_dump(mode="json"))
-                if selected_candidate is not None
+                selected_candidate_reference.sha256
+                if selected_candidate_reference is not None
                 else None
+            ),
+            fitted_model_path=(
+                fitted_model_reference.path if fitted_model_reference is not None else None
+            ),
+            fitted_model_sha256=(
+                fitted_model_reference.sha256 if fitted_model_reference is not None else None
+            ),
+            link_assignment_path=(
+                link_assignment_reference.path if link_assignment_reference is not None else None
+            ),
+            link_assignment_sha256=(
+                link_assignment_reference.sha256 if link_assignment_reference is not None else None
+            ),
+            evaluation_path=(
+                evaluation_reference.path if evaluation_reference is not None else None
+            ),
+            evaluation_sha256=(
+                evaluation_reference.sha256 if evaluation_reference is not None else None
+            ),
+            selected_identity_manifest_path=(
+                identity_reference.path if identity_reference is not None else None
+            ),
+            selected_identity_manifest_sha256=(
+                identity_reference.sha256 if identity_reference is not None else None
+            ),
+            kinematic_bundle_path=(bundle_reference.path if bundle_reference is not None else None),
+            kinematic_bundle_sha256=(
+                bundle_reference.sha256 if bundle_reference is not None else None
             ),
             selection_rationale=rationale,
             geometry_status=(
@@ -476,9 +785,6 @@ class ArticulationSelectionAdapter:
             ),
         )
         atomic_write_json(root / "selection.json", selection)
-        scene = SceneIR.model_validate_json(
-            (root / "reference_phase5a_scene.json").read_text(encoding="utf-8")
-        )
         scene = self._integrate_scene(
             scene,
             capture,
@@ -487,6 +793,7 @@ class ArticulationSelectionAdapter:
             selected_candidate,
             selected_fitting,
             selected_evaluation,
+            selected,
         )
         atomic_write_json(context.path("scene_ir", "phase5c_scene.json"), scene)
         diagnostics = ArticulationDiagnostics(
@@ -584,97 +891,6 @@ class ArticulationSelectionAdapter:
             }
         )
         atomic_write_json(root / "preview_manifest.json", previews)
-        dynamic_outputs: list[OutputSpec] = []
-        if selected_candidate := candidate_by_id.get(selected_id) if selected_id else None:
-            selected_root = root / "selected" / capture.articulated_object_id
-            selected_root.mkdir(parents=True, exist_ok=True)
-            bundle_path = selected_root / "kinematic_bundle.json"
-            atomic_write_json(
-                bundle_path,
-                {
-                    "schema_version": "0.1.0",
-                    "articulated_object_id": capture.articulated_object_id,
-                    "candidate": selected_candidate.model_dump(mode="json"),
-                    "fitted_kinematic_model": (
-                        selected_fitting.fitted_model.model_dump(mode="json")
-                        if selected_fitting is not None
-                        and selected_fitting.fitted_model is not None
-                        else None
-                    ),
-                    "base_sim3": (
-                        selected_fitting.fitted_model.matrix_reference_world_from_candidate_base
-                        if selected_fitting is not None
-                        and selected_fitting.fitted_model is not None
-                        else None
-                    ),
-                    "candidate_to_observed_link_map": (
-                        selected_assignment.model_dump(mode="json")
-                        if selected_assignment is not None
-                        else None
-                    ),
-                    "fitting_state_q": (
-                        selected_fitting.fitted_joint_positions
-                        if selected_fitting is not None
-                        else {}
-                    ),
-                    "heldout_inferred_q": (
-                        {
-                            state.state_id: state.inferred_joint_positions
-                            for state in selected_evaluation.state_evaluations
-                        }
-                        if selected_evaluation is not None
-                        else {}
-                    ),
-                    "evaluation": (
-                        selected_evaluation.model_dump(mode="json")
-                        if selected_evaluation is not None
-                        else None
-                    ),
-                    "identity_hashes": {
-                        "candidate_manifest": selected.candidate_manifest_sha256,
-                        "candidate": selected.selected_candidate_sha256,
-                        "fitted_model": selected.fitted_model_sha256,
-                        "link_assignment": selected.link_assignment_sha256,
-                        "evaluation": selected.evaluation_sha256,
-                    },
-                    "license_record": selected_candidate.license_record.model_dump(mode="json"),
-                    "measured_joint_hypotheses": [
-                        item.model_dump(mode="json") for item in measured.joint_hypotheses
-                    ],
-                    "evidence_level": selected_validation_level,
-                    "coordinate_convention": scene.metadata.coordinate_convention,
-                    "scale_status": "scale_ambiguous",
-                    "physical_validation": "not_implemented",
-                    "collision_ready": False,
-                    "sim_ready": False,
-                },
-            )
-            urdf_path = selected_root / "preview_only.urdf"
-            self._write_preview_urdf(
-                urdf_path,
-                capture.articulated_object_id,
-                selected_candidate,
-                selected_fitting,
-            )
-            relative_root = f"reconstruction/articulation/selected/{capture.articulated_object_id}"
-            dynamic_outputs.extend(
-                [
-                    OutputSpec(
-                        f"{relative_root}/kinematic_bundle.json",
-                        "articulated_kinematic_bundle",
-                        "application/json",
-                        self.name,
-                        validation="json",
-                    ),
-                    OutputSpec(
-                        f"{relative_root}/preview_only.urdf",
-                        "visual_only_articulation_preview",
-                        "application/xml",
-                        self.name,
-                        validation="exists",
-                    ),
-                ]
-            )
         return StageResult(
             outputs=dynamic_outputs,
             metrics={
@@ -715,12 +931,57 @@ class ArticulationSelectionAdapter:
                 "Visual diagnostic only: no collision, inertial, dynamics, or metric claims."
             )
         )
+        if fitted_model is not None:
+            ElementTree.SubElement(
+                robot,
+                "reconevery_metadata",
+                {
+                    "candidate_id": fitted_model.candidate_id,
+                    "matrix_reference_world_from_candidate_base": " ".join(
+                        f"{value:.12g}"
+                        for value in fitted_model.matrix_reference_world_from_candidate_base
+                    ),
+                    "simulation_ready": "false",
+                },
+            )
         for link in candidate.links:
             link_node = ElementTree.SubElement(robot, "link", {"name": link.link_id})
             for visual_path in link.visual_asset_paths:
-                visual = ElementTree.SubElement(link_node, "visual")
+                space = link.visual_asset_spaces[visual_path]
+                transform = link.visual_asset_transforms_candidate_base[visual_path]
+                if (
+                    space is ArticulatedAssetSpace.REFERENCE_WORLD
+                    and fitted_model is not None
+                    and not _identity_matrix(
+                        fitted_model.matrix_reference_world_from_candidate_base
+                    )
+                ):
+                    raise ValueError(
+                        "reference-world measured visual cannot enter a transformed URDF link"
+                    )
+                xyz, rpy, scale = _matrix_to_urdf_origin(transform)
+                visual = ElementTree.SubElement(
+                    link_node,
+                    "visual",
+                    {"reconevery_asset_space": space.value},
+                )
+                ElementTree.SubElement(
+                    visual,
+                    "origin",
+                    {
+                        "xyz": " ".join(f"{value:.12g}" for value in xyz),
+                        "rpy": " ".join(f"{value:.12g}" for value in rpy),
+                    },
+                )
                 geometry = ElementTree.SubElement(visual, "geometry")
-                ElementTree.SubElement(geometry, "mesh", {"filename": visual_path})
+                ElementTree.SubElement(
+                    geometry,
+                    "mesh",
+                    {
+                        "filename": visual_path,
+                        "scale": " ".join(f"{scale:.12g}" for _ in range(3)),
+                    },
+                )
         for joint in candidate.joints:
             fitted_joint = fitted_by_joint.get(joint.joint_id)
             joint_type = (
@@ -828,6 +1089,7 @@ class ArticulationSelectionAdapter:
         candidate: object,
         fitting: object,
         evaluation: object,
+        selection: ArticulatedObjectSelection,
     ) -> SceneIR:
         from recon2sim.artifacts import (
             ArticulatedCandidate,
@@ -849,7 +1111,7 @@ class ArticulationSelectionAdapter:
                 asset_id=f"{item.part_id}.measured.phase5c",
                 asset_type=AssetType.ARTICULATED,
                 uri=item.measured_point_cloud_path,
-                format="ply",
+                format=_geometry_format(item.measured_point_cloud_path),
                 source=GeometrySourceType.MEASURED,
                 coordinate_convention=item.coordinate_convention,
                 scale_status=ScaleStatus.SCALE_AMBIGUOUS,
@@ -860,6 +1122,8 @@ class ArticulationSelectionAdapter:
                 physical_validation="not_implemented",
                 collision_ready=False,
                 sim_ready=False,
+                articulated_asset_space="reference_world",
+                content_sha256=item.measured_point_cloud_sha256,
                 provenance=ProvenanceRecord(
                     adapter_name=self.name,
                     adapter_version=self.version,
@@ -901,6 +1165,7 @@ class ArticulationSelectionAdapter:
                             asset_to_candidate_base_transform=_matrix_to_transform(
                                 link.visual_asset_transforms_candidate_base[path]
                             ),
+                            content_sha256=link.visual_asset_hashes[path],
                             usage_policy="research_evaluation",
                             production_selectable=selected_candidate.production_selectable,
                             sim_ready=False,
@@ -932,31 +1197,13 @@ class ArticulationSelectionAdapter:
             }
             if selected_candidate.source_family is ArticulatedSourceFamily.MEASURED_MOTION:
                 visual_ids_by_link = {}
-            observed_parts_by_link = (
-                {
-                    candidate_link_id: assignment.observed_part_id
-                    for assignment in fitted_model.link_assignments
-                    for candidate_link_id in assignment.candidate_link_ids
-                }
-                if fitted_model is not None
-                else {}
-            )
             links = []
             for link in selected_candidate.links:
-                observed_part_id = observed_parts_by_link.get(link.link_id)
-                measured_asset_ids = (
-                    [measured_ids_by_part[observed_part_id]]
-                    if observed_part_id in measured_ids_by_part
-                    else []
-                )
                 links.append(
                     Link(
                         link_id=link.link_id,
                         name=link.name,
-                        geometry_asset_ids=[
-                            *measured_asset_ids,
-                            *visual_ids_by_link.get(link.link_id, []),
-                        ],
+                        geometry_asset_ids=visual_ids_by_link.get(link.link_id, []),
                     )
                 )
             measured_by_joint = {item.joint_id: item for item in measured.joint_hypotheses}
@@ -1113,26 +1360,18 @@ class ArticulationSelectionAdapter:
                         else measured.effective_motion_evidence_level.value
                     ),
                     validation_artifact_path=("validation/phase5c_articulated_reconstruction.json"),
-                    fitting_artifact_path=(
-                        "reconstruction/articulation/fitting_manifest.json"
-                        if selected_fitting is not None
-                        else None
-                    ),
-                    fitting_artifact_sha256=(
-                        selected_fitting.fitted_model_sha256
-                        if selected_fitting is not None
-                        else None
-                    ),
-                    evaluation_artifact_path=(
-                        "reconstruction/articulation/evaluation_manifest.json"
-                        if selected_evaluation is not None
-                        else None
-                    ),
-                    evaluation_artifact_sha256=(
-                        stable_digest(selected_evaluation.model_dump(mode="json"))
-                        if selected_evaluation is not None
-                        else None
-                    ),
+                    selected_candidate_artifact_path=selection.selected_candidate_path,
+                    selected_candidate_artifact_sha256=(selection.selected_candidate_sha256),
+                    fitting_artifact_path=selection.fitted_model_path,
+                    fitting_artifact_sha256=selection.fitted_model_sha256,
+                    link_assignment_artifact_path=selection.link_assignment_path,
+                    link_assignment_artifact_sha256=selection.link_assignment_sha256,
+                    evaluation_artifact_path=selection.evaluation_path,
+                    evaluation_artifact_sha256=selection.evaluation_sha256,
+                    selected_identity_manifest_path=(selection.selected_identity_manifest_path),
+                    selected_identity_manifest_sha256=(selection.selected_identity_manifest_sha256),
+                    kinematic_bundle_path=selection.kinematic_bundle_path,
+                    kinematic_bundle_sha256=selection.kinematic_bundle_sha256,
                     selected_candidate_id=(
                         selected_candidate.candidate_id if selected_candidate is not None else None
                     ),
@@ -1200,7 +1439,7 @@ class ArticulationSelectionAdapter:
 
 class Phase5CConsistencyValidationAdapter:
     name = "phase5c_consistency_validation"
-    version = "0.2.0"
+    version = "0.3.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         geometry = ArticulatedPartStateGeometryManifest.model_validate_json(
@@ -1212,6 +1451,11 @@ class Phase5CConsistencyValidationAdapter:
             context.canonical_path(
                 "reconstruction", "articulation", "candidate_manifest.json"
             ).read_text(encoding="utf-8")
+        )
+        selection = ArticulatedCandidateSelection.model_validate_json(
+            context.canonical_path("reconstruction", "articulation", "selection.json").read_text(
+                encoding="utf-8"
+            )
         )
         specs = [
             InputSpec(
@@ -1283,6 +1527,33 @@ class Phase5CConsistencyValidationAdapter:
             for link in candidate.links
             for path in link.visual_asset_paths
         )
+        for selected in selection.objects:
+            for path, kind in (
+                (selected.selected_candidate_path, "selected_articulated_candidate"),
+                (selected.fitted_model_path, "selected_fitted_kinematic_model"),
+                (
+                    selected.link_assignment_path,
+                    "selected_articulated_link_assignment",
+                ),
+                (selected.evaluation_path, "selected_articulated_evaluation"),
+                (
+                    selected.selected_identity_manifest_path,
+                    "selected_articulated_identity_manifest",
+                ),
+                (selected.kinematic_bundle_path, "articulated_kinematic_bundle"),
+            ):
+                if path is not None:
+                    specs.append(InputSpec(path, kind))
+            if selected.selected_candidate_id is not None:
+                specs.append(
+                    InputSpec(
+                        (
+                            "reconstruction/articulation/selected/"
+                            f"{selected.articulated_object_id}/preview_only.urdf"
+                        ),
+                        "visual_only_articulation_preview",
+                    )
+                )
         return specs
 
     def healthcheck(self, context: StageContext | None = None) -> HealthcheckResult:
@@ -1343,6 +1614,51 @@ class Phase5CConsistencyValidationAdapter:
         scene = SceneIR.model_validate_json(
             context.path("scene_ir", "phase5c_scene.json").read_text(encoding="utf-8")
         )
+        candidate_by_id = {item.candidate_id: item for item in candidates.candidates}
+        fitted_by_id = {item.candidate_id: item for item in fitting.fittings}
+        assignment_by_candidate = {item.candidate_id: item for item in fitting.link_assignments}
+        evaluation_by_id = {item.candidate_id: item for item in evaluation.evaluations}
+        selected_record = selection.objects[0] if selection.objects else None
+        selected_candidate_file: ArticulatedCandidate | None = None
+        selected_fitted_file: FittedArticulatedKinematicModel | None = None
+        selected_assignment_file: ArticulatedLinkAssignment | None = None
+        selected_evaluation_file: ArticulatedCandidateEvaluation | None = None
+        selected_identity_file: ArticulatedSelectedIdentityManifest | None = None
+        selected_bundle_file: ArticulatedKinematicBundle | None = None
+        if selected_record is not None and selected_record.selected_candidate_id is not None:
+            try:
+                selected_candidate_file = ArticulatedCandidate.model_validate_json(
+                    context.path(
+                        *Path(selected_record.selected_candidate_path or "").parts
+                    ).read_text(encoding="utf-8")
+                )
+                selected_fitted_file = FittedArticulatedKinematicModel.model_validate_json(
+                    context.path(*Path(selected_record.fitted_model_path or "").parts).read_text(
+                        encoding="utf-8"
+                    )
+                )
+                selected_assignment_file = ArticulatedLinkAssignment.model_validate_json(
+                    context.path(*Path(selected_record.link_assignment_path or "").parts).read_text(
+                        encoding="utf-8"
+                    )
+                )
+                selected_evaluation_file = ArticulatedCandidateEvaluation.model_validate_json(
+                    context.path(*Path(selected_record.evaluation_path or "").parts).read_text(
+                        encoding="utf-8"
+                    )
+                )
+                selected_identity_file = ArticulatedSelectedIdentityManifest.model_validate_json(
+                    context.path(
+                        *Path(selected_record.selected_identity_manifest_path or "").parts
+                    ).read_text(encoding="utf-8")
+                )
+                selected_bundle_file = ArticulatedKinematicBundle.model_validate_json(
+                    context.path(
+                        *Path(selected_record.kinematic_bundle_path or "").parts
+                    ).read_text(encoding="utf-8")
+                )
+            except (OSError, ValueError):
+                pass
         checks: list[EndToEndConsistencyCheck] = []
 
         def check(check_id: str, passed: bool, message: str) -> None:
@@ -1699,10 +2015,34 @@ class Phase5CConsistencyValidationAdapter:
                     link.visual_asset_hashes[path] == sha256_file(context.path(*Path(path).parts))
                     for path in link.visual_asset_paths
                 )
+                and all(
+                    (
+                        candidate.source_family is ArticulatedSourceFamily.MEASURED_MOTION
+                        and link.visual_asset_spaces[path] is ArticulatedAssetSpace.REFERENCE_WORLD
+                    )
+                    or (
+                        candidate.source_family is not ArticulatedSourceFamily.MEASURED_MOTION
+                        and link.visual_asset_spaces[path]
+                        in {
+                            ArticulatedAssetSpace.CANDIDATE_BASE,
+                            ArticulatedAssetSpace.LINK_LOCAL,
+                        }
+                    )
+                    for path in link.visual_asset_paths
+                )
                 for candidate in candidates.candidates
                 for link in candidate.links
             ),
-            "every consumed visual has a verified hash, space, and candidate-base transform",
+            "measured anchors remain reference-world while candidate visuals use candidate spaces",
+        )
+        check(
+            "original_measured_geometry_immutable",
+            all(
+                item.measured_point_cloud_sha256
+                == sha256_file(context.path(*Path(item.measured_point_cloud_path).parts))
+                for item in geometry.geometries
+            ),
+            "original Phase 5A measured point clouds remain byte-identical",
         )
         check(
             "fitted_model_hashes",
@@ -1907,35 +2247,112 @@ class Phase5CConsistencyValidationAdapter:
             ),
             "every selected Scene IR candidate passed its held-out evaluation",
         )
+        selected_path_hash_pairs = (
+            (
+                (
+                    selected_record.selected_candidate_path,
+                    selected_record.selected_candidate_sha256,
+                ),
+                (selected_record.fitted_model_path, selected_record.fitted_model_sha256),
+                (
+                    selected_record.link_assignment_path,
+                    selected_record.link_assignment_sha256,
+                ),
+                (selected_record.evaluation_path, selected_record.evaluation_sha256),
+                (
+                    selected_record.selected_identity_manifest_path,
+                    selected_record.selected_identity_manifest_sha256,
+                ),
+                (
+                    selected_record.kinematic_bundle_path,
+                    selected_record.kinematic_bundle_sha256,
+                ),
+            )
+            if selected_record is not None
+            else ()
+        )
         check(
-            "selected_fitted_model_identity",
-            all(
-                item.selected_candidate_id is None
-                or (
-                    item.candidate_manifest_sha256 == sha256_file(root / "candidate_manifest.json")
-                    and (selected_fit := fitted_by_id.get(item.selected_candidate_id)) is not None
-                    and selected_fit.fitted_model is not None
-                    and item.fitted_model_sha256 == selected_fit.fitted_model_sha256
-                    and (
-                        selected_assignment := assignment_by_candidate.get(
-                            item.selected_candidate_id
-                        )
-                    )
-                    is not None
-                    and item.link_assignment_sha256
-                    == stable_digest(selected_assignment.model_dump(mode="json"))
-                    and item.evaluation_sha256
-                    == stable_digest(
-                        evaluation_by_id[item.selected_candidate_id].model_dump(mode="json")
-                    )
-                    and item.selected_candidate_sha256
-                    == stable_digest(
-                        candidate_by_id[item.selected_candidate_id].model_dump(mode="json")
-                    )
+            "selected_file_hashes_exact",
+            selected_record is not None
+            and (
+                selected_record.selected_candidate_id is None
+                or all(
+                    path is not None
+                    and digest is not None
+                    and sha256_file(context.path(*Path(path).parts)) == digest
+                    for path, digest in selected_path_hash_pairs
                 )
-                for item in selection.objects
             ),
-            "selection references the exact candidate, fit, assignment, and evaluation",
+            "every selected path/SHA pair hashes the exact declared file bytes",
+        )
+        selected_id = selected_record.selected_candidate_id if selected_record is not None else None
+        check(
+            "dedicated_selected_records_match_canonical",
+            selected_id is None
+            or (
+                selected_candidate_file == candidate_by_id.get(selected_id)
+                and selected_fitted_file
+                == (fitted_by_id[selected_id].fitted_model if selected_id in fitted_by_id else None)
+                and selected_assignment_file == assignment_by_candidate.get(selected_id)
+                and selected_evaluation_file == evaluation_by_id.get(selected_id)
+            ),
+            "dedicated selected records contain exactly one canonical selected object",
+        )
+        expected_candidate_reference = _optional_selected_artifact_reference(
+            selected_record.selected_candidate_path if selected_record is not None else None,
+            selected_record.selected_candidate_sha256 if selected_record is not None else None,
+        )
+        expected_fitted_reference = _optional_selected_artifact_reference(
+            selected_record.fitted_model_path if selected_record is not None else None,
+            selected_record.fitted_model_sha256 if selected_record is not None else None,
+        )
+        expected_assignment_reference = _optional_selected_artifact_reference(
+            selected_record.link_assignment_path if selected_record is not None else None,
+            selected_record.link_assignment_sha256 if selected_record is not None else None,
+        )
+        expected_evaluation_reference = _optional_selected_artifact_reference(
+            selected_record.evaluation_path if selected_record is not None else None,
+            selected_record.evaluation_sha256 if selected_record is not None else None,
+        )
+        expected_identity_reference = _optional_selected_artifact_reference(
+            (
+                selected_record.selected_identity_manifest_path
+                if selected_record is not None
+                else None
+            ),
+            (
+                selected_record.selected_identity_manifest_sha256
+                if selected_record is not None
+                else None
+            ),
+        )
+        check(
+            "selected_identity_manifest_exact",
+            selected_id is None
+            or (
+                selected_identity_file is not None
+                and selected_identity_file.articulated_object_id == capture.articulated_object_id
+                and selected_identity_file.candidate_id == selected_id
+                and selected_identity_file.selected_candidate == expected_candidate_reference
+                and selected_identity_file.fitted_kinematic_model == expected_fitted_reference
+                and selected_identity_file.selected_link_assignment == expected_assignment_reference
+                and selected_identity_file.selected_evaluation == expected_evaluation_reference
+            ),
+            "selected identity manifest binds candidate, fit, assignment, and evaluation files",
+        )
+        check(
+            "kinematic_bundle_selected_identity",
+            selected_id is None
+            or (
+                selected_bundle_file is not None
+                and selected_bundle_file.candidate_id == selected_id
+                and selected_bundle_file.selected_candidate == expected_candidate_reference
+                and selected_bundle_file.fitted_kinematic_model == expected_fitted_reference
+                and selected_bundle_file.selected_link_assignment == expected_assignment_reference
+                and selected_bundle_file.selected_evaluation == expected_evaluation_reference
+                and selected_bundle_file.selected_identity_manifest == expected_identity_reference
+            ),
+            "kinematic bundle references every dedicated selected record by exact file hash",
         )
         check(
             "measured_geometry_retained",
@@ -2013,13 +2430,111 @@ class Phase5CConsistencyValidationAdapter:
             "scene_ir_visual_asset_spaces",
             all(
                 (
-                    asset.articulated_asset_space is not None
+                    asset.articulated_asset_space in {"candidate_base", "link_local"}
                     and asset.asset_to_candidate_base_transform is not None
+                    and asset.content_sha256 == sha256_file(context.path(*Path(asset.uri).parts))
                 )
                 for asset in scene.geometry_assets
                 if asset.asset_role == "articulated_visual_link"
             ),
-            "Scene IR preserves each articulated visual's explicit candidate asset space",
+            "Scene IR candidate visuals preserve explicit spaces and exact content hashes",
+        )
+        measured_asset_ids = {
+            f"{item.part_id}.measured.phase5c": item
+            for item in geometry.geometries
+            if item.state_id == capture.reference_state_id
+        }
+        scene_assets_by_id = {asset.asset_id: asset for asset in scene.geometry_assets}
+        check(
+            "scene_ir_measured_assets_reference_world",
+            all(
+                asset_id in scene_assets_by_id
+                and scene_assets_by_id[asset_id].articulated_asset_space == "reference_world"
+                and scene_assets_by_id[asset_id].asset_to_candidate_base_transform is None
+                and scene_assets_by_id[asset_id].content_sha256
+                == geometry_item.measured_point_cloud_sha256
+                and sha256_file(context.path(*Path(scene_assets_by_id[asset_id].uri).parts))
+                == geometry_item.measured_point_cloud_sha256
+                for asset_id, geometry_item in measured_asset_ids.items()
+            ),
+            "original measured anchors remain immutable reference-world evidence",
+        )
+        linked_reference_world_assets = (
+            {
+                asset_id
+                for link in scene_object.articulation.links
+                for asset_id in link.geometry_asset_ids
+                if asset_id in scene_assets_by_id
+                and scene_assets_by_id[asset_id].articulated_asset_space == "reference_world"
+            }
+            if scene_object is not None and scene_object.articulation is not None
+            else set()
+        )
+        selected_source_family = (
+            candidate_by_id[selected_id].source_family
+            if selected_id is not None and selected_id in candidate_by_id
+            else None
+        )
+        check(
+            "no_reference_world_double_transform",
+            not linked_reference_world_assets
+            or (
+                selected_source_family in {None, ArticulatedSourceFamily.MEASURED_MOTION}
+                and scene_object is not None
+                and scene_object.transform == Transform()
+            ),
+            "reference-world measured evidence is not attached below a candidate transform",
+        )
+        scene_articulation = (
+            scene_object.articulation
+            if scene_object is not None and scene_object.articulation is not None
+            else None
+        )
+        check(
+            "scene_ir_selected_artifact_paths",
+            selected_id is None
+            or (
+                scene_articulation is not None
+                and selected_record is not None
+                and scene_articulation.selected_candidate_artifact_path
+                == selected_record.selected_candidate_path
+                and scene_articulation.selected_candidate_artifact_sha256
+                == selected_record.selected_candidate_sha256
+                and scene_articulation.fitting_artifact_path == selected_record.fitted_model_path
+                and scene_articulation.fitting_artifact_sha256
+                == selected_record.fitted_model_sha256
+                and scene_articulation.link_assignment_artifact_path
+                == selected_record.link_assignment_path
+                and scene_articulation.link_assignment_artifact_sha256
+                == selected_record.link_assignment_sha256
+                and scene_articulation.evaluation_artifact_path == selected_record.evaluation_path
+                and scene_articulation.evaluation_artifact_sha256
+                == selected_record.evaluation_sha256
+                and scene_articulation.selected_identity_manifest_path
+                == selected_record.selected_identity_manifest_path
+                and scene_articulation.selected_identity_manifest_sha256
+                == selected_record.selected_identity_manifest_sha256
+                and scene_articulation.kinematic_bundle_path
+                == selected_record.kinematic_bundle_path
+                and scene_articulation.kinematic_bundle_sha256
+                == selected_record.kinematic_bundle_sha256
+            ),
+            "Scene IR references exact dedicated selected artifacts",
+        )
+        urdf_path = root / "selected" / capture.articulated_object_id / "preview_only.urdf"
+        check(
+            "preview_urdf_asset_transforms",
+            selected_id is None
+            or (
+                selected_candidate_file is not None
+                and selected_fitted_file is not None
+                and _preview_urdf_asset_transforms_match(
+                    urdf_path,
+                    selected_candidate_file,
+                    selected_fitted_file,
+                )
+            ),
+            "preview URDF preserves every visual asset transform and fitted-base metadata",
         )
         check(
             "no_collision_assets",

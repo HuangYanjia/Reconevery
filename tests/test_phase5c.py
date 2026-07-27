@@ -10,6 +10,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from recon2sim.adapters.articulation_selection import ArticulationSelectionAdapter
 from recon2sim.articulation import (
     capture_evidence_tier,
     effective_evidence_level,
@@ -23,6 +24,7 @@ from recon2sim.articulation import (
     split_articulation_evidence,
 )
 from recon2sim.artifacts import (
+    ArticulatedAssetSpace,
     ArticulatedCandidate,
     ArticulatedCandidateEvaluation,
     ArticulatedCandidateManifest,
@@ -31,9 +33,11 @@ from recon2sim.artifacts import (
     ArticulatedEvaluationManifest,
     ArticulatedJoint,
     ArticulatedJointType,
+    ArticulatedKinematicBundle,
     ArticulatedLicenseMode,
     ArticulatedLink,
     ArticulatedRetrievalResult,
+    ArticulatedSelectedIdentityManifest,
     ArticulatedSourceFamily,
     ArticulationCaptureManifest,
     ArticulationEvidenceLevel,
@@ -372,6 +376,17 @@ def test_articulated_visual_asset_space_is_explicit() -> None:
         native_bounds_max=(1.0, 1.0, 1.0),
     )
     assert local.visual_asset_transforms_candidate_base[path][3] == 1.0
+    measured = ArticulatedLink(
+        link_id="measured",
+        name="measured",
+        visual_asset_paths=[path],
+        visual_asset_hashes={path: "0" * 64},
+        visual_asset_spaces={path: "reference_world"},
+        visual_asset_transforms_candidate_base={path: tuple(IDENTITY)},
+        native_bounds_min=(0.0, 0.0, 0.0),
+        native_bounds_max=(1.0, 1.0, 1.0),
+    )
+    assert measured.visual_asset_spaces[path] is ArticulatedAssetSpace.REFERENCE_WORLD
     with pytest.raises(ValueError, match="identity transform"):
         ArticulatedLink(
             link_id="link",
@@ -383,6 +398,25 @@ def test_articulated_visual_asset_space_is_explicit() -> None:
             native_bounds_min=(0.0, 0.0, 0.0),
             native_bounds_max=(1.0, 1.0, 1.0),
         )
+
+
+def test_reference_world_worker_asset_requires_identity_transform(tmp_path: Path) -> None:
+    np = pytest.importorskip("numpy")
+    evaluator = _evaluation_worker_module("articulation_evaluation_worker.cli")
+    path = tmp_path / "measured.ply"
+    path.write_bytes(b"measured reference-world fixture")
+    link = {
+        "visual_asset_spaces": {"measured.ply": "reference_world"},
+        "visual_asset_hashes": {"measured.ply": sha256_file(path)},
+        "visual_asset_transforms_candidate_base": {"measured.ply": IDENTITY},
+    }
+    matrix = evaluator._visual_asset_to_candidate_matrix(tmp_path, link, "measured.ply")
+    assert np.allclose(matrix, np.eye(4))
+    translated = list(IDENTITY)
+    translated[3] = 1.0
+    link["visual_asset_transforms_candidate_base"] = {"measured.ply": translated}
+    with pytest.raises(ValueError, match="identity transform"):
+        evaluator._visual_asset_to_candidate_matrix(tmp_path, link, "measured.ply")
 
 
 def test_heldout_view_requires_complete_link_coverage() -> None:
@@ -1111,11 +1145,43 @@ def test_fake_phase5c_pipeline_resume_and_cli(tmp_path: Path) -> None:
             run_dir / "reconstruction/articulation/selected/cabinet_0001/kinematic_bundle.json"
         ).read_text()
     )
-    assert bundle["fitted_kinematic_model"]["fitted_joints"]
-    assert bundle["identity_hashes"]["fitted_model"]
+    typed_bundle = ArticulatedKinematicBundle.model_validate(bundle)
+    selected = selection.objects[0]
+    assert typed_bundle.fitted_kinematic_model.path == selected.fitted_model_path
+    assert typed_bundle.fitted_kinematic_model.sha256 == selected.fitted_model_sha256
+    selected_root = run_dir / "reconstruction/articulation/selected/cabinet_0001"
+    identity = ArticulatedSelectedIdentityManifest.model_validate_json(
+        (selected_root / "selected_identity_manifest.json").read_text()
+    )
+    assert identity.selected_candidate.sha256 == sha256_file(
+        selected_root / "selected_candidate.json"
+    )
+    assert identity.fitted_kinematic_model.sha256 == sha256_file(
+        selected_root / "fitted_kinematic_model.json"
+    )
+    assert identity.selected_link_assignment.sha256 == sha256_file(
+        selected_root / "selected_link_assignment.json"
+    )
+    assert identity.selected_evaluation.sha256 == sha256_file(
+        selected_root / "selected_evaluation.json"
+    )
     scene_object = next(item for item in scene.objects if item.object_id == "cabinet_0001")
     assert scene_object.articulation is not None
     assert scene_object.articulation.fitting_artifact_sha256
+    scene_assets = {item.asset_id: item for item in scene.geometry_assets}
+    measured_asset_ids = {
+        item.asset_id for item in scene.geometry_assets if item.asset_role == "measured_anchor"
+    }
+    assert measured_asset_ids <= set(scene_object.geometry_asset_ids)
+    assert all(
+        scene_assets[asset_id].articulated_asset_space == "reference_world"
+        for asset_id in measured_asset_ids
+    )
+    assert not any(
+        asset_id in measured_asset_ids
+        for link in scene_object.articulation.links
+        for asset_id in link.geometry_asset_ids
+    )
     resumed = runner.run(resume=True)
     assert all(stage["last_execution"] == "cache_hit" for stage in resumed["stages"].values())
     cli = CliRunner()
@@ -1237,6 +1303,111 @@ def test_heldout_state_payload_does_not_enter_fitting_request(
     assert (evaluation_attempt / "measured_states/state_002/evidence").is_dir()
     assert not (evaluation_attempt / "measured_states/state_000/evidence").exists()
     assert not (evaluation_attempt / "measured_states/state_001/evidence").exists()
+
+
+def test_link_local_preview_urdf_preserves_visual_transform(phase5c_run: Path) -> None:
+    selection = ArticulatedCandidateSelection.model_validate_json(
+        (phase5c_run / "reconstruction/articulation/selection.json").read_text()
+    )
+    selected_id = selection.objects[0].selected_candidate_id
+    assert selected_id is not None
+    candidates = ArticulatedCandidateManifest.model_validate_json(
+        (phase5c_run / "reconstruction/articulation/candidate_manifest.json").read_text()
+    )
+    candidate = next(item for item in candidates.candidates if item.candidate_id == selected_id)
+    fitting = ArticulationFittingManifest.model_validate_json(
+        (phase5c_run / "reconstruction/articulation/fitting_manifest.json").read_text()
+    )
+    fitted = next(item for item in fitting.fittings if item.candidate_id == selected_id)
+    link = candidate.links[0]
+    visual_path = link.visual_asset_paths[0]
+    transform = (
+        0.0,
+        -2.0,
+        0.0,
+        1.0,
+        2.0,
+        0.0,
+        0.0,
+        2.0,
+        0.0,
+        0.0,
+        2.0,
+        3.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    )
+    updated_link = link.model_copy(
+        update={
+            "visual_asset_spaces": {
+                **link.visual_asset_spaces,
+                visual_path: ArticulatedAssetSpace.LINK_LOCAL,
+            },
+            "visual_asset_transforms_candidate_base": {
+                **link.visual_asset_transforms_candidate_base,
+                visual_path: transform,
+            },
+        }
+    )
+    updated_candidate = candidate.model_copy(
+        update={
+            "links": [
+                updated_link if item.link_id == updated_link.link_id else item
+                for item in candidate.links
+            ]
+        }
+    )
+    output = phase5c_run / "link_local_preview.urdf"
+    ArticulationSelectionAdapter._write_preview_urdf(
+        output,
+        "cabinet_0001",
+        updated_candidate,
+        fitted,
+    )
+    text = output.read_text(encoding="utf-8")
+    assert 'reconevery_asset_space="link_local"' in text
+    assert 'origin xyz="1 2 3" rpy="0 -0 1.57079632679"' in text
+    assert f'filename="{visual_path}" scale="2 2 2"' in text
+    assert "matrix_reference_world_from_candidate_base=" in text
+
+
+@pytest.mark.parametrize(
+    "selection_path_field",
+    [
+        "selected_candidate_path",
+        "fitted_model_path",
+        "link_assignment_path",
+        "evaluation_path",
+        "selected_identity_manifest_path",
+        "kinematic_bundle_path",
+    ],
+)
+def test_selected_file_tamper_is_detected(
+    phase5c_run: Path,
+    selection_path_field: str,
+) -> None:
+    selection = ArticulatedCandidateSelection.model_validate_json(
+        (phase5c_run / "reconstruction/articulation/selection.json").read_text()
+    )
+    selected = selection.objects[0]
+    path_value = getattr(selected, selection_path_field)
+    assert isinstance(path_value, str)
+    path = phase5c_run / path_value
+    path.write_text(path.read_text(encoding="utf-8") + " ", encoding="utf-8")
+    runner = PipelineRunner(load_config(CONFIG), INPUT, phase5c_run)
+    try:
+        runner.run(from_stage="phase5c_consistency_validation")
+    except (RuntimeError, ValueError):
+        return
+    report = Phase5CConsistencyReport.model_validate_json(
+        (phase5c_run / "validation/phase5c_articulated_reconstruction.json").read_text()
+    )
+    assert not report.passed
+    assert not next(
+        item for item in report.checks if item.check_id == "selected_file_hashes_exact"
+    ).passed
 
 
 @pytest.fixture

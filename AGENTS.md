@@ -144,3 +144,7 @@ provenance only and must not multiply `q_scale`. Articulated visuals must declar
 candidate-base or link-local space with an exact candidate-base transform.
 Passing held-out views require all mapped links, target masks, valid depth, and
 per-frame camera/depth/mask/render hashes.
+Original Phase 5A articulated anchors are `reference_world` evidence and remain on
+the object evidence list; never attach them below a fitted candidate/link transform
+without transforming the geometry bytes. Selected candidate, fitted model, link
+assignment, and evaluation records must be dedicated files with exact content hashes.

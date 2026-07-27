@@ -327,16 +327,30 @@ class GeometryAsset(StrictModel):
         ]
         | None
     ) = None
-    articulated_asset_space: Literal["candidate_base", "link_local"] | None = None
+    articulated_asset_space: Literal["reference_world", "candidate_base", "link_local"] | None = (
+        None
+    )
     asset_to_candidate_base_transform: Transform | None = None
+    content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     provenance: ProvenanceRecord
 
     @model_validator(mode="after")
     def articulated_asset_space_is_explicit(self) -> Self:
-        if (self.articulated_asset_space is None) != (
-            self.asset_to_candidate_base_transform is None
-        ):
-            raise ValueError("articulated asset space and candidate-base transform must be paired")
+        if self.articulated_asset_space is None:
+            if self.asset_to_candidate_base_transform is not None:
+                raise ValueError(
+                    "candidate-base transform requires an explicit articulated asset space"
+                )
+            return self
+        if self.content_sha256 is None:
+            raise ValueError("articulated assets require an exact content SHA-256")
+        if self.articulated_asset_space == "reference_world":
+            if self.asset_to_candidate_base_transform is not None:
+                raise ValueError(
+                    "reference-world evidence cannot declare a candidate-base transform"
+                )
+        elif self.asset_to_candidate_base_transform is None:
+            raise ValueError("candidate and link-local assets require a candidate-base transform")
         return self
 
     @field_validator("uri", "alignment_transform_path", "license_record_path")
@@ -433,10 +447,18 @@ class Articulation(StrictModel):
         | None
     ) = None
     validation_artifact_path: str | None = None
+    selected_candidate_artifact_path: str | None = None
+    selected_candidate_artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     fitting_artifact_path: str | None = None
     fitting_artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    link_assignment_artifact_path: str | None = None
+    link_assignment_artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     evaluation_artifact_path: str | None = None
     evaluation_artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    selected_identity_manifest_path: str | None = None
+    selected_identity_manifest_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    kinematic_bundle_path: str | None = None
+    kinematic_bundle_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     selected_candidate_id: str | None = None
     physical_validation: Literal["not_implemented"] | None = None
     collision_ready: bool | None = None
@@ -444,8 +466,12 @@ class Articulation(StrictModel):
 
     @field_validator(
         "validation_artifact_path",
+        "selected_candidate_artifact_path",
         "fitting_artifact_path",
+        "link_assignment_artifact_path",
         "evaluation_artifact_path",
+        "selected_identity_manifest_path",
+        "kinematic_bundle_path",
     )
     @classmethod
     def relative_articulation_validation_path(cls, value: str | None) -> str | None:
@@ -453,6 +479,28 @@ class Articulation(StrictModel):
 
     @model_validator(mode="after")
     def valid_link_graph(self) -> Self:
+        for name, path, digest in (
+            (
+                "selected candidate",
+                self.selected_candidate_artifact_path,
+                self.selected_candidate_artifact_sha256,
+            ),
+            ("fitting", self.fitting_artifact_path, self.fitting_artifact_sha256),
+            (
+                "link assignment",
+                self.link_assignment_artifact_path,
+                self.link_assignment_artifact_sha256,
+            ),
+            ("evaluation", self.evaluation_artifact_path, self.evaluation_artifact_sha256),
+            (
+                "selected identity",
+                self.selected_identity_manifest_path,
+                self.selected_identity_manifest_sha256,
+            ),
+            ("kinematic bundle", self.kinematic_bundle_path, self.kinematic_bundle_sha256),
+        ):
+            if (path is None) != (digest is None):
+                raise ValueError(f"{name} artifact path and SHA-256 must be paired")
         link_ids = [link.link_id for link in self.links]
         duplicate_links = _duplicates(link_ids)
         duplicate_joints = _duplicates([joint.joint_id for joint in self.joints])

@@ -47,7 +47,7 @@ class ArticulationFittingConfig(ArticulationWorkerConfig):
 
 class ArticulationFittingAdapter:
     name = "articulation_fitting"
-    version = "0.2.0"
+    version = "0.3.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         candidates = ArticulatedCandidateManifest.model_validate_json(

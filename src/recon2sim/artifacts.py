@@ -3654,6 +3654,7 @@ class ArticulatedSourceFamily(StrEnum):
 
 
 class ArticulatedAssetSpace(StrEnum):
+    REFERENCE_WORLD = "reference_world"
     CANDIDATE_BASE = "candidate_base"
     LINK_LOCAL = "link_local"
 
@@ -4379,6 +4380,12 @@ class ArticulatedLink(StrictModel):
                 abs(left - right) > 1e-8 for left, right in zip(matrix, identity, strict=True)
             ):
                 raise ValueError("candidate-base visual assets require an identity transform")
+            if self.visual_asset_spaces[path] is ArticulatedAssetSpace.REFERENCE_WORLD and any(
+                abs(left - right) > 1e-8 for left, right in zip(matrix, identity, strict=True)
+            ):
+                raise ValueError(
+                    "reference-world measured assets require an identity candidate baseline"
+                )
         return self
 
 
@@ -4511,6 +4518,18 @@ class ArticulatedCandidate(StrictModel):
     def valid_candidate_graph(self) -> Self:
         if set(self.native_output_paths) != set(self.native_output_hashes):
             raise ValueError("articulated native-output paths and hashes do not match")
+        asset_spaces = {space for link in self.links for space in link.visual_asset_spaces.values()}
+        if self.source_family is ArticulatedSourceFamily.MEASURED_MOTION and asset_spaces != {
+            ArticulatedAssetSpace.REFERENCE_WORLD
+        }:
+            raise ValueError("measured-motion candidate assets must remain in the reference world")
+        if (
+            self.source_family is not ArticulatedSourceFamily.MEASURED_MOTION
+            and ArticulatedAssetSpace.REFERENCE_WORLD in asset_spaces
+        ):
+            raise ValueError(
+                "generated or retrieved candidate visuals cannot declare reference-world space"
+            )
         link_ids = [link.link_id for link in self.links]
         if len(link_ids) != len(set(link_ids)):
             raise ValueError("articulated candidate link IDs must be unique")
@@ -4912,6 +4931,48 @@ class ArticulatedEvaluationManifest(StrictModel):
     peak_host_memory_bytes: int | None = Field(default=None, ge=0)
 
 
+class SelectedArtifactReference(StrictModel):
+    path: str
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+    @field_validator("path")
+    @classmethod
+    def safe_selected_artifact_path(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class ArticulatedSelectedIdentityManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    articulated_object_id: Annotated[str, Field(min_length=1)]
+    candidate_id: Annotated[str, Field(min_length=1)]
+    selected_candidate: SelectedArtifactReference
+    fitted_kinematic_model: SelectedArtifactReference
+    selected_link_assignment: SelectedArtifactReference
+    selected_evaluation: SelectedArtifactReference
+
+
+class ArticulatedKinematicBundle(StrictModel):
+    schema_version: Literal["0.2.0"] = "0.2.0"
+    articulated_object_id: Annotated[str, Field(min_length=1)]
+    candidate_id: Annotated[str, Field(min_length=1)]
+    selected_identity_manifest: SelectedArtifactReference
+    selected_candidate: SelectedArtifactReference
+    fitted_kinematic_model: SelectedArtifactReference
+    selected_link_assignment: SelectedArtifactReference
+    selected_evaluation: SelectedArtifactReference
+    base_sim3: Annotated[tuple[float, ...], Field(min_length=16, max_length=16)]
+    fitting_state_q: dict[str, dict[str, float]]
+    heldout_inferred_q: dict[str, dict[str, float]]
+    license_record: ArticulatedLicenseRecord
+    measured_joint_hypotheses: list[MeasuredJointHypothesis]
+    evidence_level: ArticulationEvidenceLevel
+    coordinate_convention: CoordinateConvention
+    scale_status: Literal["scale_ambiguous"] = "scale_ambiguous"
+    physical_validation: Literal["not_implemented"] = "not_implemented"
+    collision_ready: Literal[False] = False
+    sim_ready: Literal[False] = False
+
+
 class ArticulatedObjectSelection(StrictModel):
     articulated_object_id: Annotated[str, Field(min_length=1)]
     status: ArticulatedCandidateStatus
@@ -4924,10 +4985,18 @@ class ArticulatedObjectSelection(StrictModel):
     best_production_eligible_articulated_candidate: str | None = None
     selected_candidate_id: str | None = None
     candidate_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    selected_candidate_path: str | None = None
     fitted_model_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    fitted_model_path: str | None = None
     link_assignment_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    link_assignment_path: str | None = None
     evaluation_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    evaluation_path: str | None = None
     selected_candidate_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    selected_identity_manifest_path: str | None = None
+    selected_identity_manifest_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    kinematic_bundle_path: str | None = None
+    kinematic_bundle_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     selection_rationale: list[str]
     measured_geometry_retained: Literal[True] = True
     geometry_status: Literal["articulated_visual_candidate", "partial_measured"] | None = None
@@ -4941,18 +5010,26 @@ class ArticulatedObjectSelection(StrictModel):
 
     @model_validator(mode="after")
     def selected_identity_is_complete(self) -> Self:
-        identity_hashes = (
+        identity_values = (
+            self.selected_candidate_path,
+            self.fitted_model_path,
+            self.link_assignment_path,
+            self.evaluation_path,
             self.fitted_model_sha256,
             self.link_assignment_sha256,
             self.evaluation_sha256,
             self.selected_candidate_sha256,
+            self.selected_identity_manifest_path,
+            self.selected_identity_manifest_sha256,
+            self.kinematic_bundle_path,
+            self.kinematic_bundle_sha256,
         )
         if self.selected_candidate_id is None and any(
-            value is not None for value in identity_hashes
+            value is not None for value in identity_values
         ):
             raise ValueError("unselected articulation cannot contain selected artifact hashes")
         if self.selected_candidate_id is not None and any(
-            value is None for value in identity_hashes
+            value is None for value in identity_values
         ):
             raise ValueError("selected articulation requires all fitted/evaluation identity hashes")
         if (
@@ -4962,6 +5039,18 @@ class ArticulatedObjectSelection(StrictModel):
         ):
             raise ValueError("visual completion requires multi-state held-out validation")
         return self
+
+    @field_validator(
+        "selected_candidate_path",
+        "fitted_model_path",
+        "link_assignment_path",
+        "evaluation_path",
+        "selected_identity_manifest_path",
+        "kinematic_bundle_path",
+    )
+    @classmethod
+    def safe_selected_paths(cls, value: str | None) -> str | None:
+        return _relative_artifact_path(value) if value is not None else None
 
 
 class ArticulatedCandidateSelection(StrictModel):

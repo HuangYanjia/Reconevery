@@ -8,6 +8,7 @@ import pytest
 from articulation_evaluation_worker.cli import (
     _candidate_link_points,
     _heldout_joint_position,
+    _visual_asset_to_candidate_matrix,
 )
 from articulation_evaluation_worker.dense_io import read_dense_array
 from articulation_evaluation_worker.rendering import (
@@ -164,3 +165,24 @@ def test_link_local_asset_transform_is_used_for_registration(tmp_path: Path) -> 
     }
     loaded = _candidate_link_points(tmp_path, candidate)["link"]
     assert np.allclose(loaded, points + np.asarray([2.0, 3.0, 4.0]))
+
+
+def test_reference_world_asset_cannot_hide_a_transform(tmp_path: Path) -> None:
+    path = tmp_path / "measured.ply"
+    _write_points(path, np.asarray([[0.0, 0.0, 0.0]]))
+    link = {
+        "visual_asset_hashes": {"measured.ply": hashlib.sha256(path.read_bytes()).hexdigest()},
+        "visual_asset_spaces": {"measured.ply": "reference_world"},
+        "visual_asset_transforms_candidate_base": {"measured.ply": np.eye(4).reshape(-1).tolist()},
+    }
+    assert np.allclose(
+        _visual_asset_to_candidate_matrix(tmp_path, link, "measured.ply"),
+        np.eye(4),
+    )
+    translated = np.eye(4)
+    translated[0, 3] = 1.0
+    link["visual_asset_transforms_candidate_base"] = {
+        "measured.ply": translated.reshape(-1).tolist()
+    }
+    with pytest.raises(ValueError, match="identity transform"):
+        _visual_asset_to_candidate_matrix(tmp_path, link, "measured.ply")

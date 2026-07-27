@@ -207,3 +207,10 @@ reference state, and held-out feasibility before worker execution.
 The articulation fitting and evaluation adapters verify candidate visual hashes
 and spaces, bind evaluations to exact fitted-model and evidence digests, and
 reject held-out views with incomplete mapped-link coverage.
+
+# Phase 5C.3 selected artifacts
+
+The selection adapter keeps Phase 5A anchors in `reference_world`, writes dedicated
+selected candidate, fit, assignment, evaluation, identity, and bundle records, and
+publishes each record as a StageResult output. The consistency adapter re-hashes the
+exact files and rejects reference-world evidence inside transformed candidate links.

@@ -107,6 +107,18 @@
         "effective_motion_evidence_level": {
           "$ref": "#/$defs/ArticulationEvidenceLevel"
         },
+        "evaluation_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evaluation Path"
+        },
         "evaluation_sha256": {
           "anyOf": [
             {
@@ -119,6 +131,18 @@
           ],
           "default": null,
           "title": "Evaluation Sha256"
+        },
+        "fitted_model_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitted Model Path"
         },
         "fitted_model_sha256": {
           "anyOf": [
@@ -148,6 +172,43 @@
           ],
           "default": null,
           "title": "Geometry Status"
+        },
+        "kinematic_bundle_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kinematic Bundle Path"
+        },
+        "kinematic_bundle_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kinematic Bundle Sha256"
+        },
+        "link_assignment_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link Assignment Path"
         },
         "link_assignment_sha256": {
           "anyOf": [
@@ -198,6 +259,18 @@
           "default": null,
           "title": "Selected Candidate Id"
         },
+        "selected_candidate_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Candidate Path"
+        },
         "selected_candidate_sha256": {
           "anyOf": [
             {
@@ -213,6 +286,31 @@
         },
         "selected_candidate_validation_level": {
           "$ref": "#/$defs/ArticulationEvidenceLevel"
+        },
+        "selected_identity_manifest_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Identity Manifest Path"
+        },
+        "selected_identity_manifest_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Identity Manifest Sha256"
         },
         "selection_rationale": {
           "items": {

@@ -400,7 +400,7 @@ class ParticulateAdapter:
                         item.measured_point_cloud_path: item.measured_point_cloud_sha256
                     },
                     visual_asset_spaces={
-                        item.measured_point_cloud_path: ArticulatedAssetSpace.CANDIDATE_BASE
+                        item.measured_point_cloud_path: ArticulatedAssetSpace.REFERENCE_WORLD
                     },
                     visual_asset_transforms_candidate_base={
                         item.measured_point_cloud_path: (

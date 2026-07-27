@@ -290,6 +290,9 @@ structure is frozen before held-out-state evaluation.
 Phase 5C.2 records each articulated visual's coordinate space and content
 identity, applies joint-axis sign exactly once, and requires complete per-link
 held-out render provenance before a candidate can pass.
+Phase 5C.3 keeps original measured anchors explicitly in `reference_world`, limits
+transformed links to candidate/link-local visuals, and binds Scene IR to dedicated
+selected records by their exact file hashes.
 
 ```bash
 uv run recon2sim articulation capture-template \

@@ -124,9 +124,17 @@ objects keep `physical_validation=not_implemented`, `collision_ready=false`, and
 `sim_ready=false`. Selected objects use the fitted candidate-base Sim(3); joints use
 fitted/refined axes and pivots, visual formats come from actual suffixes, and the
 articulation records exact fitting/evaluation paths and hashes. Measured link assets
-remain attached beside retrieved/generated visual links.
+remain top-level `reference_world` evidence when a fitted candidate transform is
+active; retrieved/generated links contain only `candidate_base` or `link_local`
+visuals. Link-local measured evidence would require a newly transformed derived
+asset with its own hash and provenance.
 # Articulated asset spaces
 
-Phase 5C.2 records whether articulated visual vertices are in candidate-base or
-link-local space and preserves the exact transform into the candidate base frame
-used during held-out evaluation.
+Phase 5C.3 distinguishes `reference_world`, `candidate_base`, and `link_local`.
+Original Phase 5A point clouds are immutable `reference_world` evidence and do not
+carry a candidate-base transform. Candidate and link-local assets carry the same
+explicit transform used during fitting, rendering, preview export, and selection.
+
+Scene IR references dedicated selected-candidate, fitted-model, link-assignment,
+evaluation, identity-manifest, and kinematic-bundle files. Every declared SHA-256 is
+the hash of the bytes at its declared path, never a digest of a nested parent record.

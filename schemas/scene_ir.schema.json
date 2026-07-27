@@ -105,6 +105,56 @@
           "title": "Joints",
           "type": "array"
         },
+        "kinematic_bundle_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kinematic Bundle Path"
+        },
+        "kinematic_bundle_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kinematic Bundle Sha256"
+        },
+        "link_assignment_artifact_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link Assignment Artifact Path"
+        },
+        "link_assignment_artifact_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link Assignment Artifact Sha256"
+        },
         "links": {
           "items": {
             "$ref": "#/$defs/Link"
@@ -126,6 +176,31 @@
           "default": null,
           "title": "Physical Validation"
         },
+        "selected_candidate_artifact_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Candidate Artifact Path"
+        },
+        "selected_candidate_artifact_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Candidate Artifact Sha256"
+        },
         "selected_candidate_id": {
           "anyOf": [
             {
@@ -137,6 +212,31 @@
           ],
           "default": null,
           "title": "Selected Candidate Id"
+        },
+        "selected_identity_manifest_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Identity Manifest Path"
+        },
+        "selected_identity_manifest_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Identity Manifest Sha256"
         },
         "sim_ready": {
           "anyOf": [
@@ -487,6 +587,7 @@
           "anyOf": [
             {
               "enum": [
+                "reference_world",
                 "candidate_base",
                 "link_local"
               ],
@@ -564,6 +665,19 @@
           ],
           "default": null,
           "title": "Completion Status"
+        },
+        "content_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
         },
         "coordinate_convention": {
           "anyOf": [

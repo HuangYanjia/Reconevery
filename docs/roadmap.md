@@ -115,6 +115,8 @@ typed fitted kinematic model the selection/Scene IR source of truth.
 Phase 5C.2 makes the axis/q sign convention single-valued, records candidate
 visual asset spaces explicitly, binds held-out metrics to exact artifact
 identities, and requires complete per-link render coverage.
+Phase 5C.3 adds the reference-world measured-asset boundary, dedicated selected
+files, exact Scene IR path/hash pairs, and transform-aware visual-only URDF previews.
 
 ## Later phases
 

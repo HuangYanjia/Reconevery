@@ -2,6 +2,7 @@
   "$defs": {
     "ArticulatedAssetSpace": {
       "enum": [
+        "reference_world",
         "candidate_base",
         "link_local"
       ],

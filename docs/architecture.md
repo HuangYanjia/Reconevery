@@ -205,3 +205,10 @@ Articulated visual assets carry an explicit asset-to-candidate-base transform.
 The worker, selection artifact, and Scene IR consume the same hashed
 representation. Held-out evaluation records immutable per-view camera, depth,
 mask, link-coverage, and render identities.
+
+# Phase 5C.3 reference-world boundary
+
+Original measured anchors are immutable `reference_world` evidence on the object,
+while articulated links contain only candidate-base or link-local visuals. Scene IR
+and the typed kinematic bundle reference dedicated selected records by exact file
+hash, preventing nested-record identity ambiguity and measured double transforms.

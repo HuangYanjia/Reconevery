@@ -229,7 +229,7 @@ def _visual_asset_to_candidate_matrix(
     if sha256(input_root / path) != str(hashes[path]):
         raise ValueError(f"candidate visual {path!r} content hash mismatch")
     space = str(spaces[path])
-    if space not in {"candidate_base", "link_local"}:
+    if space not in {"reference_world", "candidate_base", "link_local"}:
         raise ValueError(f"candidate visual {path!r} has unsupported asset space {space!r}")
     matrix = np.asarray(transforms[path], dtype=np.float64).reshape(4, 4)
     if not np.isfinite(matrix).all() or not np.allclose(
@@ -238,6 +238,10 @@ def _visual_asset_to_candidate_matrix(
         atol=1e-8,
     ):
         raise ValueError(f"candidate visual {path!r} has an invalid asset transform")
+    if space == "reference_world" and not np.allclose(matrix, np.eye(4), atol=1e-8):
+        raise ValueError(
+            f"reference-world candidate visual {path!r} requires an identity transform"
+        )
     if space == "candidate_base" and not np.allclose(matrix, np.eye(4), atol=1e-8):
         raise ValueError("candidate-base visual asset must use an identity transform")
     return matrix
