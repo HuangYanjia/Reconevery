@@ -3653,6 +3653,11 @@ class ArticulatedSourceFamily(StrEnum):
     PARTICULATE = "particulate"
 
 
+class ArticulatedAssetSpace(StrEnum):
+    CANDIDATE_BASE = "candidate_base"
+    LINK_LOCAL = "link_local"
+
+
 class ArticulatedLicenseMode(StrEnum):
     RESEARCH_EVALUATION = "research_evaluation"
     PRODUCTION_CANDIDATE = "production_candidate"
@@ -4298,6 +4303,11 @@ class ArticulatedLink(StrictModel):
     name: Annotated[str, Field(min_length=1)]
     visual_asset_paths: list[str]
     visual_asset_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    visual_asset_spaces: dict[str, ArticulatedAssetSpace]
+    visual_asset_transforms_candidate_base: dict[
+        str,
+        Annotated[tuple[float, ...], Field(min_length=16, max_length=16)],
+    ]
     native_bounds_min: tuple[float, float, float]
     native_bounds_max: tuple[float, float, float]
 
@@ -4305,6 +4315,71 @@ class ArticulatedLink(StrictModel):
     @classmethod
     def safe_articulated_visual_paths(cls, values: list[str]) -> list[str]:
         return [_relative_artifact_path(value) for value in values]
+
+    @model_validator(mode="after")
+    def explicit_visual_asset_spaces(self) -> Self:
+        paths = set(self.visual_asset_paths)
+        if (
+            paths != set(self.visual_asset_hashes)
+            or paths != set(self.visual_asset_spaces)
+            or paths != set(self.visual_asset_transforms_candidate_base)
+        ):
+            raise ValueError("articulated visual paths, hashes, spaces, and transforms must match")
+        identity = (
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        )
+        for path in self.visual_asset_paths:
+            matrix = self.visual_asset_transforms_candidate_base[path]
+            if not all(math.isfinite(value) for value in matrix):
+                raise ValueError("articulated visual asset transform must be finite")
+            if any(abs(matrix[index] - identity[index]) > 1e-8 for index in (12, 13, 14, 15)):
+                raise ValueError("articulated visual asset transform must be affine")
+            linear = (
+                (matrix[0], matrix[1], matrix[2]),
+                (matrix[4], matrix[5], matrix[6]),
+                (matrix[8], matrix[9], matrix[10]),
+            )
+            determinant = (
+                linear[0][0] * (linear[1][1] * linear[2][2] - linear[1][2] * linear[2][1])
+                - linear[0][1] * (linear[1][0] * linear[2][2] - linear[1][2] * linear[2][0])
+                + linear[0][2] * (linear[1][0] * linear[2][1] - linear[1][1] * linear[2][0])
+            )
+            column_norms = [
+                math.sqrt(sum(linear[row][column] ** 2 for row in range(3))) for column in range(3)
+            ]
+            if determinant <= 0 or min(column_norms) <= 1e-12:
+                raise ValueError("articulated visual asset transform must be proper and invertible")
+            if max(column_norms) - min(column_norms) > 1e-6 * max(column_norms):
+                raise ValueError(
+                    "articulated visual asset transform must use uniform positive scale"
+                )
+            for left in range(3):
+                for right in range(left + 1, 3):
+                    dot = sum(linear[row][left] * linear[row][right] for row in range(3))
+                    if abs(dot) > 1e-6 * column_norms[left] * column_norms[right]:
+                        raise ValueError(
+                            "articulated visual asset transform rotation is not orthogonal"
+                        )
+            if self.visual_asset_spaces[path] is ArticulatedAssetSpace.CANDIDATE_BASE and any(
+                abs(left - right) > 1e-8 for left, right in zip(matrix, identity, strict=True)
+            ):
+                raise ValueError("candidate-base visual assets require an identity transform")
+        return self
 
 
 class ArticulatedJoint(StrictModel):
@@ -4501,8 +4576,13 @@ class FittedArticulatedJoint(StrictModel):
     fitted_axis: tuple[float, float, float]
     fitted_pivot: tuple[float, float, float] | None = None
     axis_sign: Literal[-1, 1]
+    axis_convention: Literal["oriented_toward_measured_axis"] = "oriented_toward_measured_axis"
+    axis_sign_role: Literal["native_axis_flip_provenance_only"] = "native_axis_flip_provenance_only"
     q_scale: float
+    q_scale_convention: Literal["candidate_q_per_measured_q"] = "candidate_q_per_measured_q"
     q_offset: float
+    q_offset_fitted: bool = False
+    q_offset_evidence_state_ids: list[str] = Field(default_factory=list)
     fitting_state_q: dict[str, float]
     axis_refinement_degrees: float = Field(ge=0)
     pivot_refinement_arbitrary_units: float | None = Field(default=None, ge=0)
@@ -4524,6 +4604,8 @@ class FittedArticulatedJoint(StrictModel):
             and self.fitted_pivot is None
         ):
             raise ValueError("fitted revolute joint requires a pivot")
+        if self.q_offset_fitted != bool(self.q_offset_evidence_state_ids):
+            raise ValueError("q-offset fitting evidence is inconsistent")
         return self
 
 
@@ -4557,6 +4639,24 @@ class FittedArticulatedKinematicModel(StrictModel):
     fit_residual_arbitrary_units: float = Field(ge=0)
     fit_residual_scene_diagonals: float = Field(ge=0)
     ambiguity_reasons: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def canonical_joint_sign_convention(self) -> Self:
+        for joint in self.fitted_joints:
+            if joint.joint_type is ArticulatedJointType.PRISMATIC:
+                expected = 1.0 / self.scale
+            elif joint.joint_type in {
+                ArticulatedJointType.REVOLUTE,
+                ArticulatedJointType.CONTINUOUS_CANDIDATE,
+            }:
+                expected = 1.0
+            else:
+                expected = 0.0
+            if abs(joint.q_scale - expected) > 1e-6 * max(1.0, abs(expected)):
+                raise ValueError(
+                    "fitted articulation q-scale violates the canonical axis convention"
+                )
+        return self
 
 
 class ArticulationFittingArtifact(StrictModel):
@@ -4623,6 +4723,64 @@ class ArticulationFittingManifest(StrictModel):
     peak_host_memory_bytes: int | None = Field(default=None, ge=0)
 
 
+class ArticulationHeldoutViewEvaluation(StrictModel):
+    frame_id: Annotated[str, Field(min_length=1)]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    depth_path: str | None = None
+    depth_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    valid_depth: bool
+    target_mask_paths: dict[str, str]
+    target_mask_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    target_masks_complete: bool
+    required_link_ids: list[str]
+    rendered_link_ids: list[str]
+    missing_link_ids: list[str]
+    usable: bool
+    failure_reasons: list[str]
+    render_path: str | None = None
+    render_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    raw_candidate_pixel_count: int = Field(ge=0)
+    visible_candidate_pixel_count: int = Field(ge=0)
+    target_mask_pixel_count: int = Field(ge=0)
+
+    @field_validator("depth_path", "render_path")
+    @classmethod
+    def safe_optional_heldout_paths(cls, value: str | None) -> str | None:
+        return _relative_artifact_path(value) if value is not None else None
+
+    @field_validator("target_mask_paths")
+    @classmethod
+    def safe_heldout_mask_paths(cls, values: dict[str, str]) -> dict[str, str]:
+        return {part_id: _relative_artifact_path(path) for part_id, path in values.items()}
+
+    @model_validator(mode="after")
+    def heldout_view_identity_is_complete(self) -> Self:
+        if set(self.target_mask_paths) != set(self.target_mask_hashes):
+            raise ValueError("held-out target mask paths and hashes do not match")
+        if (self.depth_path is None) != (self.depth_sha256 is None):
+            raise ValueError("held-out depth path and hash must be paired")
+        if (self.render_path is None) != (self.render_sha256 is None):
+            raise ValueError("held-out render path and hash must be paired")
+        if set(self.required_link_ids) != (
+            set(self.rendered_link_ids) | set(self.missing_link_ids)
+        ):
+            raise ValueError("held-out link coverage is incomplete")
+        if set(self.rendered_link_ids) & set(self.missing_link_ids):
+            raise ValueError("held-out link cannot be both rendered and missing")
+        if self.usable != (
+            not self.failure_reasons
+            and not self.missing_link_ids
+            and self.valid_depth
+            and self.target_masks_complete
+            and self.visible_candidate_pixel_count > 0
+            and self.target_mask_pixel_count > 0
+            and self.render_path is not None
+            and self.render_sha256 is not None
+        ):
+            raise ValueError("held-out view usability does not match its evidence")
+        return self
+
+
 class ArticulationStateEvaluation(StrictModel):
     state_id: Annotated[str, Field(min_length=1)]
     heldout: bool
@@ -4658,17 +4816,41 @@ class ArticulationStateEvaluation(StrictModel):
         "discrete_state",
     ]
     render_paths: dict[str, str] = Field(default_factory=dict)
+    view_evaluations: list[ArticulationHeldoutViewEvaluation] = Field(default_factory=list)
 
     @field_validator("render_paths")
     @classmethod
     def safe_articulation_state_render_paths(cls, values: dict[str, str]) -> dict[str, str]:
         return {frame_id: _relative_artifact_path(path) for frame_id, path in values.items()}
 
+    @model_validator(mode="after")
+    def heldout_view_counts_match_provenance(self) -> Self:
+        views = self.view_evaluations
+        if self.requested_heldout_view_count != len(views):
+            raise ValueError("requested held-out view count does not match provenance")
+        if self.usable_heldout_view_count != sum(item.usable for item in views):
+            raise ValueError("usable held-out view count does not match provenance")
+        if self.rendered_heldout_view_count != sum(item.render_path is not None for item in views):
+            raise ValueError("rendered held-out view count does not match provenance")
+        if self.views_with_target_masks != sum(item.target_masks_complete for item in views):
+            raise ValueError("target-mask held-out view count does not match provenance")
+        if self.views_with_valid_depth != sum(item.valid_depth for item in views):
+            raise ValueError("valid-depth held-out view count does not match provenance")
+        if self.render_paths != {
+            item.frame_id: item.render_path for item in views if item.render_path is not None
+        }:
+            raise ValueError("held-out render paths do not match per-view provenance")
+        return self
+
 
 class ArticulatedCandidateEvaluation(StrictModel):
     candidate_id: Annotated[str, Field(min_length=1)]
     status: ArticulatedCandidateStatus
     fitting_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    candidate_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    fitted_model_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    link_assignment_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    heldout_evidence_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     state_evaluations: list[ArticulationStateEvaluation]
     passed_hard_gates: bool
     failed_gates: list[str]
@@ -4715,7 +4897,14 @@ class ArticulatedCandidateEvaluation(StrictModel):
 
 class ArticulatedEvaluationManifest(StrictModel):
     schema_version: Literal["0.1.0"] = "0.1.0"
+    request_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     fitting_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    link_assignments_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    candidate_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    evidence_split_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    measured_states_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    state_alignment_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    measured_motion_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     evaluations: list[ArticulatedCandidateEvaluation]
     candidate_structures_frozen_before_heldout: Literal[True] = True
     runtime_seconds: float = Field(ge=0)

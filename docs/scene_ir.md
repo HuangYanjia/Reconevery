@@ -125,3 +125,8 @@ objects keep `physical_validation=not_implemented`, `collision_ready=false`, and
 fitted/refined axes and pivots, visual formats come from actual suffixes, and the
 articulation records exact fitting/evaluation paths and hashes. Measured link assets
 remain attached beside retrieved/generated visual links.
+# Articulated asset spaces
+
+Phase 5C.2 records whether articulated visual vertices are in candidate-base or
+link-local space and preserves the exact transform into the candidate base frame
+used during held-out evaluation.

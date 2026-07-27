@@ -199,3 +199,9 @@ ArtVIP and PartNet retrieval consume immutable local indices without network acc
 Official Particulate is a parallel research candidate source. Selection retains the
 measured links and adds validated visual links separately. The canonical result is a
 typed kinematic bundle plus `scene_ir/phase5c_scene.json`, not a simulation asset.
+# Phase 5C.2 identity boundary
+
+Articulated visual assets carry an explicit asset-to-candidate-base transform.
+The worker, selection artifact, and Scene IR consume the same hashed
+representation. Held-out evaluation records immutable per-view camera, depth,
+mask, link-coverage, and render identities.

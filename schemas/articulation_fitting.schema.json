@@ -312,6 +312,12 @@
     "FittedArticulatedJoint": {
       "additionalProperties": false,
       "properties": {
+        "axis_convention": {
+          "const": "oriented_toward_measured_axis",
+          "default": "oriented_toward_measured_axis",
+          "title": "Axis Convention",
+          "type": "string"
+        },
         "axis_refinement_degrees": {
           "minimum": 0,
           "title": "Axis Refinement Degrees",
@@ -324,6 +330,12 @@
           ],
           "title": "Axis Sign",
           "type": "integer"
+        },
+        "axis_sign_role": {
+          "const": "native_axis_flip_provenance_only",
+          "default": "native_axis_flip_provenance_only",
+          "title": "Axis Sign Role",
+          "type": "string"
         },
         "candidate_joint_id": {
           "minLength": 1,
@@ -437,9 +449,27 @@
           "title": "Q Offset",
           "type": "number"
         },
+        "q_offset_evidence_state_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Q Offset Evidence State Ids",
+          "type": "array"
+        },
+        "q_offset_fitted": {
+          "default": false,
+          "title": "Q Offset Fitted",
+          "type": "boolean"
+        },
         "q_scale": {
           "title": "Q Scale",
           "type": "number"
+        },
+        "q_scale_convention": {
+          "const": "candidate_q_per_measured_q",
+          "default": "candidate_q_per_measured_q",
+          "title": "Q Scale Convention",
+          "type": "string"
         }
       },
       "required": [

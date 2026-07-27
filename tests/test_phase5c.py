@@ -32,15 +32,18 @@ from recon2sim.artifacts import (
     ArticulatedJoint,
     ArticulatedJointType,
     ArticulatedLicenseMode,
+    ArticulatedLink,
     ArticulatedRetrievalResult,
     ArticulatedSourceFamily,
     ArticulationCaptureManifest,
     ArticulationEvidenceLevel,
     ArticulationFittingManifest,
+    ArticulationHeldoutViewEvaluation,
     ArticulationPartPromptManifest,
     ArticulationStateEvaluation,
     ArticulationStateRecord,
     ArticulationStateTransform,
+    FittedArticulatedKinematicModel,
     MeasuredPartMotionArtifact,
     Phase5CConsistencyReport,
 )
@@ -82,6 +85,29 @@ def _retrieval_worker_module(name: str) -> object:
 
 
 def _state_evaluation(candidate_id: str, iou: float) -> ArticulatedCandidateEvaluation:
+    view_evaluations = [
+        {
+            "frame_id": f"frame_{index:06d}",
+            "camera_reconstruction_sha256": "0" * 64,
+            "depth_path": f"dense/depth_{index:06d}.bin",
+            "depth_sha256": "1" * 64,
+            "valid_depth": True,
+            "target_mask_paths": {"part": f"masks/part_{index:06d}.png"},
+            "target_mask_hashes": {"part": "2" * 64},
+            "target_masks_complete": True,
+            "required_link_ids": ["base", "part"],
+            "rendered_link_ids": ["base", "part"],
+            "missing_link_ids": [],
+            "usable": True,
+            "failure_reasons": [],
+            "render_path": f"renders/frame_{index:06d}.png",
+            "render_sha256": "3" * 64,
+            "raw_candidate_pixel_count": 100,
+            "visible_candidate_pixel_count": 80,
+            "target_mask_pixel_count": 90,
+        }
+        for index in range(2)
+    ]
     state = ArticulationStateEvaluation(
         state_id="state_heldout",
         heldout=True,
@@ -103,11 +129,17 @@ def _state_evaluation(candidate_id: str, iou: float) -> ArticulatedCandidateEval
         pivot_residual_part_diagonals=0.01,
         inferred_joint_positions={"joint": 0.5},
         joint_position_source="measured_geometry",
+        render_paths={item["frame_id"]: item["render_path"] for item in view_evaluations},
+        view_evaluations=view_evaluations,
     )
     return ArticulatedCandidateEvaluation(
         candidate_id=candidate_id,
         status=ArticulatedCandidateStatus.MULTI_STATE,
         fitting_sha256="0" * 64,
+        candidate_sha256="1" * 64,
+        fitted_model_sha256="2" * 64,
+        link_assignment_sha256="3" * 64,
+        heldout_evidence_sha256="4" * 64,
         state_evaluations=[state],
         passed_hard_gates=True,
         failed_gates=[],
@@ -118,6 +150,26 @@ def _state_evaluation(candidate_id: str, iou: float) -> ArticulatedCandidateEval
         link_assignment_confidence=0.9,
         runtime_seconds=0,
     )
+
+
+IDENTITY = [
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+]
 
 
 def test_articulation_evidence_levels_are_not_overstated() -> None:
@@ -234,10 +286,147 @@ def test_declared_reference_state_is_first_even_when_manifest_order_differs() ->
 def test_part_diagonal_normalization_and_prismatic_q_scaling() -> None:
     kinematics = _evaluation_worker_module("articulation_evaluation_worker.kinematics")
     assert kinematics.normalized_residual(0.2, 4.0) == pytest.approx(0.05)
-    assert kinematics.prismatic_candidate_q_scale(2.0, 1) == pytest.approx(0.5)
-    assert kinematics.prismatic_candidate_q_scale(2.0, -1) == pytest.approx(-0.5)
+    assert kinematics.prismatic_candidate_q_scale(2.0) == pytest.approx(0.5)
+    assert kinematics.revolute_candidate_q_scale() == pytest.approx(1.0)
     with pytest.raises(ValueError, match="positive"):
-        kinematics.prismatic_candidate_q_scale(0.0, 1)
+        kinematics.prismatic_candidate_q_scale(0.0)
+
+
+def test_axis_sign_is_provenance_only_in_fitted_q_scale() -> None:
+    payload = {
+        "candidate_id": "candidate",
+        "matrix_reference_world_from_candidate_base": [
+            2.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            2.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            2.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ],
+        "scale": 2.0,
+        "link_assignments": [],
+        "fitted_joints": [
+            {
+                "candidate_joint_id": "drawer_joint",
+                "measured_joint_id": "drawer_joint",
+                "parent_observed_part_id": "base",
+                "child_observed_part_id": "drawer",
+                "joint_type": "prismatic",
+                "fitted_axis": [1.0, 0.0, 0.0],
+                "axis_sign": -1,
+                "q_scale": 0.5,
+                "q_offset": 0.0,
+                "fitting_state_q": {"closed": 0.0, "open": 0.5},
+                "axis_refinement_degrees": 0.0,
+                "fitting_residual_arbitrary_units": 0.01,
+                "fitting_residual_part_diagonals": 0.01,
+            }
+        ],
+        "generation_state_ids": ["closed"],
+        "fitting_state_ids": ["open"],
+        "heldout_state_ids": ["heldout"],
+        "fit_residual_arbitrary_units": 0.01,
+        "fit_residual_scene_diagonals": 0.01,
+    }
+    model = FittedArticulatedKinematicModel.model_validate(payload)
+    assert model.fitted_joints[0].axis_sign == -1
+    assert model.fitted_joints[0].q_scale == 0.5
+    payload["fitted_joints"][0]["q_scale"] = -0.5
+    with pytest.raises(ValueError, match="canonical axis convention"):
+        FittedArticulatedKinematicModel.model_validate(payload)
+
+
+def test_articulated_visual_asset_space_is_explicit() -> None:
+    path = "candidates/link.glb"
+    link = ArticulatedLink(
+        link_id="link",
+        name="link",
+        visual_asset_paths=[path],
+        visual_asset_hashes={path: "0" * 64},
+        visual_asset_spaces={path: "candidate_base"},
+        visual_asset_transforms_candidate_base={path: tuple(IDENTITY)},
+        native_bounds_min=(0.0, 0.0, 0.0),
+        native_bounds_max=(1.0, 1.0, 1.0),
+    )
+    assert link.visual_asset_spaces[path].value == "candidate_base"
+    translated = list(IDENTITY)
+    translated[3] = 1.0
+    local = ArticulatedLink(
+        link_id="local",
+        name="local",
+        visual_asset_paths=[path],
+        visual_asset_hashes={path: "0" * 64},
+        visual_asset_spaces={path: "link_local"},
+        visual_asset_transforms_candidate_base={path: translated},
+        native_bounds_min=(0.0, 0.0, 0.0),
+        native_bounds_max=(1.0, 1.0, 1.0),
+    )
+    assert local.visual_asset_transforms_candidate_base[path][3] == 1.0
+    with pytest.raises(ValueError, match="identity transform"):
+        ArticulatedLink(
+            link_id="link",
+            name="link",
+            visual_asset_paths=[path],
+            visual_asset_hashes={path: "0" * 64},
+            visual_asset_spaces={path: "candidate_base"},
+            visual_asset_transforms_candidate_base={path: translated},
+            native_bounds_min=(0.0, 0.0, 0.0),
+            native_bounds_max=(1.0, 1.0, 1.0),
+        )
+
+
+def test_heldout_view_requires_complete_link_coverage() -> None:
+    with pytest.raises(ValueError, match="usability"):
+        ArticulationHeldoutViewEvaluation(
+            frame_id="frame",
+            camera_reconstruction_sha256="0" * 64,
+            depth_path="dense/depth.bin",
+            depth_sha256="1" * 64,
+            valid_depth=True,
+            target_mask_paths={"drawer": "masks/drawer.png"},
+            target_mask_hashes={"drawer": "2" * 64},
+            target_masks_complete=True,
+            required_link_ids=["base", "drawer"],
+            rendered_link_ids=["base"],
+            missing_link_ids=["drawer"],
+            usable=True,
+            failure_reasons=[],
+            render_path="renders/frame.png",
+            render_sha256="3" * 64,
+            raw_candidate_pixel_count=10,
+            visible_candidate_pixel_count=10,
+            target_mask_pixel_count=10,
+        )
+
+
+def test_heldout_revolute_axis_and_signed_angle_are_measured() -> None:
+    np = pytest.importorskip("numpy")
+    evaluator = _evaluation_worker_module("articulation_evaluation_worker.cli")
+    angle = math.radians(-35.0)
+    rotation = np.asarray(
+        [
+            [math.cos(angle), -math.sin(angle), 0.0],
+            [math.sin(angle), math.cos(angle), 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    axis, measured_angle = evaluator._rotation_axis_and_signed_angle(
+        rotation,
+        np.asarray([0.0, 0.0, 1.0]),
+    )
+    assert axis is not None
+    assert abs(float(axis[2])) == pytest.approx(1.0)
+    assert measured_angle == pytest.approx(angle)
 
 
 def test_capture_template_and_real_preflight_use_state_local_tracks(
@@ -530,7 +719,12 @@ def test_heldout_joint_position_fits_only_q(tmp_path: Path) -> None:
     write_points(measured_path, measured_points)
     position, residual = evaluator._heldout_joint_position(
         input_root=tmp_path,
-        link={"visual_asset_paths": ["candidate.ply"]},
+        link={
+            "visual_asset_paths": ["candidate.ply"],
+            "visual_asset_hashes": {"candidate.ply": sha256_file(candidate_path)},
+            "visual_asset_spaces": {"candidate.ply": "candidate_base"},
+            "visual_asset_transforms_candidate_base": {"candidate.ply": IDENTITY},
+        },
         joint={
             "joint_id": "drawer_joint",
             "joint_type": "prismatic",
@@ -628,6 +822,8 @@ def test_articulated_joint_axis_and_graph_contract() -> None:
                 "name": item,
                 "visual_asset_paths": [],
                 "visual_asset_hashes": {},
+                "visual_asset_spaces": {},
+                "visual_asset_transforms_candidate_base": {},
                 "native_bounds_min": [0, 0, 0],
                 "native_bounds_max": [1, 1, 1],
             }
@@ -725,6 +921,8 @@ def test_offline_retrieval_normalizes_selected_candidate_assets(tmp_path: Path) 
                         "name": "cabinet body",
                         "visual_asset_paths": ["assets/base.ply"],
                         "visual_asset_hashes": {"assets/base.ply": "0" * 64},
+                        "visual_asset_spaces": {"assets/base.ply": "candidate_base"},
+                        "visual_asset_transforms_candidate_base": {"assets/base.ply": IDENTITY},
                         "native_bounds_min": [0, 0, 0],
                         "native_bounds_max": [1, 1, 1],
                     },
@@ -733,6 +931,8 @@ def test_offline_retrieval_normalizes_selected_candidate_assets(tmp_path: Path) 
                         "name": "drawer",
                         "visual_asset_paths": ["assets/drawer.ply"],
                         "visual_asset_hashes": {"assets/drawer.ply": "0" * 64},
+                        "visual_asset_spaces": {"assets/drawer.ply": "candidate_base"},
+                        "visual_asset_transforms_candidate_base": {"assets/drawer.ply": IDENTITY},
                         "native_bounds_min": [0, 0, 0],
                         "native_bounds_max": [1, 1, 1],
                     },

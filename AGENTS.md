@@ -138,3 +138,9 @@ two-state evidence is only partially validated. ArtVIP and PartNet indices are l
 and immutable. Particulate and PartField remain isolated; the current PartField
 checkpoint is research-only. Never add collision, inertial, dynamics, metric,
 gravity, or simulation-ready claims.
+
+Orient each fitted joint axis toward measured motion exactly once. `axis_sign` is
+provenance only and must not multiply `q_scale`. Articulated visuals must declare
+candidate-base or link-local space with an exact candidate-base transform.
+Passing held-out views require all mapped links, target masks, valid depth, and
+per-frame camera/depth/mask/render hashes.

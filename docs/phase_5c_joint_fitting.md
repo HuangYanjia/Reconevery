@@ -24,3 +24,13 @@ topology and joint type remain fixed.
 At held-out evaluation time the base Sim(3), link geometry, joint graph, axis, and
 pivot stay frozen. A bounded one-dimensional optimization may estimate only
 `q(state, joint)` from the held-out measured part cloud.
+
+Phase 5C.2 uses one sign convention: `fitted_axis` is oriented toward measured
+motion, while `axis_sign` records only whether the native candidate axis was
+flipped. Prismatic `q_scale` is always `1 / global_sim3_scale`; revolute
+`q_scale` is always `1`. A `q_offset` is fitted only from two or more
+non-held-out structure states.
+
+Every candidate visual declares `candidate_base` or `link_local` space and an
+explicit transform into candidate-base coordinates. Point fitting, rendering,
+selection, and Scene IR use that same representation.

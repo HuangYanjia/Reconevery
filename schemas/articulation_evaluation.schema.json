@@ -15,6 +15,11 @@
           "title": "Candidate Id",
           "type": "string"
         },
+        "candidate_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Candidate Sha256",
+          "type": "string"
+        },
         "capture_state_count": {
           "minimum": 1,
           "title": "Capture State Count",
@@ -27,9 +32,19 @@
           "title": "Failed Gates",
           "type": "array"
         },
+        "fitted_model_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Fitted Model Sha256",
+          "type": "string"
+        },
         "fitting_sha256": {
           "pattern": "^[0-9a-f]{64}$",
           "title": "Fitting Sha256",
+          "type": "string"
+        },
+        "heldout_evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Heldout Evidence Sha256",
           "type": "string"
         },
         "heldout_state_validation_used": {
@@ -41,6 +56,11 @@
           "minimum": 0,
           "title": "Link Assignment Confidence",
           "type": "number"
+        },
+        "link_assignment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Link Assignment Sha256",
+          "type": "string"
         },
         "passed_hard_gates": {
           "title": "Passed Hard Gates",
@@ -76,6 +96,10 @@
         "candidate_id",
         "status",
         "fitting_sha256",
+        "candidate_sha256",
+        "fitted_model_sha256",
+        "link_assignment_sha256",
+        "heldout_evidence_sha256",
         "state_evaluations",
         "passed_hard_gates",
         "failed_gates",
@@ -117,6 +141,159 @@
       ],
       "title": "ArticulationEvidenceLevel",
       "type": "string"
+    },
+    "ArticulationHeldoutViewEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "camera_reconstruction_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Camera Reconstruction Sha256",
+          "type": "string"
+        },
+        "depth_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Path"
+        },
+        "depth_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Sha256"
+        },
+        "failure_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Reasons",
+          "type": "array"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "missing_link_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing Link Ids",
+          "type": "array"
+        },
+        "raw_candidate_pixel_count": {
+          "minimum": 0,
+          "title": "Raw Candidate Pixel Count",
+          "type": "integer"
+        },
+        "render_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Render Path"
+        },
+        "render_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Render Sha256"
+        },
+        "rendered_link_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rendered Link Ids",
+          "type": "array"
+        },
+        "required_link_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Link Ids",
+          "type": "array"
+        },
+        "target_mask_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Target Mask Hashes",
+          "type": "object"
+        },
+        "target_mask_paths": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Target Mask Paths",
+          "type": "object"
+        },
+        "target_mask_pixel_count": {
+          "minimum": 0,
+          "title": "Target Mask Pixel Count",
+          "type": "integer"
+        },
+        "target_masks_complete": {
+          "title": "Target Masks Complete",
+          "type": "boolean"
+        },
+        "usable": {
+          "title": "Usable",
+          "type": "boolean"
+        },
+        "valid_depth": {
+          "title": "Valid Depth",
+          "type": "boolean"
+        },
+        "visible_candidate_pixel_count": {
+          "minimum": 0,
+          "title": "Visible Candidate Pixel Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "frame_id",
+        "camera_reconstruction_sha256",
+        "valid_depth",
+        "target_mask_paths",
+        "target_mask_hashes",
+        "target_masks_complete",
+        "required_link_ids",
+        "rendered_link_ids",
+        "missing_link_ids",
+        "usable",
+        "failure_reasons",
+        "raw_candidate_pixel_count",
+        "visible_candidate_pixel_count",
+        "target_mask_pixel_count"
+      ],
+      "title": "ArticulationHeldoutViewEvaluation",
+      "type": "object"
     },
     "ArticulationStateEvaluation": {
       "additionalProperties": false,
@@ -422,6 +599,13 @@
           "title": "Usable Heldout View Count",
           "type": "integer"
         },
+        "view_evaluations": {
+          "items": {
+            "$ref": "#/$defs/ArticulationHeldoutViewEvaluation"
+          },
+          "title": "View Evaluations",
+          "type": "array"
+        },
         "views_with_target_masks": {
           "minimum": 0,
           "title": "Views With Target Masks",
@@ -465,6 +649,11 @@
   },
   "additionalProperties": false,
   "properties": {
+    "candidate_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Candidate Manifest Sha256",
+      "type": "string"
+    },
     "candidate_structures_frozen_before_heldout": {
       "const": true,
       "default": true,
@@ -478,9 +667,29 @@
       "title": "Evaluations",
       "type": "array"
     },
+    "evidence_split_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Evidence Split Sha256",
+      "type": "string"
+    },
     "fitting_manifest_sha256": {
       "pattern": "^[0-9a-f]{64}$",
       "title": "Fitting Manifest Sha256",
+      "type": "string"
+    },
+    "link_assignments_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Link Assignments Sha256",
+      "type": "string"
+    },
+    "measured_motion_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Measured Motion Sha256",
+      "type": "string"
+    },
+    "measured_states_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Measured States Manifest Sha256",
       "type": "string"
     },
     "peak_gpu_memory_bytes": {
@@ -509,6 +718,11 @@
       "default": null,
       "title": "Peak Host Memory Bytes"
     },
+    "request_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Request Sha256",
+      "type": "string"
+    },
     "runtime_seconds": {
       "minimum": 0,
       "title": "Runtime Seconds",
@@ -519,10 +733,22 @@
       "default": "0.1.0",
       "title": "Schema Version",
       "type": "string"
+    },
+    "state_alignment_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "State Alignment Sha256",
+      "type": "string"
     }
   },
   "required": [
+    "request_sha256",
     "fitting_manifest_sha256",
+    "link_assignments_sha256",
+    "candidate_manifest_sha256",
+    "evidence_split_sha256",
+    "measured_states_manifest_sha256",
+    "state_alignment_sha256",
+    "measured_motion_sha256",
     "evaluations",
     "runtime_seconds"
   ],

@@ -112,6 +112,9 @@ fitting, and held-out-state evaluation. It does not include deformables, collisi
 dynamics, or production simulator export. Phase 5C.1 separates stable part IDs from
 state-local SAM tracks, derives evidence from accepted alignments, and makes the
 typed fitted kinematic model the selection/Scene IR source of truth.
+Phase 5C.2 makes the axis/q sign convention single-valued, records candidate
+visual asset spaces explicitly, binds held-out metrics to exact artifact
+identities, and requires complete per-link render coverage.
 
 ## Later phases
 

@@ -202,3 +202,8 @@ packages. Local and Docker workers receive only attempt workspaces. Articulated
 retrieval performs no runtime downloads. `articulation preflight-capture` checks real
 Phase 5A state lineages, stable-part mappings, masks, dense depth, registered views,
 reference state, and held-out feasibility before worker execution.
+# Phase 5C.2 articulation hardening
+
+The articulation fitting and evaluation adapters verify candidate visual hashes
+and spaces, bind evaluations to exact fitted-model and evidence digests, and
+reject held-out views with incomplete mapped-link coverage.

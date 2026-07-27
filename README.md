@@ -287,6 +287,9 @@ states with static base/environment evidence, keeps movable parts out of that
 alignment, estimates measured fixed/prismatic/revolute motion, and evaluates local
 ArtVIP, research-only PartNet-Mobility, and official Particulate priors. Candidate
 structure is frozen before held-out-state evaluation.
+Phase 5C.2 records each articulated visual's coordinate space and content
+identity, applies joint-axis sign exactly once, and requires complete per-link
+held-out render provenance before a candidate can pass.
 
 ```bash
 uv run recon2sim articulation capture-template \

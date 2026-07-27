@@ -152,7 +152,7 @@ def _geometry_format(path: str) -> Literal["obj", "glb", "ply"]:
 
 class ArticulationSelectionAdapter:
     name = "articulation_selection"
-    version = "0.1.0"
+    version = "0.2.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         candidates = ArticulatedCandidateManifest.model_validate_json(
@@ -181,6 +181,10 @@ class ArticulationSelectionAdapter:
             InputSpec(
                 "reconstruction/articulation/state_alignment.json",
                 "articulation_state_alignment",
+            ),
+            InputSpec(
+                "reconstruction/articulation/evidence_split.json",
+                "articulation_evidence_split",
             ),
             InputSpec(
                 "reconstruction/articulation/measured_states/manifest.json",
@@ -311,6 +315,34 @@ class ArticulationSelectionAdapter:
         fitting_by_id = {item.candidate_id: item for item in fitting.fittings}
         assignment_by_id = {item.candidate_id: item for item in fitting.link_assignments}
         evaluation_by_id = {item.candidate_id: item for item in evaluation.evaluations}
+        expected_evaluation_manifest_hashes = {
+            "fitting_manifest_sha256": sha256_file(root / "fitting_manifest.json"),
+            "link_assignments_sha256": sha256_file(root / "link_assignments.json"),
+            "candidate_manifest_sha256": sha256_file(root / "candidate_manifest.json"),
+            "evidence_split_sha256": sha256_file(root / "evidence_split.json"),
+            "measured_states_manifest_sha256": sha256_file(root / "measured_states/manifest.json"),
+            "state_alignment_sha256": sha256_file(root / "state_alignment.json"),
+            "measured_motion_sha256": sha256_file(root / "measured_motion.json"),
+        }
+        for field, expected_hash in expected_evaluation_manifest_hashes.items():
+            if getattr(evaluation, field) != expected_hash:
+                raise ValueError(f"evaluation manifest {field} does not match canonical input")
+        for item in evaluation.evaluations:
+            candidate = candidate_by_id[item.candidate_id]
+            fitted = fitting_by_id[item.candidate_id]
+            assignment = assignment_by_id[item.candidate_id]
+            if item.candidate_sha256 != stable_digest(candidate.model_dump(mode="json")):
+                raise ValueError("evaluation candidate identity does not match selection input")
+            if item.fitted_model_sha256 != (
+                fitted.fitted_model_sha256
+                if fitted.fitted_model_sha256 is not None
+                else stable_digest(None)
+            ):
+                raise ValueError("evaluation fitted-model identity does not match selection input")
+            if item.link_assignment_sha256 != stable_digest(assignment.model_dump(mode="json")):
+                raise ValueError(
+                    "evaluation link-assignment identity does not match selection input"
+                )
         production = {
             item.candidate_id: item.production_selectable for item in candidates.candidates
         }
@@ -865,6 +897,10 @@ class ArticulationSelectionAdapter:
                             observation_grounded=True,
                             physical_validation="not_implemented",
                             collision_ready=False,
+                            articulated_asset_space=link.visual_asset_spaces[path].value,
+                            asset_to_candidate_base_transform=_matrix_to_transform(
+                                link.visual_asset_transforms_candidate_base[path]
+                            ),
                             usage_policy="research_evaluation",
                             production_selectable=selected_candidate.production_selectable,
                             sim_ready=False,
@@ -1164,12 +1200,17 @@ class ArticulationSelectionAdapter:
 
 class Phase5CConsistencyValidationAdapter:
     name = "phase5c_consistency_validation"
-    version = "0.1.0"
+    version = "0.2.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         geometry = ArticulatedPartStateGeometryManifest.model_validate_json(
             context.canonical_path(
                 "reconstruction", "articulation", "measured_states", "manifest.json"
+            ).read_text(encoding="utf-8")
+        )
+        candidates = ArticulatedCandidateManifest.model_validate_json(
+            context.canonical_path(
+                "reconstruction", "articulation", "candidate_manifest.json"
             ).read_text(encoding="utf-8")
         )
         specs = [
@@ -1230,6 +1271,17 @@ class Phase5CConsistencyValidationAdapter:
                 materialization_mode="reflink_or_copy",
             )
             for item in geometry.geometries
+        )
+        specs.extend(
+            InputSpec(
+                path,
+                "articulated_candidate_visual_link",
+                materialization_mode="reflink_or_copy",
+            )
+            for candidate in candidates.candidates
+            if candidate.source_family is not ArticulatedSourceFamily.MEASURED_MOTION
+            for link in candidate.links
+            for path in link.visual_asset_paths
         )
         return specs
 
@@ -1637,6 +1689,22 @@ class Phase5CConsistencyValidationAdapter:
             "successful candidate base transforms are finite positive-scale Sim(3)",
         )
         check(
+            "explicit_articulated_asset_spaces",
+            all(
+                set(link.visual_asset_paths)
+                == set(link.visual_asset_hashes)
+                == set(link.visual_asset_spaces)
+                == set(link.visual_asset_transforms_candidate_base)
+                and all(
+                    link.visual_asset_hashes[path] == sha256_file(context.path(*Path(path).parts))
+                    for path in link.visual_asset_paths
+                )
+                for candidate in candidates.candidates
+                for link in candidate.links
+            ),
+            "every consumed visual has a verified hash, space, and candidate-base transform",
+        )
+        check(
             "fitted_model_hashes",
             all(
                 (
@@ -1654,6 +1722,29 @@ class Phase5CConsistencyValidationAdapter:
                 for item in fitting.fittings
             ),
             "every successful fit has an exact typed fitted-model hash",
+        )
+        check(
+            "canonical_axis_q_sign_convention",
+            all(
+                all(
+                    joint.axis_sign_role == "native_axis_flip_provenance_only"
+                    and (
+                        math.isclose(joint.q_scale, 1.0 / item.fitted_model.scale)
+                        if joint.joint_type is ArticulatedJointType.PRISMATIC
+                        else math.isclose(joint.q_scale, 1.0)
+                        if joint.joint_type
+                        in {
+                            ArticulatedJointType.REVOLUTE,
+                            ArticulatedJointType.CONTINUOUS_CANDIDATE,
+                        }
+                        else math.isclose(joint.q_scale, 0.0)
+                    )
+                    for joint in item.fitted_model.fitted_joints
+                )
+                for item in fitting.fittings
+                if item.fitted_model is not None
+            ),
+            "axis sign is provenance-only and q scale follows the canonical convention",
         )
         check(
             "ambiguous_assignments_not_accepted",
@@ -1696,6 +1787,16 @@ class Phase5CConsistencyValidationAdapter:
                 and state.rendered_heldout_view_count > 0
                 and state.views_with_target_masks > 0
                 and state.views_with_valid_depth > 0
+                and all(
+                    not view.missing_link_ids
+                    and set(view.required_link_ids) == set(view.rendered_link_ids)
+                    and view.target_masks_complete
+                    and view.valid_depth
+                    and view.visible_candidate_pixel_count > 0
+                    and view.render_sha256 is not None
+                    for view in state.view_evaluations
+                    if view.usable
+                )
                 for item in evaluation.evaluations
                 if item.passed_hard_gates
                 for state in item.state_evaluations
@@ -1772,6 +1873,28 @@ class Phase5CConsistencyValidationAdapter:
         )
         evaluation_by_id = {item.candidate_id: item for item in evaluation.evaluations}
         candidate_by_id = {item.candidate_id: item for item in candidates.candidates}
+        check(
+            "heldout_artifact_identity",
+            evaluation.fitting_manifest_sha256 == sha256_file(root / "fitting_manifest.json")
+            and evaluation.link_assignments_sha256 == sha256_file(root / "link_assignments.json")
+            and evaluation.candidate_manifest_sha256
+            == sha256_file(root / "candidate_manifest.json")
+            and evaluation.evidence_split_sha256 == sha256_file(root / "evidence_split.json")
+            and evaluation.measured_states_manifest_sha256
+            == sha256_file(root / "measured_states/manifest.json")
+            and evaluation.state_alignment_sha256 == sha256_file(root / "state_alignment.json")
+            and evaluation.measured_motion_sha256 == sha256_file(root / "measured_motion.json")
+            and all(
+                item.candidate_sha256
+                == stable_digest(candidate_by_id[item.candidate_id].model_dump(mode="json"))
+                and item.fitted_model_sha256
+                == (fitted_by_id[item.candidate_id].fitted_model_sha256 or stable_digest(None))
+                and item.link_assignment_sha256
+                == stable_digest(assignment_by_candidate[item.candidate_id].model_dump(mode="json"))
+                for item in evaluation.evaluations
+            ),
+            "held-out evaluations bind exact upstream, candidate, fit, and assignment identities",
+        )
         check(
             "selected_candidate_was_evaluated",
             all(
@@ -1885,6 +2008,18 @@ class Phase5CConsistencyValidationAdapter:
             "scene_ir_visual_asset_formats",
             all(asset.format == _geometry_format(asset.uri) for asset in scene.geometry_assets),
             "Scene IR visual formats match their actual file extensions",
+        )
+        check(
+            "scene_ir_visual_asset_spaces",
+            all(
+                (
+                    asset.articulated_asset_space is not None
+                    and asset.asset_to_candidate_base_transform is not None
+                )
+                for asset in scene.geometry_assets
+                if asset.asset_role == "articulated_visual_link"
+            ),
+            "Scene IR preserves each articulated visual's explicit candidate asset space",
         )
         check(
             "no_collision_assets",

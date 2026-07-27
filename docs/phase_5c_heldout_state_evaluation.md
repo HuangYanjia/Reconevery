@@ -35,3 +35,11 @@ evaluated held-out states are counted as a distinct union. Passing requires usab
 cameras, target masks, visible candidate pixels, dense depth, measured base motion,
 and joint-type-specific residuals. Unavailable metrics fail their gates rather than
 being serialized as zero.
+
+Phase 5C.2 applies render coverage per mapped link. Every requested frame binds
+camera, depth, target-mask, and output hashes plus required, rendered, and
+missing link IDs. One rendered link cannot hide another missing link.
+
+Revolute signed angle, observed axis, and pivot fixed-point residual come from
+the held-out reference-to-state part registration. Fitting-state motion
+statistics are not reused as held-out evidence.

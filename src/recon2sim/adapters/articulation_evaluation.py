@@ -17,7 +17,7 @@ from recon2sim.adapters.base import (
     StageContext,
     StageResult,
 )
-from recon2sim.articulation import sha256_file
+from recon2sim.articulation import sha256_file, stable_digest
 from recon2sim.artifacts import (
     ArticulatedCandidateManifest,
     ArticulatedEvaluationManifest,
@@ -54,7 +54,7 @@ class ArticulationEvaluationConfig(ArticulationWorkerConfig):
 
 class ArticulationEvaluationAdapter:
     name = "articulation_evaluation"
-    version = "0.1.0"
+    version = "0.2.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         geometry = ArticulatedPartStateGeometryManifest.model_validate_json(
@@ -84,6 +84,7 @@ class ArticulationEvaluationAdapter:
         )
         accepted_states = {item.state_id for item in alignment.transforms if item.accepted}
         heldout_states = set(split.heldout_validation_states) & accepted_states
+        point_geometry_states = heldout_states | {capture.reference_state_id}
         specs = [
             InputSpec(
                 "reconstruction/articulation/fitting_manifest.json",
@@ -158,7 +159,7 @@ class ArticulationEvaluationAdapter:
                 materialization_mode="reflink_or_copy",
             )
             for item in geometry.geometries
-            if item.state_id in heldout_states
+            if item.state_id in point_geometry_states
         )
         specs.extend(
             InputSpec(
@@ -228,6 +229,17 @@ class ArticulationEvaluationAdapter:
         fitting = ArticulationFittingManifest.model_validate_json(
             (root / "fitting_manifest.json").read_text(encoding="utf-8")
         )
+        candidates = ArticulatedCandidateManifest.model_validate_json(
+            (root / "candidate_manifest.json").read_text(encoding="utf-8")
+        )
+        candidate_by_id = {item.candidate_id: item for item in candidates.candidates}
+        assignment_by_id = {item.candidate_id: item for item in fitting.link_assignments}
+        fitting_by_id = {item.candidate_id: item for item in fitting.fittings}
+        for candidate in candidates.candidates:
+            for link in candidate.links:
+                for path, expected_hash in link.visual_asset_hashes.items():
+                    if sha256_file(context.path(*Path(path).parts)) != expected_hash:
+                        raise RuntimeError(f"articulated candidate visual hash mismatch: {path}")
         alignment = ArticulationStateAlignmentArtifact.model_validate_json(
             (root / "state_alignment.json").read_text(encoding="utf-8")
         )
@@ -261,6 +273,32 @@ class ArticulationEvaluationAdapter:
                     "part_mask_paths": part_masks,
                 }
             )
+        candidate_sha256_by_id = {
+            candidate_id: stable_digest(candidate.model_dump(mode="json"))
+            for candidate_id, candidate in candidate_by_id.items()
+        }
+        fitted_model_sha256_by_id = {
+            candidate_id: (
+                item.fitted_model_sha256
+                if item.fitted_model_sha256 is not None
+                else stable_digest(None)
+            )
+            for candidate_id, item in fitting_by_id.items()
+        }
+        link_assignment_sha256_by_id = {
+            candidate_id: stable_digest(item.model_dump(mode="json"))
+            for candidate_id, item in assignment_by_id.items()
+        }
+        heldout_evidence_sha256 = stable_digest(
+            {
+                "heldout_state_ids": heldout_state_ids,
+                "heldout_views_by_state": {
+                    state_id: split.heldout_views_by_state.get(state_id, [])
+                    for state_id in heldout_state_ids
+                },
+                "state_evidence": state_evidence,
+            }
+        )
         request_path = root / "raw" / "articulation_evaluation_request.json"
         gates = {
             key: value
@@ -277,6 +315,10 @@ class ArticulationEvaluationAdapter:
                 "link_assignments_sha256": sha256_file(root / "link_assignments.json"),
                 "candidate_manifest_path": ("reconstruction/articulation/candidate_manifest.json"),
                 "candidate_manifest_sha256": sha256_file(root / "candidate_manifest.json"),
+                "candidate_sha256_by_id": candidate_sha256_by_id,
+                "fitted_model_sha256_by_id": fitted_model_sha256_by_id,
+                "link_assignment_sha256_by_id": link_assignment_sha256_by_id,
+                "heldout_evidence_sha256": heldout_evidence_sha256,
                 "evidence_split_path": "reconstruction/articulation/evidence_split.json",
                 "evidence_split_sha256": sha256_file(root / "evidence_split.json"),
                 "measured_states_manifest_path": (
@@ -323,6 +365,51 @@ class ArticulationEvaluationAdapter:
         )
         if result.fitting_manifest_sha256 != sha256_file(root / "fitting_manifest.json"):
             raise RuntimeError("articulation evaluation fitting hash mismatch")
+        expected_manifest_hashes = {
+            "request_sha256": sha256_file(request_path),
+            "link_assignments_sha256": sha256_file(root / "link_assignments.json"),
+            "candidate_manifest_sha256": sha256_file(root / "candidate_manifest.json"),
+            "evidence_split_sha256": sha256_file(root / "evidence_split.json"),
+            "measured_states_manifest_sha256": sha256_file(root / "measured_states/manifest.json"),
+            "state_alignment_sha256": sha256_file(root / "state_alignment.json"),
+            "measured_motion_sha256": sha256_file(root / "measured_motion.json"),
+        }
+        for field, expected in expected_manifest_hashes.items():
+            if getattr(result, field) != expected:
+                raise RuntimeError(f"articulation evaluation {field} mismatch")
+        for evaluation in result.evaluations:
+            if evaluation.candidate_sha256 != candidate_sha256_by_id[evaluation.candidate_id]:
+                raise RuntimeError("articulation evaluation candidate identity mismatch")
+            if evaluation.fitted_model_sha256 != fitted_model_sha256_by_id[evaluation.candidate_id]:
+                raise RuntimeError("articulation evaluation fitted-model identity mismatch")
+            if (
+                evaluation.link_assignment_sha256
+                != link_assignment_sha256_by_id[evaluation.candidate_id]
+            ):
+                raise RuntimeError("articulation evaluation link-assignment identity mismatch")
+            if evaluation.heldout_evidence_sha256 != heldout_evidence_sha256:
+                raise RuntimeError("articulation evaluation held-out evidence identity mismatch")
+            for state_evaluation in evaluation.state_evaluations:
+                for view in state_evaluation.view_evaluations:
+                    for path, expected_hash in view.target_mask_hashes.items():
+                        if sha256_file(context.path(*Path(view.target_mask_paths[path]).parts)) != (
+                            expected_hash
+                        ):
+                            raise RuntimeError("held-out target mask hash mismatch")
+                    if (
+                        view.depth_path is not None
+                        and view.depth_sha256 is not None
+                        and sha256_file(context.path(*Path(view.depth_path).parts))
+                        != view.depth_sha256
+                    ):
+                        raise RuntimeError("held-out depth hash mismatch")
+                    if (
+                        view.render_path is not None
+                        and view.render_sha256 is not None
+                        and sha256_file(context.path(*Path(view.render_path).parts))
+                        != view.render_sha256
+                    ):
+                        raise RuntimeError("held-out render hash mismatch")
         if heldout_state_ids and not any(
             state.heldout
             for evaluation in result.evaluations

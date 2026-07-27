@@ -185,6 +185,27 @@ def _normalize_candidate(
                 "name": link_ids[part_id],
                 "visual_asset_paths": [relative],
                 "visual_asset_hashes": {relative: sha256(path)},
+                "visual_asset_spaces": {relative: "candidate_base"},
+                "visual_asset_transforms_candidate_base": {
+                    relative: [
+                        1.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                    ]
+                },
                 "native_bounds_min": [float(value) for value in link_mesh.bounds[0]],
                 "native_bounds_max": [float(value) for value in link_mesh.bounds[1]],
             }

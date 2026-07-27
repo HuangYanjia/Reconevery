@@ -47,7 +47,7 @@ class ArticulationFittingConfig(ArticulationWorkerConfig):
 
 class ArticulationFittingAdapter:
     name = "articulation_fitting"
-    version = "0.1.0"
+    version = "0.2.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         candidates = ArticulatedCandidateManifest.model_validate_json(
@@ -63,6 +63,11 @@ class ArticulationFittingAdapter:
                 "fitting_manifest.json",
             ).read_text(encoding="utf-8")
         )
+        for candidate in candidates.candidates:
+            for link in candidate.links:
+                for path, expected_hash in link.visual_asset_hashes.items():
+                    if sha256_file(context.canonical_path(*Path(path).parts)) != expected_hash:
+                        raise RuntimeError(f"articulation fitting visual hash mismatch: {path}")
         capture = ArticulationCaptureManifest.model_validate_json(
             context.canonical_path(
                 "reconstruction", "articulation", "capture_manifest.json"

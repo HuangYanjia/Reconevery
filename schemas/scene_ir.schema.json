@@ -483,6 +483,22 @@
           "default": null,
           "title": "Alignment Transform Path"
         },
+        "articulated_asset_space": {
+          "anyOf": [
+            {
+              "enum": [
+                "candidate_base",
+                "link_local"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Articulated Asset Space"
+        },
         "asset_id": {
           "minLength": 1,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
@@ -505,6 +521,17 @@
           ],
           "default": null,
           "title": "Asset Role"
+        },
+        "asset_to_candidate_base_transform": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "asset_type": {
           "$ref": "#/$defs/AssetType"

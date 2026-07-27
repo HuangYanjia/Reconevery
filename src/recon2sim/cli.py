@@ -17,6 +17,7 @@ from recon2sim.artifacts import (
     ArticulatedCandidateSelection,
     ArticulatedEvaluationManifest,
     ArticulationCaptureManifest,
+    ArticulationFittingManifest,
     ArticulationPartPromptManifest,
     ArticulationStateAlignmentArtifact,
     CameraDiagnostics,
@@ -2067,9 +2068,54 @@ def inspect_articulation_joint(
     measured = [
         joint for joint in motion.get("joint_hypotheses", []) if joint["joint_id"] == joint_id
     ]
-    if not candidate_joints and not measured:
+    fitting = _artifact_model(
+        run_dir,
+        "reconstruction/articulation/fitting_manifest.json",
+        ArticulationFittingManifest,
+    )
+    fitted = [
+        {
+            "candidate_id": item.candidate_id,
+            **joint.model_dump(mode="json"),
+        }
+        for item in fitting.fittings
+        if item.fitted_model is not None
+        for joint in item.fitted_model.fitted_joints
+        if joint.candidate_joint_id == joint_id or joint.measured_joint_id == joint_id
+    ]
+    evaluation = _artifact_model(
+        run_dir,
+        "reconstruction/articulation/evaluation_manifest.json",
+        ArticulatedEvaluationManifest,
+    )
+    heldout = [
+        {
+            "candidate_id": item.candidate_id,
+            "state_id": state.state_id,
+            "inferred_q": state.inferred_joint_positions.get(joint_id),
+            "joint_q_residual": state.joint_q_residual,
+            "axis_error_degrees": state.axis_error_degrees,
+            "pivot_residual_part_diagonals": state.pivot_residual_part_diagonals,
+            "usable_views": state.usable_heldout_view_count,
+            "view_provenance": [view.model_dump(mode="json") for view in state.view_evaluations],
+        }
+        for item in evaluation.evaluations
+        for state in item.state_evaluations
+        if joint_id in state.inferred_joint_positions
+    ]
+    if not candidate_joints and not measured and not fitted:
         raise typer.BadParameter(f"articulation has no joint {joint_id!r}")
-    typer.echo(json.dumps({"measured": measured, "candidates": candidate_joints}, indent=2))
+    typer.echo(
+        json.dumps(
+            {
+                "measured": measured,
+                "candidates": candidate_joints,
+                "fitted": fitted,
+                "heldout": heldout,
+            },
+            indent=2,
+        )
+    )
 
 
 @articulation_app.command("compare-candidates")

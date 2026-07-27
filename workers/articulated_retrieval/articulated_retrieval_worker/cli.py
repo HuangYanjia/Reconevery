@@ -109,6 +109,14 @@ def retrieve(request: dict[str, object], input_root: Path) -> None:
                     raise ValueError("retrieved candidate link has no visual paths")
                 translated = []
                 hashes = {}
+                source_spaces = link_value.get("visual_asset_spaces")
+                source_transforms = link_value.get("visual_asset_transforms_candidate_base")
+                if not isinstance(source_spaces, dict) or not isinstance(source_transforms, dict):
+                    raise ValueError(
+                        "retrieved candidate link must declare every visual asset space"
+                    )
+                spaces = {}
+                transforms = {}
                 for path_value in paths:
                     original = str(path_value)
                     if original not in rewritten:
@@ -117,8 +125,16 @@ def retrieve(request: dict[str, object], input_root: Path) -> None:
                         )
                     translated.append(rewritten[original])
                     hashes[rewritten[original]] = sha256(input_root / rewritten[original])
+                    if original not in source_spaces or original not in source_transforms:
+                        raise ValueError(
+                            f"candidate visual {original!r} has no explicit asset-space record"
+                        )
+                    spaces[rewritten[original]] = source_spaces[original]
+                    transforms[rewritten[original]] = source_transforms[original]
                 link_value["visual_asset_paths"] = translated
                 link_value["visual_asset_hashes"] = hashes
+                link_value["visual_asset_spaces"] = spaces
+                link_value["visual_asset_transforms_candidate_base"] = transforms
             native_paths_value = source_candidate.get("native_output_paths", [])
             if not isinstance(native_paths_value, list):
                 raise ValueError("candidate native_output_paths must be a list")

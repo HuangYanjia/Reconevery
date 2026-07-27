@@ -279,6 +279,8 @@ def retrieve(request: dict[str, object], output_dir: Path) -> None:
                         "name": "cabinet body",
                         "visual_asset_paths": [base_relative],
                         "visual_asset_hashes": {base_relative: sha256(base_path)},
+                        "visual_asset_spaces": {base_relative: "candidate_base"},
+                        "visual_asset_transforms_candidate_base": {base_relative: IDENTITY},
                         "native_bounds_min": [0.0, 0.0, 0.0],
                         "native_bounds_max": [1.0, 1.0, 1.0],
                     },
@@ -287,6 +289,8 @@ def retrieve(request: dict[str, object], output_dir: Path) -> None:
                         "name": "drawer",
                         "visual_asset_paths": [drawer_relative],
                         "visual_asset_hashes": {drawer_relative: sha256(drawer_path)},
+                        "visual_asset_spaces": {drawer_relative: "candidate_base"},
+                        "visual_asset_transforms_candidate_base": {drawer_relative: IDENTITY},
                         "native_bounds_min": [0.2, 0.0, 0.0],
                         "native_bounds_max": [1.2, 1.0, 1.0],
                     },
@@ -400,6 +404,8 @@ def generate(
                     "name": "cabinet body",
                     "visual_asset_paths": [base_relative],
                     "visual_asset_hashes": {base_relative: sha256(base_path)},
+                    "visual_asset_spaces": {base_relative: "candidate_base"},
+                    "visual_asset_transforms_candidate_base": {base_relative: IDENTITY},
                     "native_bounds_min": [0.0, 0.0, 0.0],
                     "native_bounds_max": [1.0, 1.0, 1.0],
                 },
@@ -408,6 +414,8 @@ def generate(
                     "name": "drawer",
                     "visual_asset_paths": [drawer_relative],
                     "visual_asset_hashes": {drawer_relative: sha256(drawer_path)},
+                    "visual_asset_spaces": {drawer_relative: "candidate_base"},
+                    "visual_asset_transforms_candidate_base": {drawer_relative: IDENTITY},
                     "native_bounds_min": [0.2, 0.0, 0.0],
                     "native_bounds_max": [1.2, 1.0, 1.0],
                 },
@@ -531,8 +539,13 @@ def fit(request: dict[str, object], output_dir: Path) -> None:
                     "fitted_axis": [1.0, 0.0, 0.0],
                     "fitted_pivot": None,
                     "axis_sign": 1,
+                    "axis_convention": "oriented_toward_measured_axis",
+                    "axis_sign_role": "native_axis_flip_provenance_only",
                     "q_scale": 1.0,
+                    "q_scale_convention": "candidate_q_per_measured_q",
                     "q_offset": 0.0,
+                    "q_offset_fitted": False,
+                    "q_offset_evidence_state_ids": [],
                     "fitting_state_q": {
                         state_id: index * 0.35 for index, state_id in enumerate(structure_states)
                     },
@@ -593,57 +606,135 @@ def fit(request: dict[str, object], output_dir: Path) -> None:
     )
 
 
-def evaluate(request: dict[str, object], output_dir: Path) -> None:
+def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> None:
     maybe_fail(request)
     reject = request.get("fake_mode") in {"heldout_state_failure", "wrong_joint_type"}
     missing_views = request.get("fake_mode") == "missing_heldout_views"
     missing_target = request.get("fake_mode") == "no_target_mask"
     evaluations = []
     for candidate_id in request["frozen_candidate_ids"]:
-        state_evaluations = [
-            {
-                "state_id": state_id,
-                "heldout": True,
-                "requested_heldout_view_count": max(
-                    1, len(request["heldout_views_by_state"].get(state_id, []))
-                ),
-                "usable_heldout_view_count": 0 if missing_views else 1,
-                "rendered_heldout_view_count": 0 if missing_views else 1,
-                "views_with_target_masks": 0 if missing_target else 1,
-                "views_with_valid_depth": 1,
-                "base_mask_iou": 0.78 if not reject else 0.30,
-                "movable_part_mask_iou": 0.74 if not reject else 0.10,
-                "whole_object_mask_iou": 0.79 if not reject else 0.25,
-                "per_link_depth_residual": {
-                    "cabinet_body": 0.01,
-                    "drawer_0001": 0.015 if not reject else 0.2,
-                },
-                "depth_inlier_fraction": 0.86 if not reject else 0.2,
-                "negative_space_violation_ratio": 0.03 if not reject else 0.3,
-                "front_of_scene_violation_ratio": 0.02 if not reject else 0.2,
-                "scene_diagonal_arbitrary_units": 1.0,
-                "base_point_residual_arbitrary_units": 0.003,
-                "base_point_residual_scene_diagonals": 0.003,
-                "base_motion_arbitrary_units": 0.003,
-                "base_motion_scene_diagonals": 0.003,
-                "movable_point_residual_arbitrary_units": (0.01 if not reject else 0.2),
-                "joint_constraint_residual": 0.01 if not reject else 0.2,
-                "prismatic_orthogonal_residual": 0.01 if not reject else 0.2,
-                "prismatic_rotation_leakage_degrees": (0.5 if not reject else 10.0),
-                "joint_q_residual": 0.01 if not reject else 0.2,
-                "axis_error_degrees": 2.0,
-                "pivot_residual_part_diagonals": None,
-                "inferred_joint_positions": {"drawer_joint": 0.7},
-                "joint_position_source": "measured_geometry",
-            }
-            for state_id in request["heldout_state_ids"]
-        ]
+        state_evaluations = []
+        for state_id in request["heldout_state_ids"]:
+            evidence = next(
+                item for item in request["state_evidence"] if item["state_id"] == state_id
+            )
+            depth_manifest = json.loads(
+                (input_root / evidence["depth_manifest_path"]).read_text(encoding="utf-8")
+            )
+            depth_by_frame = {str(item["frame_id"]): item for item in depth_manifest["records"]}
+            requested_frames = list(request["heldout_views_by_state"].get(state_id, [])) or [
+                "frame_000001"
+            ]
+            view_evaluations = []
+            render_paths = {}
+            for frame_id in requested_frames:
+                render_path = (
+                    output_dir
+                    / "candidates"
+                    / candidate_id
+                    / "renders"
+                    / "heldout"
+                    / state_id
+                    / f"{frame_id}.png"
+                )
+                usable = not missing_views and not missing_target
+                if usable:
+                    write_preview(render_path, f"{candidate_id} {state_id} {frame_id}")
+                    relative_render = render_path.relative_to(output_dir.parent.parent).as_posix()
+                    render_paths[frame_id] = relative_render
+                else:
+                    relative_render = None
+                masks = (
+                    {}
+                    if missing_target
+                    else {
+                        str(part_id): str(paths[frame_id])
+                        for part_id, paths in evidence["part_mask_paths"].items()
+                        if frame_id in paths
+                    }
+                )
+                depth_path = str(depth_by_frame[frame_id]["depth_path"])
+                view_evaluations.append(
+                    {
+                        "frame_id": frame_id,
+                        "camera_reconstruction_sha256": evidence["camera_reconstruction_sha256"],
+                        "depth_path": depth_path,
+                        "depth_sha256": sha256(input_root / depth_path),
+                        "valid_depth": True,
+                        "target_mask_paths": masks,
+                        "target_mask_hashes": {
+                            part_id: sha256(input_root / path) for part_id, path in masks.items()
+                        },
+                        "target_masks_complete": not missing_target,
+                        "required_link_ids": ["cabinet_body", "drawer_0001"],
+                        "rendered_link_ids": (["cabinet_body", "drawer_0001"] if usable else []),
+                        "missing_link_ids": ([] if usable else ["cabinet_body", "drawer_0001"]),
+                        "usable": usable,
+                        "failure_reasons": (
+                            []
+                            if usable
+                            else [
+                                "target_part_mask_unavailable"
+                                if missing_target
+                                else "heldout_render_unavailable"
+                            ]
+                        ),
+                        "render_path": relative_render,
+                        "render_sha256": sha256(render_path) if usable else None,
+                        "raw_candidate_pixel_count": 128 if usable else 0,
+                        "visible_candidate_pixel_count": 96 if usable else 0,
+                        "target_mask_pixel_count": 100 if not missing_target else 0,
+                    }
+                )
+            state_evaluations.append(
+                {
+                    "state_id": state_id,
+                    "heldout": True,
+                    "requested_heldout_view_count": len(requested_frames),
+                    "usable_heldout_view_count": sum(item["usable"] for item in view_evaluations),
+                    "rendered_heldout_view_count": len(render_paths),
+                    "views_with_target_masks": sum(
+                        bool(item["target_mask_paths"]) for item in view_evaluations
+                    ),
+                    "views_with_valid_depth": len(view_evaluations),
+                    "base_mask_iou": 0.78 if not reject else 0.30,
+                    "movable_part_mask_iou": 0.74 if not reject else 0.10,
+                    "whole_object_mask_iou": 0.79 if not reject else 0.25,
+                    "per_link_depth_residual": {
+                        "cabinet_body": 0.01,
+                        "drawer_0001": 0.015 if not reject else 0.2,
+                    },
+                    "depth_inlier_fraction": 0.86 if not reject else 0.2,
+                    "negative_space_violation_ratio": 0.03 if not reject else 0.3,
+                    "front_of_scene_violation_ratio": 0.02 if not reject else 0.2,
+                    "scene_diagonal_arbitrary_units": 1.0,
+                    "base_point_residual_arbitrary_units": 0.003,
+                    "base_point_residual_scene_diagonals": 0.003,
+                    "base_motion_arbitrary_units": 0.003,
+                    "base_motion_scene_diagonals": 0.003,
+                    "movable_point_residual_arbitrary_units": (0.01 if not reject else 0.2),
+                    "joint_constraint_residual": 0.01 if not reject else 0.2,
+                    "prismatic_orthogonal_residual": 0.01 if not reject else 0.2,
+                    "prismatic_rotation_leakage_degrees": (0.5 if not reject else 10.0),
+                    "joint_q_residual": 0.01 if not reject else 0.2,
+                    "axis_error_degrees": 2.0,
+                    "pivot_residual_part_diagonals": None,
+                    "inferred_joint_positions": {"drawer_joint": 0.7},
+                    "joint_position_source": "measured_geometry",
+                    "render_paths": render_paths,
+                    "view_evaluations": view_evaluations,
+                }
+            )
         passed = not reject and not missing_views and not missing_target and bool(state_evaluations)
         evaluations.append(
             {
                 "candidate_id": candidate_id,
                 "status": ("multi_state_validated" if passed else "rejected_heldout_state"),
                 "fitting_sha256": request["fitting_manifest_sha256"],
+                "candidate_sha256": request["candidate_sha256_by_id"][candidate_id],
+                "fitted_model_sha256": request["fitted_model_sha256_by_id"][candidate_id],
+                "link_assignment_sha256": request["link_assignment_sha256_by_id"][candidate_id],
+                "heldout_evidence_sha256": request["heldout_evidence_sha256"],
                 "state_evaluations": state_evaluations,
                 "passed_hard_gates": passed,
                 "failed_gates": (
@@ -676,7 +767,14 @@ def evaluate(request: dict[str, object], output_dir: Path) -> None:
         output_dir / "evaluation_manifest.json",
         {
             "schema_version": "0.1.0",
+            "request_sha256": request["request_sha256"],
             "fitting_manifest_sha256": request["fitting_manifest_sha256"],
+            "link_assignments_sha256": request["link_assignments_sha256"],
+            "candidate_manifest_sha256": request["candidate_manifest_sha256"],
+            "evidence_split_sha256": request["evidence_split_sha256"],
+            "measured_states_manifest_sha256": request["measured_states_manifest_sha256"],
+            "state_alignment_sha256": request["state_alignment_sha256"],
+            "measured_motion_sha256": request["measured_motion_sha256"],
             "evaluations": evaluations,
             "candidate_structures_frozen_before_heldout": True,
             "runtime_seconds": 0.03,
@@ -706,6 +804,7 @@ def main() -> int:
     input_root = Path(args.input_root).resolve()
     output_dir = Path(args.output_dir).resolve()
     request = json.loads(request_path.read_text(encoding="utf-8"))
+    request["request_sha256"] = sha256(request_path)
     output_dir.mkdir(parents=True, exist_ok=True)
     if args.action == "align":
         align(request, input_root, output_dir)
@@ -718,7 +817,7 @@ def main() -> int:
     elif args.action == "fit":
         fit(request, output_dir)
     elif args.action == "evaluate":
-        evaluate(request, output_dir)
+        evaluate(request, input_root, output_dir)
     else:
         raise ValueError(f"unsupported fake articulation action: {args.action}")
     return 0

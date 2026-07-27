@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
 import pytest
-from articulation_evaluation_worker.cli import _heldout_joint_position
+from articulation_evaluation_worker.cli import (
+    _candidate_link_points,
+    _heldout_joint_position,
+)
 from articulation_evaluation_worker.dense_io import read_dense_array
 from articulation_evaluation_worker.rendering import (
     classify_depth,
@@ -100,9 +104,20 @@ def test_heldout_geometry_recovers_only_prismatic_q(tmp_path: Path) -> None:
     measured_points = candidate_points + np.asarray([0.7, 0.0, 0.0])
     _write_points(tmp_path / "candidate.ply", candidate_points)
     _write_points(tmp_path / "measured.ply", measured_points)
-    position = _heldout_joint_position(
+    position, residual = _heldout_joint_position(
         input_root=tmp_path,
-        link={"visual_asset_paths": ["candidate.ply"]},
+        link={
+            "visual_asset_paths": ["candidate.ply"],
+            "visual_asset_hashes": {
+                "candidate.ply": hashlib.sha256(
+                    (tmp_path / "candidate.ply").read_bytes()
+                ).hexdigest()
+            },
+            "visual_asset_spaces": {"candidate.ply": "candidate_base"},
+            "visual_asset_transforms_candidate_base": {
+                "candidate.ply": np.eye(4).reshape(-1).tolist()
+            },
+        },
         joint={
             "joint_id": "drawer_joint",
             "joint_type": "prismatic",
@@ -112,9 +127,40 @@ def test_heldout_geometry_recovers_only_prismatic_q(tmp_path: Path) -> None:
             "candidate_limit_upper": 1.0,
             "limit_source": "candidate_prior",
         },
+        fitted_joint={
+            "fitted_axis": [1.0, 0.0, 0.0],
+            "fitted_pivot": None,
+            "fitting_state_q": {"closed": 0.0, "open": 1.0},
+        },
         measured_joint=None,
         measured_part={"measured_point_cloud_path": "measured.ply"},
         base_matrix=np.eye(4),
         reference_from_state=np.eye(4),
     )
     assert position == pytest.approx(0.7, abs=2e-3)
+    assert residual is not None and residual < 1e-2
+
+
+def test_link_local_asset_transform_is_used_for_registration(tmp_path: Path) -> None:
+    points = np.asarray([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+    path = tmp_path / "candidate.ply"
+    _write_points(path, points)
+    matrix = np.eye(4)
+    matrix[:3, 3] = [2.0, 3.0, 4.0]
+    candidate = {
+        "links": [
+            {
+                "link_id": "link",
+                "visual_asset_paths": ["candidate.ply"],
+                "visual_asset_hashes": {
+                    "candidate.ply": hashlib.sha256(path.read_bytes()).hexdigest()
+                },
+                "visual_asset_spaces": {"candidate.ply": "link_local"},
+                "visual_asset_transforms_candidate_base": {
+                    "candidate.ply": matrix.reshape(-1).tolist()
+                },
+            }
+        ]
+    }
+    loaded = _candidate_link_points(tmp_path, candidate)["link"]
+    assert np.allclose(loaded, points + np.asarray([2.0, 3.0, 4.0]))

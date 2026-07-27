@@ -3,12 +3,14 @@ from __future__ import annotations
 import math
 
 
-def prismatic_candidate_q_scale(global_sim3_scale: float, axis_sign: int) -> float:
+def prismatic_candidate_q_scale(global_sim3_scale: float) -> float:
     if not math.isfinite(global_sim3_scale) or global_sim3_scale <= 0:
         raise ValueError("global Sim(3) scale must be finite and positive")
-    if axis_sign not in {-1, 1}:
-        raise ValueError("axis sign must be -1 or +1")
-    return axis_sign / global_sim3_scale
+    return 1.0 / global_sim3_scale
+
+
+def revolute_candidate_q_scale() -> float:
+    return 1.0
 
 
 def normalized_residual(raw_residual: float, normalization_diagonal: float) -> float:
@@ -19,4 +21,8 @@ def normalized_residual(raw_residual: float, normalization_diagonal: float) -> f
     return raw_residual / normalization_diagonal
 
 
-__all__ = ["normalized_residual", "prismatic_candidate_q_scale"]
+__all__ = [
+    "normalized_residual",
+    "prismatic_candidate_q_scale",
+    "revolute_candidate_q_scale",
+]

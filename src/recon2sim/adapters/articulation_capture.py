@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+from PIL import Image
 from pydantic import Field
 
 from recon2sim.adapters.base import (
@@ -391,6 +392,71 @@ class ArticulationCaptureAdapter:
             frames = [f"{state_id}_frame_{frame:03d}" for frame in range(6)]
             registered_by_state[state_id] = frames
             evidence_root = f"reconstruction/articulation/measured_states/{state_id}/evidence"
+            dense_records = []
+            mask_paths_by_part: dict[str, list[str]] = {
+                "cabinet_body": [],
+                "drawer": [],
+            }
+            for frame in frames:
+                dense_paths = {
+                    "depth_path": f"{evidence_root}/dense/{frame}.depth.bin",
+                    "normal_path": f"{evidence_root}/dense/{frame}.normal.bin",
+                    "consistency_graph_path": (f"{evidence_root}/dense/{frame}.consistency.bin"),
+                }
+                dense_hashes = {}
+                for field, relative_path in dense_paths.items():
+                    dense_path = context.path(*Path(relative_path).parts)
+                    dense_path.parent.mkdir(parents=True, exist_ok=True)
+                    dense_path.write_bytes(f"fake {field} {frame}\n".encode())
+                    dense_hashes[field] = sha256_file(dense_path)
+                    outputs.append(
+                        OutputSpec(
+                            relative_path,
+                            (
+                                "articulation_dense_depth_map"
+                                if field == "depth_path"
+                                else "dense_mvs_binary"
+                            ),
+                            "application/octet-stream",
+                            self.name,
+                        )
+                    )
+                dense_records.append(
+                    {
+                        "frame_id": frame,
+                        **dense_paths,
+                        "dimensions": [16, 16],
+                        "depth_channels": 1,
+                        "normal_channels": 3,
+                        "positive_finite_depth_count": 256,
+                        "valid_depth_ratio": 1.0,
+                        "depth_percentiles": {"p50": 1.0},
+                        "finite_normal_ratio": 1.0,
+                        "consistency_valid_pixel_count": 256,
+                        "mean_consistency_source_count": 2.0,
+                        "median_consistency_source_count": 2.0,
+                        "source_view_ids": [0, 1],
+                        "depth_sha256": dense_hashes["depth_path"],
+                        "normal_sha256": dense_hashes["normal_path"],
+                        "consistency_sha256": dense_hashes["consistency_graph_path"],
+                        "warnings": [],
+                    }
+                )
+                for part_id in mask_paths_by_part:
+                    relative_mask = f"{evidence_root}/masks/{part_id}/{frame}.png"
+                    mask_path = context.path(*Path(relative_mask).parts)
+                    mask_path.parent.mkdir(parents=True, exist_ok=True)
+                    Image.new("RGB", (16, 16), (255, 255, 255)).save(mask_path)
+                    mask_paths_by_part[part_id].append(relative_mask)
+                    outputs.append(
+                        OutputSpec(
+                            relative_mask,
+                            "articulated_part_mask",
+                            "image/png",
+                            self.name,
+                            validation="png",
+                        )
+                    )
             evidence_payloads = {
                 f"{evidence_root}/camera_reconstruction.json": (
                     {"registered_frame_ids": frames, "poses": []},
@@ -410,7 +476,7 @@ class ArticulationCaptureAdapter:
                 f"{evidence_root}/depth_manifest.json": (
                     {
                         "map_type": "geometric",
-                        "records": [],
+                        "records": dense_records,
                         "failed_frame_ids": [],
                     },
                     "dense_depth_manifest",
@@ -469,7 +535,7 @@ class ArticulationCaptureAdapter:
                         point_count=len(points),
                         normal_count=0,
                         supporting_frame_ids=frames,
-                        mask_paths=[],
+                        mask_paths=mask_paths_by_part[part_id],
                         state_alignment_sha256="0" * 64,
                         transformed_to_reference_frame=index == 0,
                         coordinate_convention=_raw_colmap_convention(),

@@ -1,5 +1,13 @@
 {
   "$defs": {
+    "ArticulatedAssetSpace": {
+      "enum": [
+        "candidate_base",
+        "link_local"
+      ],
+      "title": "ArticulatedAssetSpace",
+      "type": "string"
+    },
     "ArticulatedCandidate": {
       "additionalProperties": false,
       "properties": {
@@ -507,6 +515,25 @@
           },
           "title": "Visual Asset Paths",
           "type": "array"
+        },
+        "visual_asset_spaces": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ArticulatedAssetSpace"
+          },
+          "title": "Visual Asset Spaces",
+          "type": "object"
+        },
+        "visual_asset_transforms_candidate_base": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 16,
+            "minItems": 16,
+            "type": "array"
+          },
+          "title": "Visual Asset Transforms Candidate Base",
+          "type": "object"
         }
       },
       "required": [
@@ -514,6 +541,8 @@
         "name",
         "visual_asset_paths",
         "visual_asset_hashes",
+        "visual_asset_spaces",
+        "visual_asset_transforms_candidate_base",
         "native_bounds_min",
         "native_bounds_max"
       ],

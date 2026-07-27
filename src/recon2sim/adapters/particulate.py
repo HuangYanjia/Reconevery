@@ -20,6 +20,7 @@ from recon2sim.adapters.base import (
 )
 from recon2sim.articulation import sha256_file
 from recon2sim.artifacts import (
+    ArticulatedAssetSpace,
     ArticulatedCandidate,
     ArticulatedCandidateManifest,
     ArticulatedJoint,
@@ -397,6 +398,29 @@ class ParticulateAdapter:
                     visual_asset_paths=[item.measured_point_cloud_path],
                     visual_asset_hashes={
                         item.measured_point_cloud_path: item.measured_point_cloud_sha256
+                    },
+                    visual_asset_spaces={
+                        item.measured_point_cloud_path: ArticulatedAssetSpace.CANDIDATE_BASE
+                    },
+                    visual_asset_transforms_candidate_base={
+                        item.measured_point_cloud_path: (
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                        )
                     },
                     native_bounds_min=(0.0, 0.0, 0.0),
                     native_bounds_max=(0.0, 0.0, 0.0),

@@ -327,7 +327,17 @@ class GeometryAsset(StrictModel):
         ]
         | None
     ) = None
+    articulated_asset_space: Literal["candidate_base", "link_local"] | None = None
+    asset_to_candidate_base_transform: Transform | None = None
     provenance: ProvenanceRecord
+
+    @model_validator(mode="after")
+    def articulated_asset_space_is_explicit(self) -> Self:
+        if (self.articulated_asset_space is None) != (
+            self.asset_to_candidate_base_transform is None
+        ):
+            raise ValueError("articulated asset space and candidate-base transform must be paired")
+        return self
 
     @field_validator("uri", "alignment_transform_path", "license_record_path")
     @classmethod
