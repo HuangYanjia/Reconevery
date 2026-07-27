@@ -109,7 +109,9 @@ Phase 5C implements observation-grounded visual kinematic hypotheses for fixed,
 prismatic, and revolute mechanisms from multiple static states. It includes local
 license-aware retrieval, official Particulate research candidates, constrained
 fitting, and held-out-state evaluation. It does not include deformables, collision,
-dynamics, or production simulator export.
+dynamics, or production simulator export. Phase 5C.1 separates stable part IDs from
+state-local SAM tracks, derives evidence from accepted alignments, and makes the
+typed fitted kinematic model the selection/Scene IR source of truth.
 
 ## Later phases
 

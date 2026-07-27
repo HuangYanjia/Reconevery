@@ -1,12 +1,13 @@
-schema_version: "0.1.0"
+schema_version: "0.2.0"
 objects:
   - articulated_object_id: cabinet_0001
     semantic_label: cabinet
     base:
-      prompt_id: cabinet_body
+      part_id: cabinet_body
+      prompt_id: cabinet body
       label: cabinet body
     movable_parts:
-      - part_id: drawer_0001
+      - part_id: drawer
         prompt_id: drawer
         label: drawer
         expected_joint_hint: prismatic

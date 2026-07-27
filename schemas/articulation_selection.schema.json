@@ -30,6 +30,13 @@
     "ArticulatedObjectSelection": {
       "additionalProperties": false,
       "properties": {
+        "accepted_alignment_state_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Accepted Alignment State Ids",
+          "type": "array"
+        },
         "articulated_object_id": {
           "minLength": 1,
           "title": "Articulated Object Id",
@@ -59,11 +66,24 @@
           "default": null,
           "title": "Best Research Articulated Candidate"
         },
+        "candidate_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Candidate Manifest Sha256",
+          "type": "string"
+        },
         "canonical_gravity_alignment_known": {
           "const": false,
           "default": false,
           "title": "Canonical Gravity Alignment Known",
           "type": "boolean"
+        },
+        "capture_evidence_tier": {
+          "$ref": "#/$defs/ArticulationEvidenceLevel"
+        },
+        "capture_state_count": {
+          "minimum": 1,
+          "title": "Capture State Count",
+          "type": "integer"
         },
         "collision_ready": {
           "const": false,
@@ -84,8 +104,34 @@
           "default": null,
           "title": "Completion Status"
         },
-        "evidence_level": {
+        "effective_motion_evidence_level": {
           "$ref": "#/$defs/ArticulationEvidenceLevel"
+        },
+        "evaluation_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evaluation Sha256"
+        },
+        "fitted_model_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitted Model Sha256"
         },
         "geometry_status": {
           "anyOf": [
@@ -102,6 +148,19 @@
           ],
           "default": null,
           "title": "Geometry Status"
+        },
+        "link_assignment_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link Assignment Sha256"
         },
         "measured_geometry_retained": {
           "const": true,
@@ -139,6 +198,22 @@
           "default": null,
           "title": "Selected Candidate Id"
         },
+        "selected_candidate_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Candidate Sha256"
+        },
+        "selected_candidate_validation_level": {
+          "$ref": "#/$defs/ArticulationEvidenceLevel"
+        },
         "selection_rationale": {
           "items": {
             "type": "string"
@@ -159,7 +234,12 @@
       "required": [
         "articulated_object_id",
         "status",
-        "evidence_level",
+        "capture_state_count",
+        "capture_evidence_tier",
+        "accepted_alignment_state_ids",
+        "effective_motion_evidence_level",
+        "selected_candidate_validation_level",
+        "candidate_manifest_sha256",
         "selection_rationale"
       ],
       "title": "ArticulatedObjectSelection",
@@ -169,6 +249,7 @@
       "enum": [
         "single_state_prior_only",
         "two_state_motion_supported",
+        "multi_state_heldout_available",
         "multi_state_heldout_validated"
       ],
       "title": "ArticulationEvidenceLevel",

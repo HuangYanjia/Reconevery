@@ -199,4 +199,6 @@ Phase 5C adapters are `articulation_capture`, `articulation_state_alignment`,
 `articulation_selection`, and `phase5c_consistency_validation`. Heavy Sim(3), point
 registration, official Particulate inference, and rendering are isolated in worker
 packages. Local and Docker workers receive only attempt workspaces. Articulated
-retrieval performs no runtime downloads.
+retrieval performs no runtime downloads. `articulation preflight-capture` checks real
+Phase 5A state lineages, stable-part mappings, masks, dense depth, registered views,
+reference state, and held-out feasibility before worker execution.

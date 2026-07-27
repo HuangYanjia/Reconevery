@@ -1,4 +1,4 @@
-schema_version: "0.1.0"
+schema_version: "0.2.0"
 articulated_object_id: cabinet_0001
 reference_state_id: state_000_closed
 # The Phase 5B routing selection is configured by the pipeline adapter, not per state.
@@ -6,9 +6,18 @@ states:
   - state_id: state_000_closed
     run_dir: /absolute/path/to/runs/cabinet_closed
     semantic_state_label: closed
+    part_track_ids:
+      cabinet_body: cabinet_body_0001
+      drawer: drawer_0001
   - state_id: state_001_half_open
     run_dir: /absolute/path/to/runs/cabinet_half_open
     semantic_state_label: half_open
+    part_track_ids:
+      cabinet_body: cabinet_body_0002
+      drawer: drawer_0001
   - state_id: state_002_open
     run_dir: /absolute/path/to/runs/cabinet_open
     semantic_state_label: open
+    part_track_ids:
+      cabinet_body: cabinet_body_0001
+      drawer: drawer_0002

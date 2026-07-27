@@ -29,3 +29,9 @@ It renders each assigned link using the same exact OpenCV-to-homogeneous-clip
 contract as Phase 5B.1. Canonical masks are mapped into the official COLMAP dense
 PINHOLE space with nearest-neighbor remapping, and candidate pixels behind reliable
 dense depth are treated as occluded rather than false positives.
+
+Exactly three accepted states are sufficient: generation, fitting, and actually
+evaluated held-out states are counted as a distinct union. Passing requires usable
+cameras, target masks, visible candidate pixels, dense depth, measured base motion,
+and joint-type-specific residuals. Unavailable metrics fail their gates rather than
+being serialized as zero.

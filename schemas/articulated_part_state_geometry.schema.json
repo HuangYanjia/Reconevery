@@ -76,12 +76,22 @@
           "title": "Point Count",
           "type": "integer"
         },
+        "prompt_id": {
+          "minLength": 1,
+          "title": "Prompt Id",
+          "type": "string"
+        },
         "scale_status": {
           "$ref": "#/$defs/ScaleStatus"
         },
         "semantic_label": {
           "minLength": 1,
           "title": "Semantic Label",
+          "type": "string"
+        },
+        "source_track_id": {
+          "minLength": 1,
+          "title": "Source Track Id",
           "type": "string"
         },
         "state_alignment_sha256": {
@@ -110,6 +120,8 @@
         "state_id",
         "articulated_object_id",
         "part_id",
+        "source_track_id",
+        "prompt_id",
         "semantic_label",
         "measured_point_cloud_path",
         "measured_point_cloud_sha256",

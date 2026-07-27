@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+import yaml
 from pydantic import BaseModel, ValidationError
 
 from recon2sim.adapters import REGISTRY
@@ -1711,6 +1712,203 @@ def _articulation_candidates(run_dir: Path) -> ArticulatedCandidateManifest:
     )
 
 
+@articulation_app.command("capture-template")
+def articulation_capture_template(
+    object_id: Annotated[str, typer.Option("--object-id", help="Stable articulated object ID.")],
+    states: Annotated[
+        str,
+        typer.Option("--states", help="Comma-separated semantic state labels."),
+    ],
+) -> None:
+    labels = [value.strip() for value in states.split(",") if value.strip()]
+    if not labels:
+        raise typer.BadParameter("--states must contain at least one state label")
+    payload = {
+        "schema_version": "0.2.0",
+        "articulated_object_id": object_id,
+        "reference_state_id": f"state_000_{labels[0]}",
+        "states": [
+            {
+                "state_id": f"state_{index:03d}_{label}",
+                "run_dir": f"/absolute/path/to/{label}",
+                "semantic_state_label": label,
+                "part_track_ids": {
+                    "cabinet_body": f"<canonical-track-id-for-cabinet-body-in-{label}>",
+                    "drawer": f"<canonical-track-id-for-drawer-in-{label}>",
+                },
+            }
+            for index, label in enumerate(labels)
+        ],
+    }
+    typer.echo(yaml.safe_dump(payload, sort_keys=False))
+
+
+@articulation_app.command("preflight-capture")
+def preflight_articulation_capture(
+    capture_manifest: Annotated[
+        Path,
+        typer.Option(
+            "--capture-manifest",
+            exists=True,
+            dir_okay=False,
+            help="Multi-state capture YAML.",
+        ),
+    ],
+    part_manifest: Annotated[
+        Path,
+        typer.Option(
+            "--part-manifest",
+            exists=True,
+            dir_okay=False,
+            help="Stable part/prompt YAML.",
+        ),
+    ],
+) -> None:
+    capture_raw = yaml.safe_load(capture_manifest.read_text(encoding="utf-8"))
+    prompt_raw = yaml.safe_load(part_manifest.read_text(encoding="utf-8"))
+    if not isinstance(capture_raw, dict) or not isinstance(prompt_raw, dict):
+        raise typer.BadParameter("capture and part manifests must contain YAML mappings")
+    prompts = ArticulationPartPromptManifest.model_validate(prompt_raw)
+    object_id = str(capture_raw.get("articulated_object_id", ""))
+    prompt_object = next(
+        (item for item in prompts.objects if item.articulated_object_id == object_id),
+        None,
+    )
+    if prompt_object is None:
+        raise typer.BadParameter(f"part manifest has no articulated object {object_id!r}")
+    stable_parts = {
+        prompt_object.base.part_id,
+        *(part.part_id for part in prompt_object.movable_parts if part.include),
+    }
+    raw_states = capture_raw.get("states")
+    if not isinstance(raw_states, list) or not raw_states:
+        raise typer.BadParameter("capture manifest requires non-empty states")
+    errors: list[str] = []
+    rows: list[dict[str, object]] = []
+    state_ids: list[str] = []
+    for raw_state in raw_states:
+        if not isinstance(raw_state, dict):
+            errors.append("capture state is not a mapping")
+            continue
+        state_id = str(raw_state.get("state_id", ""))
+        state_ids.append(state_id)
+        run_dir = Path(str(raw_state.get("run_dir", ""))).expanduser()
+        mapping_raw = raw_state.get("part_track_ids")
+        mapping = (
+            {str(key): str(value) for key, value in mapping_raw.items()}
+            if isinstance(mapping_raw, dict)
+            else {}
+        )
+        state_errors: list[str] = []
+        if not run_dir.is_dir():
+            state_errors.append("run_dir_missing")
+        if set(mapping) != stable_parts:
+            state_errors.append("part_mapping_incomplete")
+        if len(mapping) != len(set(mapping.values())):
+            state_errors.append("duplicate_track_mapping")
+        tracks_by_id: dict[str, dict[str, object]] = {}
+        measured_by_id: dict[str, dict[str, object]] = {}
+        registered: set[str] = set()
+        depth_count = 0
+        if run_dir.is_dir():
+            required_json = {
+                "phase5a": run_dir / "validation/phase5a_measured_geometry.json",
+                "camera": run_dir / "camera/reconstruction.json",
+                "tracks": run_dir / "observations/object_tracks.json",
+                "depth": run_dir / "reconstruction/dense/depth_manifest.json",
+                "measured": (run_dir / "reconstruction/measured_objects/geometry_manifest.json"),
+            }
+            missing = [name for name, path in required_json.items() if not path.is_file()]
+            state_errors.extend(f"{name}_missing" for name in missing)
+            if not missing:
+                payloads = {
+                    name: json.loads(path.read_text(encoding="utf-8"))
+                    for name, path in required_json.items()
+                }
+                if not payloads["phase5a"].get("passed", False):
+                    state_errors.append("phase5a_failed")
+                registered = set(payloads["camera"].get("registered_frame_ids", []))
+                tracks_by_id = {
+                    str(item["object_id"]): item for item in payloads["tracks"].get("tracks", [])
+                }
+                measured_by_id = {
+                    str(item["object_id"]): item
+                    for item in payloads["measured"].get("hypotheses", [])
+                }
+                depth_records = payloads["depth"].get("records", [])
+                depth_count = len(depth_records)
+                for record in depth_records:
+                    path = run_dir / str(record.get("depth_path", ""))
+                    if not path.is_file():
+                        state_errors.append(f"depth_missing:{record.get('frame_id', 'unknown')}")
+        for part_id in sorted(stable_parts):
+            track_id = mapping.get(part_id)
+            if not track_id:
+                continue
+            track = tracks_by_id.get(track_id)
+            hypothesis = measured_by_id.get(track_id)
+            if track is None:
+                state_errors.append(f"track_missing:{part_id}->{track_id}")
+                continue
+            if hypothesis is None or hypothesis.get("point_cloud") is None:
+                state_errors.append(f"measured_geometry_missing:{part_id}->{track_id}")
+                continue
+            point_cloud = hypothesis["point_cloud"]
+            if not isinstance(point_cloud, dict):
+                state_errors.append(f"point_cloud_invalid:{part_id}->{track_id}")
+                continue
+            point_path = run_dir / str(point_cloud.get("relative_path", ""))
+            if not point_path.is_file():
+                state_errors.append(f"point_cloud_missing:{part_id}->{track_id}")
+            observations_raw = track.get("observations", [])
+            observations = observations_raw if isinstance(observations_raw, list) else []
+            masks = [
+                run_dir / str(observation.get("mask_path", "")) for observation in observations
+            ]
+            if not masks or any(not path.is_file() for path in masks):
+                state_errors.append(f"mask_missing:{part_id}->{track_id}")
+            supporting_raw = hypothesis.get("supporting_frame_ids", [])
+            supporting = (
+                set(str(value) for value in supporting_raw) & registered
+                if isinstance(supporting_raw, list)
+                else set()
+            )
+            if len(supporting) < 2:
+                state_errors.append(f"insufficient_registered_views:{part_id}->{track_id}")
+        errors.extend(f"{state_id}: {message}" for message in state_errors)
+        rows.append(
+            {
+                "state": state_id,
+                "phase5a": "pass" if "phase5a_failed" not in state_errors else "fail",
+                "registered": len(registered),
+                "depth_maps": depth_count,
+                "mapped_parts": len(mapping),
+                "status": "pass" if not state_errors else "fail",
+            }
+        )
+    if len(state_ids) != len(set(state_ids)):
+        errors.append("state IDs are not unique")
+    reference_state = str(capture_raw.get("reference_state_id", ""))
+    if reference_state not in state_ids:
+        errors.append("reference state is missing")
+    if len(state_ids) < 3:
+        errors.append("a disjoint held-out articulation state is not feasible")
+    typer.echo("state\tphase5a\tregistered\tdepth_maps\tmapped_parts\tstatus")
+    for row in rows:
+        typer.echo(
+            f"{row['state']}\t{row['phase5a']}\t{row['registered']}\t"
+            f"{row['depth_maps']}\t{row['mapped_parts']}\t{row['status']}"
+        )
+    if errors:
+        for error in errors:
+            typer.echo(f"ERROR: {error}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(
+        f"capture preflight passed: {len(state_ids)} states, "
+        f"reference={reference_state}, stable_parts={len(stable_parts)}"
+    )
+
+
 @articulation_app.command("inspect")
 def inspect_articulation(
     run_dir: Annotated[
@@ -1734,7 +1932,7 @@ def inspect_articulation(
         json.dumps(
             {
                 "object_id": capture.articulated_object_id,
-                "evidence_level": capture.evidence_level,
+                "capture_evidence_tier": capture.capture_evidence_tier,
                 "states": [state.state_id for state in capture.states],
                 "accepted_state_alignments": sum(
                     transform.accepted for transform in alignment.transforms

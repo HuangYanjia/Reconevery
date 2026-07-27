@@ -4,6 +4,12 @@ Candidate fitting explicitly maps observed parts to one or more candidate links.
 fits one global candidate-base Sim(3), joint-axis sign, state positions, and only
 small configured axis/pivot refinements.
 
+The typed `FittedArticulatedKinematicModel` is the canonical fitted result. Link
+assignment minimizes deterministic graph-role, joint-type, bounds, size-ratio,
+axis, motion-range, placement, and multi-state geometry costs. Near-tied assignments
+remain `ambiguous_link_assignment`. Prismatic candidate displacement is converted
+through the fitted global Sim(3) scale; revolute position remains angular.
+
 It does not permit non-uniform scale, link deformation, arbitrary per-state link
 poses, camera changes, graph changes, or joint-type changes. Prismatic links translate
 along one axis. Revolute links rotate about one fixed axis and pivot. Failure to

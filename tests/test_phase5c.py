@@ -7,12 +7,16 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 from recon2sim.articulation import (
+    capture_evidence_tier,
+    effective_evidence_level,
     estimate_analytic_joint,
     evidence_level,
     invert_sim3,
+    ordered_motion_state_ids,
     proper_positive_sim3,
     select_articulated_candidate,
     sha256_file,
@@ -32,7 +36,10 @@ from recon2sim.artifacts import (
     ArticulatedSourceFamily,
     ArticulationCaptureManifest,
     ArticulationEvidenceLevel,
+    ArticulationFittingManifest,
+    ArticulationPartPromptManifest,
     ArticulationStateEvaluation,
+    ArticulationStateRecord,
     ArticulationStateTransform,
     MeasuredPartMotionArtifact,
     Phase5CConsistencyReport,
@@ -78,6 +85,11 @@ def _state_evaluation(candidate_id: str, iou: float) -> ArticulatedCandidateEval
     state = ArticulationStateEvaluation(
         state_id="state_heldout",
         heldout=True,
+        requested_heldout_view_count=2,
+        usable_heldout_view_count=2,
+        rendered_heldout_view_count=2,
+        views_with_target_masks=2,
+        views_with_valid_depth=2,
         base_mask_iou=iou,
         movable_part_mask_iou=iou,
         whole_object_mask_iou=iou,
@@ -100,6 +112,9 @@ def _state_evaluation(candidate_id: str, iou: float) -> ArticulatedCandidateEval
         passed_hard_gates=True,
         failed_gates=[],
         heldout_state_validation_used=True,
+        capture_state_count=3,
+        accepted_alignment_state_ids=["closed", "half", "open"],
+        selected_candidate_validation_level="multi_state_heldout_validated",
         link_assignment_confidence=0.9,
         runtime_seconds=0,
     )
@@ -108,9 +123,233 @@ def _state_evaluation(candidate_id: str, iou: float) -> ArticulatedCandidateEval
 def test_articulation_evidence_levels_are_not_overstated() -> None:
     assert evidence_level(1) is ArticulationEvidenceLevel.SINGLE_STATE_PRIOR_ONLY
     assert evidence_level(2) is ArticulationEvidenceLevel.TWO_STATE_MOTION_SUPPORTED
-    assert evidence_level(3) is ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED
+    assert evidence_level(3) is ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_AVAILABLE
+    assert capture_evidence_tier(3) is ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_AVAILABLE
+    assert (
+        effective_evidence_level(
+            3,
+            valid_measured_motion=True,
+            heldout_evaluation_ran=True,
+            heldout_candidate_passed=True,
+        )
+        is ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED
+    )
     with pytest.raises(ValueError, match="at least one"):
         evidence_level(0)
+
+
+def test_stable_part_ids_are_separate_from_prompts_and_unique() -> None:
+    manifest = ArticulationPartPromptManifest.model_validate(
+        {
+            "schema_version": "0.2.0",
+            "objects": [
+                {
+                    "articulated_object_id": "cabinet_0001",
+                    "semantic_label": "cabinet",
+                    "base": {
+                        "part_id": "cabinet_body",
+                        "prompt_id": "cabinet body",
+                        "label": "cabinet body",
+                    },
+                    "movable_parts": [
+                        {
+                            "part_id": "drawer",
+                            "prompt_id": "drawer prompt",
+                            "label": "drawer",
+                            "expected_joint_hint": "prismatic",
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    assert manifest.objects[0].base.part_id == "cabinet_body"
+    assert manifest.objects[0].base.prompt_id == "cabinet body"
+    with pytest.raises(ValueError):
+        ArticulationPartPromptManifest.model_validate(
+            {
+                "schema_version": "0.2.0",
+                "objects": [
+                    {
+                        "articulated_object_id": "cabinet_0001",
+                        "semantic_label": "cabinet",
+                        "base": {
+                            "part_id": "drawer",
+                            "prompt_id": "cabinet",
+                            "label": "cabinet",
+                        },
+                        "movable_parts": [
+                            {
+                                "part_id": "drawer",
+                                "prompt_id": "drawer",
+                                "label": "drawer",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+
+
+def test_state_track_mapping_rejects_duplicate_track_identity() -> None:
+    with pytest.raises(ValueError, match="multiple stable parts"):
+        ArticulationStateRecord.model_validate(
+            {
+                "state_id": "closed",
+                "run_dir": "/tmp/closed",
+                "semantic_state_label": "closed",
+                "part_track_ids": {
+                    "cabinet_body": "same_track",
+                    "drawer": "same_track",
+                },
+                "ingest_manifest_sha256": "0" * 64,
+                "frame_sequence_digest": "0" * 64,
+                "camera_reconstruction_sha256": "0" * 64,
+                "segmentation_tracking_sha256": "0" * 64,
+                "dense_depth_manifest_sha256": "0" * 64,
+                "measured_geometry_sha256": "0" * 64,
+                "phase5a_consistency_passed": True,
+                "part_mask_hashes": {},
+                "measured_part_cloud_hashes": {},
+                "registered_frame_ids": [],
+                "camera_evidence_path": "camera/reconstruction.json",
+                "segmentation_evidence_path": "observations/object_tracks.json",
+                "undistortion_evidence_path": ("reconstruction/dense/undistortion_manifest.json"),
+                "depth_evidence_path": "reconstruction/dense/depth_manifest.json",
+                "dense_map_hashes": {},
+            }
+        )
+
+
+def test_declared_reference_state_is_first_even_when_manifest_order_differs() -> None:
+    assert ordered_motion_state_ids(
+        "closed",
+        ["half", "closed", "open"],
+        {"closed", "half", "open"},
+    ) == ["closed", "half", "open"]
+    with pytest.raises(ValueError, match="reference state was not accepted"):
+        ordered_motion_state_ids("closed", ["half", "closed"], {"half"})
+
+
+def test_part_diagonal_normalization_and_prismatic_q_scaling() -> None:
+    kinematics = _evaluation_worker_module("articulation_evaluation_worker.kinematics")
+    assert kinematics.normalized_residual(0.2, 4.0) == pytest.approx(0.05)
+    assert kinematics.prismatic_candidate_q_scale(2.0, 1) == pytest.approx(0.5)
+    assert kinematics.prismatic_candidate_q_scale(2.0, -1) == pytest.approx(-0.5)
+    with pytest.raises(ValueError, match="positive"):
+        kinematics.prismatic_candidate_q_scale(0.0, 1)
+
+
+def test_capture_template_and_real_preflight_use_state_local_tracks(
+    tmp_path: Path,
+) -> None:
+    cli = CliRunner()
+    template = cli.invoke(
+        app,
+        [
+            "articulation",
+            "capture-template",
+            "--object-id",
+            "cabinet_0001",
+            "--states",
+            "closed,half_open,open",
+        ],
+    )
+    assert template.exit_code == 0
+    template_payload = yaml.safe_load(template.stdout)
+    assert template_payload["schema_version"] == "0.2.0"
+    assert len(template_payload["states"]) == 3
+
+    states = []
+    for index, label in enumerate(("closed", "half_open", "open")):
+        run_dir = tmp_path / label
+        (run_dir / "validation").mkdir(parents=True)
+        (run_dir / "camera").mkdir()
+        (run_dir / "observations/masks").mkdir(parents=True)
+        (run_dir / "reconstruction/dense/maps").mkdir(parents=True)
+        (run_dir / "reconstruction/measured_objects/objects").mkdir(parents=True)
+        (run_dir / "validation/phase5a_measured_geometry.json").write_text(
+            json.dumps({"passed": True})
+        )
+        (run_dir / "camera/reconstruction.json").write_text(
+            json.dumps({"registered_frame_ids": ["frame_000", "frame_001"]})
+        )
+        track_ids = {
+            "cabinet_body": f"cabinet_body_{index:04d}",
+            "drawer": f"drawer_{index:04d}",
+        }
+        tracks = []
+        hypotheses = []
+        for track_id in track_ids.values():
+            observations = []
+            for frame_id in ("frame_000", "frame_001"):
+                mask = run_dir / f"observations/masks/{track_id}_{frame_id}.png"
+                mask.write_bytes(b"mask")
+                observations.append(
+                    {
+                        "frame_id": frame_id,
+                        "mask_path": mask.relative_to(run_dir).as_posix(),
+                    }
+                )
+            tracks.append({"object_id": track_id, "observations": observations})
+            point_path = run_dir / f"reconstruction/measured_objects/objects/{track_id}.ply"
+            point_path.write_text("ply\n", encoding="ascii")
+            hypotheses.append(
+                {
+                    "object_id": track_id,
+                    "point_cloud": {"relative_path": point_path.relative_to(run_dir).as_posix()},
+                    "supporting_frame_ids": ["frame_000", "frame_001"],
+                }
+            )
+        (run_dir / "observations/object_tracks.json").write_text(json.dumps({"tracks": tracks}))
+        depth_records = []
+        for frame_id in ("frame_000", "frame_001"):
+            depth = run_dir / f"reconstruction/dense/maps/{frame_id}.bin"
+            depth.write_bytes(b"depth")
+            depth_records.append(
+                {
+                    "frame_id": frame_id,
+                    "depth_path": depth.relative_to(run_dir).as_posix(),
+                }
+            )
+        (run_dir / "reconstruction/dense/depth_manifest.json").write_text(
+            json.dumps({"records": depth_records})
+        )
+        (run_dir / "reconstruction/measured_objects/geometry_manifest.json").write_text(
+            json.dumps({"hypotheses": hypotheses})
+        )
+        states.append(
+            {
+                "state_id": f"state_{index:03d}_{label}",
+                "run_dir": str(run_dir),
+                "semantic_state_label": label,
+                "part_track_ids": track_ids,
+            }
+        )
+    capture_path = tmp_path / "capture.yaml"
+    capture_path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "0.2.0",
+                "articulated_object_id": "cabinet_0001",
+                "reference_state_id": "state_000_closed",
+                "states": states,
+            }
+        )
+    )
+    result = cli.invoke(
+        app,
+        [
+            "articulation",
+            "preflight-capture",
+            "--capture-manifest",
+            str(capture_path),
+            "--part-manifest",
+            str(ROOT / "configs/articulation_parts/cabinet_drawer.yaml"),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "capture preflight passed: 3 states" in result.output
 
 
 def test_articulation_split_is_disjoint_and_heldout_is_last_state() -> None:
@@ -289,7 +528,7 @@ def test_heldout_joint_position_fits_only_q(tmp_path: Path) -> None:
     measured_path = tmp_path / "measured.ply"
     write_points(candidate_path, candidate_points)
     write_points(measured_path, measured_points)
-    position = evaluator._heldout_joint_position(
+    position, residual = evaluator._heldout_joint_position(
         input_root=tmp_path,
         link={"visual_asset_paths": ["candidate.ply"]},
         joint={
@@ -301,12 +540,19 @@ def test_heldout_joint_position_fits_only_q(tmp_path: Path) -> None:
             "candidate_limit_upper": 1.0,
             "limit_source": "candidate_prior",
         },
+        fitted_joint={
+            "fitted_axis": [1.0, 0.0, 0.0],
+            "fitted_pivot": None,
+            "fitting_state_q": {"state_000": 0.0, "state_001": 0.5},
+        },
         measured_joint=None,
         measured_part={"measured_point_cloud_path": "measured.ply"},
         base_matrix=np.eye(4),
         reference_from_state=np.eye(4),
     )
     assert position == pytest.approx(0.7, abs=2e-3)
+    assert residual is not None
+    assert residual < 2e-3
 
 
 def test_improper_or_singular_state_transform_is_rejected() -> None:
@@ -598,7 +844,10 @@ def test_fake_phase5c_pipeline_resume_and_cli(tmp_path: Path) -> None:
     capture = ArticulationCaptureManifest.model_validate_json(
         (run_dir / "reconstruction/articulation/capture_manifest.json").read_text()
     )
-    assert capture.evidence_level is ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED
+    assert capture.capture_evidence_tier is ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_AVAILABLE
+    assert capture.capture_state_count == 3
+    assert len({state.part_track_ids["cabinet_body"] for state in capture.states}) == 3
+    assert all(set(state.part_track_ids) == {"cabinet_body", "drawer"} for state in capture.states)
     candidates = ArticulatedCandidateManifest.model_validate_json(
         (run_dir / "reconstruction/articulation/candidate_manifest.json").read_text()
     )
@@ -613,10 +862,35 @@ def test_fake_phase5c_pipeline_resume_and_cli(tmp_path: Path) -> None:
         for link in candidate.links:
             for path in link.visual_asset_paths:
                 assert (run_dir / path).is_file()
+        if candidate.source_family is ArticulatedSourceFamily.PARTICULATE:
+            assert candidate.working_frame_hypothesis == "+Z"
+            assert candidate.working_frame_hypotheses_evaluated == ["+Z"]
+            assert candidate.working_frame_selection_evidence
     evaluation = ArticulatedEvaluationManifest.model_validate_json(
         (run_dir / "reconstruction/articulation/evaluation_manifest.json").read_text()
     )
     assert evaluation.candidate_structures_frozen_before_heldout
+    fitting = ArticulationFittingManifest.model_validate_json(
+        (run_dir / "reconstruction/articulation/fitting_manifest.json").read_text()
+    )
+    fitting_by_id = {item.candidate_id: item for item in fitting.fittings}
+    assert any(
+        item.passed_hard_gates
+        and item.selected_candidate_validation_level
+        is ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED
+        and {
+            "state_000",
+            "state_001",
+            "state_002",
+        }
+        == {
+            *fitting_by_id[item.candidate_id].fitted_model.generation_state_ids,
+            *fitting_by_id[item.candidate_id].fitted_model.fitting_state_ids,
+            *(state.state_id for state in item.state_evaluations),
+        }
+        for item in evaluation.evaluations
+        if fitting_by_id[item.candidate_id].fitted_model is not None
+    )
     selection = ArticulatedCandidateSelection.model_validate_json(
         (run_dir / "reconstruction/articulation/selection.json").read_text()
     )
@@ -625,13 +899,23 @@ def test_fake_phase5c_pipeline_resume_and_cli(tmp_path: Path) -> None:
         (run_dir / "validation/phase5c_articulated_reconstruction.json").read_text()
     )
     assert report.passed
-    assert len(report.checks) >= 28
+    assert len(report.checks) >= 40
     scene = SceneIR.model_validate_json((run_dir / "scene_ir/phase5c_scene.json").read_text())
     assert scene.collision_assets == []
     assert all(not item.sim_ready for item in scene.objects)
     assert (
         run_dir / "reconstruction/articulation/selected/cabinet_0001/preview_only.urdf"
     ).is_file()
+    bundle = json.loads(
+        (
+            run_dir / "reconstruction/articulation/selected/cabinet_0001/kinematic_bundle.json"
+        ).read_text()
+    )
+    assert bundle["fitted_kinematic_model"]["fitted_joints"]
+    assert bundle["identity_hashes"]["fitted_model"]
+    scene_object = next(item for item in scene.objects if item.object_id == "cabinet_0001")
+    assert scene_object.articulation is not None
+    assert scene_object.articulation.fitting_artifact_sha256
     resumed = runner.run(resume=True)
     assert all(stage["last_execution"] == "cache_hit" for stage in resumed["stages"].values())
     cli = CliRunner()
@@ -668,7 +952,9 @@ def test_rejected_state_alignment_cannot_enter_motion_or_heldout(
     motion = MeasuredPartMotionArtifact.model_validate_json(
         (run_dir / "reconstruction/articulation/measured_motion.json").read_text()
     )
-    assert motion.evidence_level is ArticulationEvidenceLevel.SINGLE_STATE_PRIOR_ONLY
+    assert (
+        motion.effective_motion_evidence_level is ArticulationEvidenceLevel.SINGLE_STATE_PRIOR_ONLY
+    )
     assert all(
         {state.state_id for state in joint.states} == {"state_000"}
         for joint in motion.joint_hypotheses
@@ -680,6 +966,46 @@ def test_rejected_state_alignment_cannot_enter_motion_or_heldout(
         ).read_text()
     )
     assert evaluation_request["heldout_state_ids"] == []
+    selection = ArticulatedCandidateSelection.model_validate_json(
+        (run_dir / "reconstruction/articulation/selection.json").read_text()
+    )
+    assert selection.objects[0].selected_candidate_id is None
+
+
+@pytest.mark.parametrize(
+    ("fake_mode", "expected_gate"),
+    [
+        ("missing_heldout_views", "minimum_usable_heldout_views"),
+        ("no_target_mask", "target_part_mask_unavailable"),
+    ],
+)
+def test_missing_heldout_render_evidence_fails_closed(
+    tmp_path: Path,
+    fake_mode: str,
+    expected_gate: str,
+) -> None:
+    config = load_config(CONFIG)
+    stage = config.stages["articulation_evaluation"]
+    adapter = stage.adapter.model_copy(
+        update={"config": {**stage.adapter.config, "fake_mode": fake_mode}}
+    )
+    config = config.model_copy(
+        update={
+            "stages": {
+                **config.stages,
+                "articulation_evaluation": stage.model_copy(update={"adapter": adapter}),
+            }
+        }
+    )
+    run_dir = tmp_path / fake_mode
+    result = PipelineRunner(config, INPUT, run_dir).run()
+    assert all(item["status"] == "succeeded" for item in result["stages"].values())
+    evaluation = ArticulatedEvaluationManifest.model_validate_json(
+        (run_dir / "reconstruction/articulation/evaluation_manifest.json").read_text()
+    )
+    assert evaluation.evaluations
+    assert all(not item.passed_hard_gates for item in evaluation.evaluations)
+    assert all(expected_gate in item.failed_gates for item in evaluation.evaluations)
     selection = ArticulatedCandidateSelection.model_validate_json(
         (run_dir / "reconstruction/articulation/selection.json").read_text()
     )

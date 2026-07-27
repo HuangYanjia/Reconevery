@@ -3634,6 +3634,7 @@ class ArticulatedEligibilityStatus(StrEnum):
 class ArticulationEvidenceLevel(StrEnum):
     SINGLE_STATE_PRIOR_ONLY = "single_state_prior_only"
     TWO_STATE_MOTION_SUPPORTED = "two_state_motion_supported"
+    MULTI_STATE_HELDOUT_AVAILABLE = "multi_state_heldout_available"
     MULTI_STATE_HELDOUT_VALIDATED = "multi_state_heldout_validated"
 
 
@@ -3698,6 +3699,7 @@ class ArticulatedEligibilityArtifact(StrictModel):
 
 
 class ArticulationBasePrompt(StrictModel):
+    part_id: Annotated[str, Field(min_length=1)]
     prompt_id: Annotated[str, Field(min_length=1)]
     label: Annotated[str, Field(min_length=1)]
 
@@ -3721,14 +3723,14 @@ class ArticulationObjectPrompt(StrictModel):
 
     @model_validator(mode="after")
     def stable_part_ids(self) -> Self:
-        identifiers = [part.part_id for part in self.movable_parts]
+        identifiers = [self.base.part_id, *(part.part_id for part in self.movable_parts)]
         if len(identifiers) != len(set(identifiers)):
-            raise ValueError("articulation movable part IDs must be unique")
+            raise ValueError("articulation stable part IDs must be unique")
         return self
 
 
 class ArticulationPartPromptManifest(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.2.0"] = "0.2.0"
     objects: Annotated[list[ArticulationObjectPrompt], Field(min_length=1)]
 
     @model_validator(mode="after")
@@ -3743,6 +3745,10 @@ class ArticulationStateRecord(StrictModel):
     state_id: Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")]
     run_dir: Annotated[str, Field(min_length=1)]
     semantic_state_label: Annotated[str, Field(min_length=1)]
+    part_track_ids: dict[
+        Annotated[str, Field(min_length=1)],
+        Annotated[str, Field(min_length=1)],
+    ]
     phase5a_consistency_passed: bool
     ingest_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -3759,6 +3765,12 @@ class ArticulationStateRecord(StrictModel):
     depth_evidence_path: str
     dense_map_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
 
+    @model_validator(mode="after")
+    def unique_part_track_mapping(self) -> Self:
+        if len(self.part_track_ids) != len(set(self.part_track_ids.values())):
+            raise ValueError("one state track cannot be assigned to multiple stable parts")
+        return self
+
     @field_validator(
         "camera_evidence_path",
         "segmentation_evidence_path",
@@ -3771,12 +3783,13 @@ class ArticulationStateRecord(StrictModel):
 
 
 class ArticulationCaptureManifest(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.2.0"] = "0.2.0"
     articulated_object_id: Annotated[str, Field(min_length=1)]
     reference_state_id: Annotated[str, Field(min_length=1)]
     states: Annotated[list[ArticulationStateRecord], Field(min_length=1)]
     prompt_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-    evidence_level: ArticulationEvidenceLevel
+    capture_state_count: int = Field(ge=1)
+    capture_evidence_tier: ArticulationEvidenceLevel
 
     @model_validator(mode="after")
     def valid_capture_states(self) -> Self:
@@ -3787,17 +3800,19 @@ class ArticulationCaptureManifest(StrictModel):
             raise ValueError("reference articulation state is not present")
         if not all(state.phase5a_consistency_passed for state in self.states):
             raise ValueError("every articulation state must pass Phase 5A")
-        expected = (
+        expected_tier = (
             ArticulationEvidenceLevel.SINGLE_STATE_PRIOR_ONLY
             if len(self.states) == 1
             else (
                 ArticulationEvidenceLevel.TWO_STATE_MOTION_SUPPORTED
                 if len(self.states) == 2
-                else ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED
+                else ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_AVAILABLE
             )
         )
-        if self.evidence_level is not expected:
-            raise ValueError("articulation evidence level does not match state count")
+        if self.capture_state_count != len(self.states):
+            raise ValueError("capture state count does not match state records")
+        if self.capture_evidence_tier is not expected_tier:
+            raise ValueError("capture evidence tier does not match state count")
         return self
 
 
@@ -3915,10 +3930,13 @@ class ArticulationStateTransform(StrictModel):
 
 
 class ArticulationStateAlignmentArtifact(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.2.0"] = "0.2.0"
     capture_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     reference_state_id: Annotated[str, Field(min_length=1)]
     transforms: Annotated[list[ArticulationStateTransform], Field(min_length=1)]
+    capture_state_count: int = Field(ge=1)
+    accepted_alignment_state_ids: list[str]
+    aligned_state_count: int = Field(ge=0)
     static_evidence_only: Literal[True] = True
     source_states_unchanged: Literal[True] = True
     runtime_seconds: float = Field(ge=0)
@@ -3930,6 +3948,49 @@ class ArticulationStateAlignmentArtifact(StrictModel):
         identifiers = [item.state_id for item in self.transforms]
         if len(identifiers) != len(set(identifiers)):
             raise ValueError("state alignment transforms must be unique")
+        accepted = [item.state_id for item in self.transforms if item.accepted]
+        if self.capture_state_count != len(self.transforms):
+            raise ValueError("alignment capture-state count does not match transforms")
+        if self.accepted_alignment_state_ids != accepted:
+            raise ValueError("accepted alignment state IDs do not match transforms")
+        if self.aligned_state_count != len(accepted):
+            raise ValueError("aligned state count does not match accepted transforms")
+        reference = next(
+            (item for item in self.transforms if item.state_id == self.reference_state_id),
+            None,
+        )
+        if reference is None or not reference.accepted:
+            raise ValueError("declared reference state must have an accepted identity transform")
+        identity = (
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        )
+        if (
+            max(
+                abs(actual - expected)
+                for actual, expected in zip(
+                    reference.matrix_reference_from_state,
+                    identity,
+                    strict=True,
+                )
+            )
+            > 1e-6
+        ):
+            raise ValueError("declared reference state transform must be identity")
         return self
 
 
@@ -3937,6 +3998,8 @@ class ArticulatedPartStateGeometry(StrictModel):
     state_id: Annotated[str, Field(min_length=1)]
     articulated_object_id: Annotated[str, Field(min_length=1)]
     part_id: Annotated[str, Field(min_length=1)]
+    source_track_id: Annotated[str, Field(min_length=1)]
+    prompt_id: Annotated[str, Field(min_length=1)]
     semantic_label: Annotated[str, Field(min_length=1)]
     measured_point_cloud_path: str
     measured_point_cloud_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -3993,6 +4056,10 @@ class MeasuredJointHypothesis(StrictModel):
     orthogonal_residual: float | None = Field(default=None, ge=0)
     rotation_leakage_degrees: float | None = Field(default=None, ge=0)
     axis_consistency_degrees: float | None = Field(default=None, ge=0)
+    normalization_part_diagonal: float | None = Field(default=None, gt=0)
+    fixed_translation_residual_arbitrary_units: float | None = Field(default=None, ge=0)
+    fixed_translation_residual_part_diagonals: float | None = Field(default=None, ge=0)
+    pivot_residual_arbitrary_units: float | None = Field(default=None, ge=0)
     pivot_residual_part_diagonals: float | None = Field(default=None, ge=0)
     confidence: float = Field(ge=0, le=1)
     warnings: list[str] = Field(default_factory=list)
@@ -4030,11 +4097,14 @@ class MeasuredJointHypothesis(StrictModel):
 
 
 class MeasuredPartMotionArtifact(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.2.0"] = "0.2.0"
     capture_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     state_alignment_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     articulated_object_id: Annotated[str, Field(min_length=1)]
-    evidence_level: ArticulationEvidenceLevel
+    reference_state_id: Annotated[str, Field(min_length=1)]
+    capture_state_count: int = Field(ge=1)
+    accepted_alignment_state_ids: list[str]
+    effective_motion_evidence_level: ArticulationEvidenceLevel
     part_geometries: list[ArticulatedPartStateGeometry]
     joint_hypotheses: list[MeasuredJointHypothesis]
     base_link_fixed: bool
@@ -4194,7 +4264,9 @@ class ParticulateCandidateRequest(StrictModel):
     checkpoint_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
     runtime_model_revisions: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]]
     runtime_model_hashes: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
-    working_frame_hypotheses: list[str]
+    working_frame_hypothesis: Literal["+X", "-X", "+Y", "-Y", "+Z", "-Z"]
+    hypotheses_evaluated: list[Literal["+X", "-X", "+Y", "-Y", "+Z", "-Z"]]
+    hypothesis_selection_evidence: Annotated[str, Field(min_length=1)]
     generation_configuration: dict[str, object]
     output_directory: str
     seed: int
@@ -4347,6 +4419,9 @@ class ArticulatedCandidate(StrictModel):
         ]
         | None
     ) = None
+    working_frame_hypothesis: str | None = None
+    working_frame_hypotheses_evaluated: list[str] = Field(default_factory=list)
+    working_frame_selection_evidence: str | None = None
     license_record: ArticulatedLicenseRecord
     production_selectable: bool
     provenance: ProvenanceRecord
@@ -4417,6 +4492,73 @@ class ArticulatedLinkAssignmentManifest(StrictModel):
     assignments: list[ArticulatedLinkAssignment]
 
 
+class FittedArticulatedJoint(StrictModel):
+    candidate_joint_id: Annotated[str, Field(min_length=1)]
+    measured_joint_id: Annotated[str, Field(min_length=1)]
+    parent_observed_part_id: Annotated[str, Field(min_length=1)]
+    child_observed_part_id: Annotated[str, Field(min_length=1)]
+    joint_type: ArticulatedJointType
+    fitted_axis: tuple[float, float, float]
+    fitted_pivot: tuple[float, float, float] | None = None
+    axis_sign: Literal[-1, 1]
+    q_scale: float
+    q_offset: float
+    fitting_state_q: dict[str, float]
+    axis_refinement_degrees: float = Field(ge=0)
+    pivot_refinement_arbitrary_units: float | None = Field(default=None, ge=0)
+    pivot_refinement_part_diagonals: float | None = Field(default=None, ge=0)
+    fitting_residual_arbitrary_units: float = Field(ge=0)
+    fitting_residual_part_diagonals: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def valid_fitted_joint(self) -> Self:
+        norm = math.sqrt(sum(value * value for value in self.fitted_axis))
+        if abs(norm - 1.0) > 1e-5:
+            raise ValueError("fitted articulation axis must be normalized")
+        if (
+            self.joint_type
+            in {
+                ArticulatedJointType.REVOLUTE,
+                ArticulatedJointType.CONTINUOUS_CANDIDATE,
+            }
+            and self.fitted_pivot is None
+        ):
+            raise ValueError("fitted revolute joint requires a pivot")
+        return self
+
+
+class FittedArticulatedKinematicModel(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    candidate_id: Annotated[str, Field(min_length=1)]
+    matrix_reference_world_from_candidate_base: tuple[
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+        float,
+    ]
+    scale: float = Field(gt=0)
+    link_assignments: list[ArticulatedLinkAssignmentRecord]
+    fitted_joints: list[FittedArticulatedJoint]
+    generation_state_ids: list[str]
+    fitting_state_ids: list[str]
+    heldout_state_ids: list[str]
+    fit_residual_arbitrary_units: float = Field(ge=0)
+    fit_residual_scene_diagonals: float = Field(ge=0)
+    ambiguity_reasons: list[str] = Field(default_factory=list)
+
+
 class ArticulationFittingArtifact(StrictModel):
     candidate_id: Annotated[str, Field(min_length=1)]
     status: Literal["fitted", "ambiguous", "failed"]
@@ -4448,6 +4590,8 @@ class ArticulationFittingArtifact(StrictModel):
     joint_axis_signs: dict[str, Literal[-1, 1]]
     fitting_median_residual: float | None = Field(default=None, ge=0)
     fitting_part_iou: float | None = Field(default=None, ge=0, le=1)
+    fitted_model: FittedArticulatedKinematicModel | None = None
+    fitted_model_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     structure_frozen_before_heldout: Literal[True] = True
     failure_reason: str | None = None
 
@@ -4459,6 +4603,12 @@ class ArticulationFittingArtifact(StrictModel):
             raise ValueError("failed articulation fitting cannot have a base transform")
         if self.status != "failed" and self.matrix_reference_world_from_candidate_base is None:
             raise ValueError("successful articulation fitting requires a base transform")
+        if self.status == "failed" and self.fitted_model is not None:
+            raise ValueError("failed articulation fitting cannot contain a fitted model")
+        if self.status != "failed" and (
+            self.fitted_model is None or self.fitted_model_sha256 is None
+        ):
+            raise ValueError("successful articulation fitting requires a typed fitted model")
         return self
 
 
@@ -4476,15 +4626,29 @@ class ArticulationFittingManifest(StrictModel):
 class ArticulationStateEvaluation(StrictModel):
     state_id: Annotated[str, Field(min_length=1)]
     heldout: bool
-    base_mask_iou: float = Field(ge=0, le=1)
-    movable_part_mask_iou: float = Field(ge=0, le=1)
-    whole_object_mask_iou: float = Field(ge=0, le=1)
-    per_link_depth_residual: dict[str, float]
-    depth_inlier_fraction: float = Field(ge=0, le=1)
-    negative_space_violation_ratio: float = Field(ge=0, le=1)
-    front_of_scene_violation_ratio: float = Field(ge=0, le=1)
-    base_motion_scene_diagonals: float = Field(ge=0)
-    joint_constraint_residual: float = Field(ge=0)
+    requested_heldout_view_count: int = Field(ge=0)
+    usable_heldout_view_count: int = Field(ge=0)
+    rendered_heldout_view_count: int = Field(ge=0)
+    views_with_target_masks: int = Field(ge=0)
+    views_with_valid_depth: int = Field(ge=0)
+    base_mask_iou: float | None = Field(default=None, ge=0, le=1)
+    movable_part_mask_iou: float | None = Field(default=None, ge=0, le=1)
+    whole_object_mask_iou: float | None = Field(default=None, ge=0, le=1)
+    per_link_depth_residual: dict[str, float | None]
+    base_depth_residual: float | None = Field(default=None, ge=0)
+    depth_inlier_fraction: float | None = Field(default=None, ge=0, le=1)
+    negative_space_violation_ratio: float | None = Field(default=None, ge=0, le=1)
+    front_of_scene_violation_ratio: float | None = Field(default=None, ge=0, le=1)
+    scene_diagonal_arbitrary_units: float | None = Field(default=None, gt=0)
+    base_point_residual_arbitrary_units: float | None = Field(default=None, ge=0)
+    base_point_residual_scene_diagonals: float | None = Field(default=None, ge=0)
+    base_motion_arbitrary_units: float | None = Field(default=None, ge=0)
+    base_motion_scene_diagonals: float | None = Field(default=None, ge=0)
+    movable_point_residual_arbitrary_units: float | None = Field(default=None, ge=0)
+    joint_constraint_residual: float | None = Field(default=None, ge=0)
+    prismatic_orthogonal_residual: float | None = Field(default=None, ge=0)
+    prismatic_rotation_leakage_degrees: float | None = Field(default=None, ge=0)
+    joint_q_residual: float | None = Field(default=None, ge=0)
     axis_error_degrees: float | None = Field(default=None, ge=0, le=180)
     pivot_residual_part_diagonals: float | None = Field(default=None, ge=0)
     inferred_joint_positions: dict[str, float]
@@ -4509,6 +4673,9 @@ class ArticulatedCandidateEvaluation(StrictModel):
     passed_hard_gates: bool
     failed_gates: list[str]
     heldout_state_validation_used: bool
+    capture_state_count: int = Field(ge=1)
+    accepted_alignment_state_ids: list[str]
+    selected_candidate_validation_level: ArticulationEvidenceLevel
     link_assignment_confidence: float = Field(ge=0, le=1)
     runtime_seconds: float = Field(ge=0)
     warnings: list[str] = Field(default_factory=list)
@@ -4517,6 +4684,32 @@ class ArticulatedCandidateEvaluation(StrictModel):
     def evaluation_gate_status(self) -> Self:
         if self.passed_hard_gates == bool(self.failed_gates):
             raise ValueError("articulated evaluation gate status is inconsistent")
+        heldout = [item for item in self.state_evaluations if item.heldout]
+        if self.heldout_state_validation_used != bool(heldout):
+            raise ValueError("held-out validation flag does not match state evaluations")
+        if self.passed_hard_gates and (
+            not heldout
+            or any(
+                item.usable_heldout_view_count <= 0
+                or item.rendered_heldout_view_count <= 0
+                or item.views_with_target_masks <= 0
+                or item.views_with_valid_depth <= 0
+                or item.base_mask_iou is None
+                or item.movable_part_mask_iou is None
+                or item.whole_object_mask_iou is None
+                or item.depth_inlier_fraction is None
+                or item.base_motion_scene_diagonals is None
+                or item.joint_constraint_residual is None
+                for item in heldout
+            )
+        ):
+            raise ValueError("passing articulation evaluation lacks required held-out evidence")
+        if (
+            self.selected_candidate_validation_level
+            is ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED
+            and not self.passed_hard_gates
+        ):
+            raise ValueError("only a passing candidate may be held-out validated")
         return self
 
 
@@ -4533,10 +4726,19 @@ class ArticulatedEvaluationManifest(StrictModel):
 class ArticulatedObjectSelection(StrictModel):
     articulated_object_id: Annotated[str, Field(min_length=1)]
     status: ArticulatedCandidateStatus
-    evidence_level: ArticulationEvidenceLevel
+    capture_state_count: int = Field(ge=1)
+    capture_evidence_tier: ArticulationEvidenceLevel
+    accepted_alignment_state_ids: list[str]
+    effective_motion_evidence_level: ArticulationEvidenceLevel
+    selected_candidate_validation_level: ArticulationEvidenceLevel
     best_research_articulated_candidate: str | None = None
     best_production_eligible_articulated_candidate: str | None = None
     selected_candidate_id: str | None = None
+    candidate_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    fitted_model_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    link_assignment_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    evaluation_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    selected_candidate_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     selection_rationale: list[str]
     measured_geometry_retained: Literal[True] = True
     geometry_status: Literal["articulated_visual_candidate", "partial_measured"] | None = None
@@ -4547,6 +4749,30 @@ class ArticulatedObjectSelection(StrictModel):
     sim_ready: Literal[False] = False
     metric_scale_known: Literal[False] = False
     canonical_gravity_alignment_known: Literal[False] = False
+
+    @model_validator(mode="after")
+    def selected_identity_is_complete(self) -> Self:
+        identity_hashes = (
+            self.fitted_model_sha256,
+            self.link_assignment_sha256,
+            self.evaluation_sha256,
+            self.selected_candidate_sha256,
+        )
+        if self.selected_candidate_id is None and any(
+            value is not None for value in identity_hashes
+        ):
+            raise ValueError("unselected articulation cannot contain selected artifact hashes")
+        if self.selected_candidate_id is not None and any(
+            value is None for value in identity_hashes
+        ):
+            raise ValueError("selected articulation requires all fitted/evaluation identity hashes")
+        if (
+            self.completion_status == "selected_by_multi_state_validation"
+            and self.selected_candidate_validation_level
+            is not ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED
+        ):
+            raise ValueError("visual completion requires multi-state held-out validation")
+        return self
 
 
 class ArticulatedCandidateSelection(StrictModel):
@@ -4559,7 +4785,11 @@ class ArticulatedCandidateSelection(StrictModel):
 
 class ArticulationDiagnostics(StrictModel):
     schema_version: Literal["0.1.0"] = "0.1.0"
-    state_count: int = Field(ge=0)
+    capture_state_count: int = Field(ge=0)
+    capture_evidence_tier: ArticulationEvidenceLevel
+    accepted_alignment_state_ids: list[str]
+    effective_motion_evidence_level: ArticulationEvidenceLevel
+    selected_candidate_validation_level: ArticulationEvidenceLevel
     aligned_state_count: int = Field(ge=0)
     measured_part_count: int = Field(ge=0)
     joint_hypothesis_count: int = Field(ge=0)
@@ -4591,6 +4821,11 @@ class Phase5CConsistencyReport(StrictModel):
     multi_state_evidence_available: bool
     measured_joint_motion_available: bool
     heldout_state_validation_used: bool
+    capture_state_count: int = Field(ge=1)
+    capture_evidence_tier: ArticulationEvidenceLevel
+    accepted_alignment_state_ids: list[str]
+    effective_motion_evidence_level: ArticulationEvidenceLevel
+    selected_candidate_validation_level: ArticulationEvidenceLevel
     physical_joint_validation_implemented: Literal[False] = False
     collision_generation_implemented: Literal[False] = False
     dynamics_identification_implemented: Literal[False] = False

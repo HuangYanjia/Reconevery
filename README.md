@@ -289,6 +289,11 @@ ArtVIP, research-only PartNet-Mobility, and official Particulate priors. Candida
 structure is frozen before held-out-state evaluation.
 
 ```bash
+uv run recon2sim articulation capture-template \
+  --object-id cabinet_0001 --states closed,half_open,open
+uv run recon2sim articulation preflight-capture \
+  --capture-manifest configs/articulation_capture.yaml \
+  --part-manifest configs/articulation_parts/cabinet_drawer.yaml
 uv run recon2sim run --input examples/tabletop \
   --config configs/phase5c_e2e_fake.yaml --run-dir runs/phase5c_fake
 uv run recon2sim articulation inspect runs/phase5c_fake

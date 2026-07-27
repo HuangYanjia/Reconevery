@@ -28,13 +28,22 @@ assignment, frozen held-out evaluation, consistency validation, preview inspecti
 and an identical all-stage cache hit. Truthful rejection of all visual priors is
 valid.
 
+Before expensive real workers, `articulation preflight-capture` must pass for the
+three Phase 5A runs and explicit stable-part/state-track mappings. Acceptance counts
+the distinct accepted generation, fitting, and actually evaluated held-out states.
+Missing held-out cameras, target masks, visible renders, dense depth, fitted-model
+hashes, or joint-type-specific metrics fail closed. Selection and Scene IR must
+reference the exact fitted model and evaluation hashes.
+
 ## Current real validation
 
 The official Particulate module smoke completed on one H100 using the pinned code
 and both pinned checkpoints. The official cabinet input produced one native
 candidate with three links and two revolute joints. The measured worker runtime was
-approximately 45.0 seconds, peak GPU memory was 61,559,799,808 bytes, peak host
-memory was 1,498,492,928 bytes, and no candidate failed.
+52.24 seconds, peak GPU memory was 61,559,799,808 bytes, peak host memory was
+1,296,474,112 bytes, and no candidate failed. The run used the explicit configured
+`+Z` Particulate working-axis prior; no alternate axis hypothesis or gravity
+alignment was claimed.
 
 This is module-level validation only. The current machine does not contain three
 independent closed/intermediate/open Phase 5A runs for one articulated object and

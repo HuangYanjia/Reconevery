@@ -132,7 +132,7 @@ class ArticulationStateAlignmentAdapter:
                 ),
                 "reference_state_id": capture.reference_state_id,
                 "state_ids": [state.state_id for state in capture.states],
-                "base_part_id": prompt.objects[0].base.prompt_id,
+                "base_part_id": prompt.objects[0].base.part_id,
                 "movable_part_ids": [
                     part.part_id for part in prompt.objects[0].movable_parts if part.include
                 ],

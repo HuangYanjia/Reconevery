@@ -128,9 +128,12 @@ completion, collision, physics, metric/gravity claims, or simulator export.
 
 Phase 5C articulation requires explicit object/part prompts and independent
 static-state runs. State alignment uses static base/environment geometry only.
+Stable part IDs are separate from semantic prompts and map explicitly to state-local
+SAM track IDs; never assume canonical SAM IDs match across independent runs.
 Generation, kinematic fitting, and held-out states are filesystem-isolated; a
 held-out state may fit only its scalar joint position after graph, link assignment,
-base transform, axis, and pivot are frozen. Single-state evidence is prior-only and
+base transform, axis, and pivot are frozen. The fitted kinematic model, not the raw
+candidate, is the selected source of truth. Single-state evidence is prior-only and
 two-state evidence is only partially validated. ArtVIP and PartNet indices are local
 and immutable. Particulate and PartField remain isolated; the current PartField
 checkpoint is research-only. Never add collision, inertial, dynamics, metric,

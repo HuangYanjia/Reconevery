@@ -211,10 +211,27 @@
   },
   "additionalProperties": false,
   "properties": {
+    "accepted_alignment_state_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Accepted Alignment State Ids",
+      "type": "array"
+    },
+    "aligned_state_count": {
+      "minimum": 0,
+      "title": "Aligned State Count",
+      "type": "integer"
+    },
     "capture_manifest_sha256": {
       "pattern": "^[0-9a-f]{64}$",
       "title": "Capture Manifest Sha256",
       "type": "string"
+    },
+    "capture_state_count": {
+      "minimum": 1,
+      "title": "Capture State Count",
+      "type": "integer"
     },
     "peak_host_memory_bytes": {
       "anyOf": [
@@ -240,8 +257,8 @@
       "type": "number"
     },
     "schema_version": {
-      "const": "0.1.0",
-      "default": "0.1.0",
+      "const": "0.2.0",
+      "default": "0.2.0",
       "title": "Schema Version",
       "type": "string"
     },
@@ -277,6 +294,9 @@
     "capture_manifest_sha256",
     "reference_state_id",
     "transforms",
+    "capture_state_count",
+    "accepted_alignment_state_ids",
+    "aligned_state_count",
     "runtime_seconds"
   ],
   "title": "ArticulationStateAlignmentArtifact",

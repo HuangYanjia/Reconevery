@@ -138,12 +138,19 @@ def _normalize_candidate(
     if sha256(source) != item["source_mesh_sha256"]:
         raise ValueError("Particulate source mesh hash mismatch")
     source_mesh = load_mesh(source)
-    hypotheses = item.get("working_frame_hypotheses")
-    if not isinstance(hypotheses, list) or not hypotheses:
-        raise ValueError("Particulate request has no working-frame hypotheses")
+    working_hypothesis = str(item["working_frame_hypothesis"])
+    hypotheses_evaluated = item.get("hypotheses_evaluated")
+    if not isinstance(hypotheses_evaluated, list) or hypotheses_evaluated != [working_hypothesis]:
+        raise ValueError(
+            "Particulate request must explicitly record the single configured "
+            "working-frame hypothesis"
+        )
     configured = item.get("generation_configuration")
     configuration = configured if isinstance(configured, dict) else {}
-    up = str(configuration.get("up_axis", hypotheses[0])).removeprefix("+")
+    configured_up = str(configuration.get("up_axis", working_hypothesis))
+    if configured_up != working_hypothesis:
+        raise ValueError("generation up_axis conflicts with the audited working-frame hint")
+    up = working_hypothesis.removeprefix("+")
     native_dir = output_dir / "candidates" / candidate_id / "native"
     native_dir.mkdir(parents=True, exist_ok=True)
     peak_gpu_memory_bytes = _official_infer(
@@ -266,6 +273,9 @@ def _normalize_candidate(
         "working_transform_particulate_to_source": [
             float(value) for value in particulate_to_source.reshape(-1)
         ],
+        "working_frame_hypothesis": working_hypothesis,
+        "working_frame_hypotheses_evaluated": hypotheses_evaluated,
+        "working_frame_selection_evidence": item["hypothesis_selection_evidence"],
         "license_record": license_record,
         "production_selectable": False,
         "provenance": {

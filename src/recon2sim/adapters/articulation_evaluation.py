@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+from pydantic import Field
+
 from recon2sim.adapters.articulation_common import (
     ArticulationWorkerConfig,
     articulation_healthcheck,
@@ -36,6 +38,7 @@ class ArticulationEvaluationConfig(ArticulationWorkerConfig):
     docker_image: str = "reconevery/articulation-evaluation:phase5c"
     minimum_valid_states: int = 3
     minimum_heldout_states: int = 1
+    minimum_usable_heldout_views: int = Field(default=1, ge=1)
     minimum_base_mask_iou: float = 0.45
     minimum_movable_part_mask_iou: float = 0.40
     minimum_whole_object_mask_iou: float = 0.45
@@ -287,6 +290,11 @@ class ArticulationEvaluationAdapter:
                 "measured_motion_path": "reconstruction/articulation/measured_motion.json",
                 "measured_motion_sha256": sha256_file(root / "measured_motion.json"),
                 "heldout_state_ids": heldout_state_ids,
+                "reference_state_id": capture.reference_state_id,
+                "capture_state_count": capture.capture_state_count,
+                "accepted_alignment_state_ids": alignment.accepted_alignment_state_ids,
+                "generation_state_ids": split.candidate_generation_states,
+                "fitting_state_ids": split.kinematic_fitting_states,
                 "heldout_views_by_state": {
                     state_id: split.heldout_views_by_state.get(state_id, [])
                     for state_id in heldout_state_ids

@@ -42,14 +42,54 @@ def stable_digest(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def evidence_level(state_count: int) -> ArticulationEvidenceLevel:
+def capture_evidence_tier(state_count: int) -> ArticulationEvidenceLevel:
     if state_count < 1:
         raise ValueError("articulation requires at least one static state")
     if state_count == 1:
         return ArticulationEvidenceLevel.SINGLE_STATE_PRIOR_ONLY
     if state_count == 2:
         return ArticulationEvidenceLevel.TWO_STATE_MOTION_SUPPORTED
-    return ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED
+    return ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_AVAILABLE
+
+
+def effective_evidence_level(
+    accepted_alignment_state_count: int,
+    *,
+    valid_measured_motion: bool,
+    heldout_evaluation_ran: bool = False,
+    heldout_candidate_passed: bool = False,
+) -> ArticulationEvidenceLevel:
+    if accepted_alignment_state_count < 2 or not valid_measured_motion:
+        return ArticulationEvidenceLevel.SINGLE_STATE_PRIOR_ONLY
+    if accepted_alignment_state_count < 3 or not heldout_evaluation_ran:
+        return ArticulationEvidenceLevel.TWO_STATE_MOTION_SUPPORTED
+    if heldout_candidate_passed:
+        return ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED
+    return ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_AVAILABLE
+
+
+def ordered_motion_state_ids(
+    reference_state_id: str,
+    state_ids: Sequence[str],
+    accepted_state_ids: set[str],
+) -> list[str]:
+    if reference_state_id not in state_ids:
+        raise ValueError("declared articulation reference state is absent")
+    if reference_state_id not in accepted_state_ids:
+        raise ValueError("declared articulation reference state was not accepted")
+    return [
+        reference_state_id,
+        *[
+            state_id
+            for state_id in state_ids
+            if state_id != reference_state_id and state_id in accepted_state_ids
+        ],
+    ]
+
+
+# Kept as a source-compatible migration alias for Phase 5C fake fixtures.
+def evidence_level(state_count: int) -> ArticulationEvidenceLevel:
+    return capture_evidence_tier(state_count)
 
 
 def split_articulation_evidence(
@@ -355,11 +395,19 @@ def select_articulated_candidate(
         (item for item in evaluations if item.passed_hard_gates),
         key=lambda item: (
             -min(
-                (state.movable_part_mask_iou for state in item.state_evaluations if state.heldout),
+                (
+                    state.movable_part_mask_iou
+                    for state in item.state_evaluations
+                    if state.heldout and state.movable_part_mask_iou is not None
+                ),
                 default=0.0,
             ),
             -min(
-                (state.depth_inlier_fraction for state in item.state_evaluations if state.heldout),
+                (
+                    state.depth_inlier_fraction
+                    for state in item.state_evaluations
+                    if state.heldout and state.depth_inlier_fraction is not None
+                ),
                 default=0.0,
             ),
             item.candidate_id,
@@ -379,9 +427,12 @@ def select_articulated_candidate(
 
 
 __all__ = [
+    "capture_evidence_tier",
+    "effective_evidence_level",
     "evidence_level",
     "estimate_analytic_joint",
     "matrix4_multiply",
+    "ordered_motion_state_ids",
     "proper_positive_sim3",
     "select_articulated_candidate",
     "sha256_file",

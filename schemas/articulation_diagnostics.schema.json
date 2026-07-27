@@ -1,6 +1,25 @@
 {
+  "$defs": {
+    "ArticulationEvidenceLevel": {
+      "enum": [
+        "single_state_prior_only",
+        "two_state_motion_supported",
+        "multi_state_heldout_available",
+        "multi_state_heldout_validated"
+      ],
+      "title": "ArticulationEvidenceLevel",
+      "type": "string"
+    }
+  },
   "additionalProperties": false,
   "properties": {
+    "accepted_alignment_state_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Accepted Alignment State Ids",
+      "type": "array"
+    },
     "aligned_state_count": {
       "minimum": 0,
       "title": "Aligned State Count",
@@ -12,6 +31,17 @@
       },
       "title": "Candidate Count By Family",
       "type": "object"
+    },
+    "capture_evidence_tier": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
+    "capture_state_count": {
+      "minimum": 0,
+      "title": "Capture State Count",
+      "type": "integer"
+    },
+    "effective_motion_evidence_level": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
     },
     "evaluated_candidate_count": {
       "minimum": 0,
@@ -70,10 +100,8 @@
       "title": "Schema Version",
       "type": "string"
     },
-    "state_count": {
-      "minimum": 0,
-      "title": "State Count",
-      "type": "integer"
+    "selected_candidate_validation_level": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
     },
     "total_runtime_seconds": {
       "minimum": 0,
@@ -89,7 +117,11 @@
     }
   },
   "required": [
-    "state_count",
+    "capture_state_count",
+    "capture_evidence_tier",
+    "accepted_alignment_state_ids",
+    "effective_motion_evidence_level",
+    "selected_candidate_validation_level",
     "aligned_state_count",
     "measured_part_count",
     "joint_hypothesis_count",

@@ -16,7 +16,7 @@ from recon2sim.adapters.base import (
     StageResult,
 )
 from recon2sim.articulation import (
-    evidence_level,
+    capture_evidence_tier,
     sha256_file,
     split_articulation_evidence,
     stable_digest,
@@ -123,7 +123,7 @@ class ArticulationCaptureAdapter:
             item for item in prompt.objects if item.articulated_object_id == object_id
         )
         part_ids = [
-            prompt_object.base.prompt_id,
+            prompt_object.base.part_id,
             *(part.part_id for part in prompt_object.movable_parts if part.include),
         ]
         specs = [
@@ -171,6 +171,18 @@ class ArticulationCaptureAdapter:
             if not isinstance(state, dict):
                 raise ValueError("capture states must be mappings")
             state_id = str(state["state_id"])
+            raw_mapping = state.get("part_track_ids")
+            if not isinstance(raw_mapping, dict):
+                raise ValueError(
+                    f"state {state_id} requires explicit part_track_ids for real capture"
+                )
+            part_track_ids = {str(key): str(value) for key, value in raw_mapping.items()}
+            if set(part_track_ids) != set(part_ids):
+                raise ValueError(
+                    f"state {state_id} part_track_ids must map exactly {sorted(part_ids)}"
+                )
+            if len(part_track_ids) != len(set(part_track_ids.values())):
+                raise ValueError(f"state {state_id} assigns one SAM track to multiple stable parts")
             run_root = Path(str(state["run_dir"])).expanduser().resolve()
             for relative_path, artifact_type in fixed_inputs:
                 specs.append(
@@ -200,11 +212,13 @@ class ArticulationCaptureAdapter:
             track_by_id = {item["object_id"]: item for item in tracks["tracks"]}
             measured_by_id = {item["object_id"]: item for item in measured["hypotheses"]}
             for part_id in part_ids:
-                hypothesis = measured_by_id.get(part_id)
-                track = track_by_id.get(part_id)
+                track_id = part_track_ids[part_id]
+                hypothesis = measured_by_id.get(track_id)
+                track = track_by_id.get(track_id)
                 if hypothesis is None or track is None or hypothesis.get("point_cloud") is None:
                     raise ValueError(
-                        f"state {state_id} has no measured geometry for configured part {part_id}"
+                        f"state {state_id} track {track_id!r} has no Phase 5A measured "
+                        f"geometry for stable part {part_id!r}"
                     )
                 point_path = str(hypothesis["point_cloud"]["relative_path"])
                 specs.append(
@@ -339,12 +353,13 @@ class ArticulationCaptureAdapter:
                     articulated_object_id="cabinet_0001",
                     semantic_label="cabinet",
                     base=ArticulationBasePrompt(
+                        part_id="cabinet_body",
                         prompt_id="cabinet_body",
                         label="cabinet body",
                     ),
                     movable_parts=[
                         ArticulationMovablePartPrompt(
-                            part_id="drawer_0001",
+                            part_id="drawer",
                             prompt_id="drawer",
                             label="drawer",
                             expected_joint_hint=ArticulatedJointType.PRISMATIC,
@@ -423,7 +438,7 @@ class ArticulationCaptureAdapter:
             hashes: dict[str, str] = {}
             for part_id, label, points in (
                 ("cabinet_body", "cabinet body", base),
-                ("drawer_0001", "drawer", drawer),
+                ("drawer", "drawer", drawer),
             ):
                 relative_path = (
                     "reconstruction/articulation/measured_states/"
@@ -446,6 +461,8 @@ class ArticulationCaptureAdapter:
                         state_id=state_id,
                         articulated_object_id="cabinet_0001",
                         part_id=part_id,
+                        source_track_id=f"{part_id}_{index:04d}",
+                        prompt_id=part_id,
                         semantic_label=label,
                         measured_point_cloud_path=relative_path,
                         measured_point_cloud_sha256=content_hash,
@@ -464,6 +481,10 @@ class ArticulationCaptureAdapter:
                     state_id=state_id,
                     run_dir=f"synthetic:{state_id}",
                     semantic_state_label=("closed", "half_open", "open")[min(index, 2)],
+                    part_track_ids={
+                        "cabinet_body": f"cabinet_body_{index:04d}",
+                        "drawer": f"drawer_{index:04d}",
+                    },
                     phase5a_consistency_passed=True,
                     ingest_manifest_sha256=stable_digest({"state": state_id, "ingest": True}),
                     frame_sequence_digest=stable_digest(frames),
@@ -548,16 +569,43 @@ class ArticulationCaptureAdapter:
             point_hashes: dict[str, str] = {}
             mask_hashes: dict[str, str] = {}
             part_specs = [
-                (prompt_object.base.prompt_id, prompt_object.base.label),
+                (
+                    prompt_object.base.part_id,
+                    prompt_object.base.prompt_id,
+                    prompt_object.base.label,
+                ),
                 *(
-                    (part.part_id, part.label)
+                    (part.part_id, part.prompt_id, part.label)
                     for part in prompt_object.movable_parts
                     if part.include
                 ),
             ]
-            for part_id, label in part_specs:
-                hypothesis = measured_by_id[part_id]
-                track = track_by_id[part_id]
+            raw_mapping = raw_state.get("part_track_ids")
+            if not isinstance(raw_mapping, dict):
+                raise ValueError(
+                    f"state {state_id} requires explicit part_track_ids for real capture"
+                )
+            part_track_ids = {str(key): str(value) for key, value in raw_mapping.items()}
+            stable_part_ids = {part_id for part_id, _, _ in part_specs}
+            if set(part_track_ids) != stable_part_ids:
+                raise ValueError(
+                    f"state {state_id} part_track_ids must map exactly {sorted(stable_part_ids)}"
+                )
+            if len(part_track_ids) != len(set(part_track_ids.values())):
+                raise ValueError(f"state {state_id} assigns one SAM track to multiple stable parts")
+            for part_id, prompt_id, label in part_specs:
+                track_id = part_track_ids[part_id]
+                if track_id not in measured_by_id or track_id not in track_by_id:
+                    raise ValueError(
+                        f"state {state_id} mapping {part_id!r}->{track_id!r} does not "
+                        "reference both a canonical SAM track and Phase 5A hypothesis"
+                    )
+                hypothesis = measured_by_id[track_id]
+                track = track_by_id[track_id]
+                if hypothesis.get("point_cloud") is None:
+                    raise ValueError(
+                        f"state {state_id} mapped track {track_id!r} has no measured point cloud"
+                    )
                 original_point_path = str(hypothesis["point_cloud"]["relative_path"])
                 source_point = state_root / original_point_path
                 output_relative = (
@@ -603,6 +651,8 @@ class ArticulationCaptureAdapter:
                         state_id=state_id,
                         articulated_object_id=object_id,
                         part_id=part_id,
+                        source_track_id=track_id,
+                        prompt_id=prompt_id,
                         semantic_label=label,
                         measured_point_cloud_path=output_relative,
                         measured_point_cloud_sha256=point_hashes[part_id],
@@ -688,6 +738,7 @@ class ArticulationCaptureAdapter:
                     state_id=state_id,
                     run_dir=str(raw_state["run_dir"]),
                     semantic_state_label=str(raw_state["semantic_state_label"]),
+                    part_track_ids=part_track_ids,
                     phase5a_consistency_passed=True,
                     ingest_manifest_sha256=sha256_file(ingest_path),
                     frame_sequence_digest=str(ingest["frame_sequence_digest"]),
@@ -741,7 +792,8 @@ class ArticulationCaptureAdapter:
             reference_state_id=reference_state_id or states[0].state_id,
             states=states,
             prompt_manifest_sha256=sha256_file(root / "part_prompt_manifest.json"),
-            evidence_level=evidence_level(len(states)),
+            capture_state_count=len(states),
+            capture_evidence_tier=capture_evidence_tier(len(states)),
         )
         atomic_write_json(root / "capture_manifest.json", capture)
         atomic_write_json(

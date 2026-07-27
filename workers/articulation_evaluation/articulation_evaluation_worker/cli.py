@@ -18,6 +18,7 @@ from articulation_evaluation_worker.geometry import (
     register_sim3,
     transform,
 )
+from articulation_evaluation_worker.kinematics import prismatic_candidate_q_scale
 from articulation_evaluation_worker.rendering import (
     camera_world_matrices,
     classify_depth,
@@ -111,13 +112,97 @@ def _alignment_map(alignment: dict[str, object]) -> dict[str, np.ndarray]:
     }
 
 
+def _stable_hash(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _diagonal(points: np.ndarray) -> float:
+    return max(float(np.linalg.norm(np.ptp(points, axis=0))), np.finfo(np.float64).eps)
+
+
+def _normalize(vector: np.ndarray) -> np.ndarray:
+    norm = float(np.linalg.norm(vector))
+    if not np.isfinite(norm) or norm <= np.finfo(np.float64).eps:
+        raise ValueError("cannot normalize a zero or non-finite articulation vector")
+    return vector / norm
+
+
+def _axis_angle_degrees(left: np.ndarray, right: np.ndarray) -> float:
+    return float(
+        np.degrees(
+            np.arccos(np.clip(abs(float(np.dot(_normalize(left), _normalize(right)))), -1.0, 1.0))
+        )
+    )
+
+
+def _bounded_axis_refinement(
+    candidate_axis_world: np.ndarray,
+    measured_axis_world: np.ndarray,
+    maximum_degrees: float,
+) -> tuple[np.ndarray, int, float]:
+    candidate = _normalize(candidate_axis_world)
+    measured = _normalize(measured_axis_world)
+    sign = 1 if float(np.dot(candidate, measured)) >= 0 else -1
+    signed_candidate = sign * candidate
+    angle = _axis_angle_degrees(signed_candidate, measured)
+    if angle <= 1e-9:
+        return signed_candidate, sign, 0.0
+    fraction = min(1.0, maximum_degrees / angle)
+    refined = _normalize((1.0 - fraction) * signed_candidate + fraction * measured)
+    return refined, sign, min(angle, maximum_degrees)
+
+
+def _trimmed_surface_residual(source: np.ndarray, target: np.ndarray) -> float:
+    from scipy.spatial import cKDTree
+
+    distances, _ = cKDTree(source).query(target, k=1)
+    keep = max(1, int(0.8 * len(distances)))
+    return float(np.median(np.partition(distances, keep - 1)[:keep]))
+
+
+def _candidate_link_points(
+    input_root: Path,
+    candidate: dict[str, object],
+) -> dict[str, np.ndarray]:
+    result: dict[str, np.ndarray] = {}
+    for link in candidate["links"]:
+        paths = link["visual_asset_paths"]
+        if not isinstance(paths, list) or not paths:
+            continue
+        result[str(link["link_id"])] = load_points(str(input_root / str(paths[0])))
+    return result
+
+
+def _refine_pivot(
+    *,
+    candidate_pivot_local: np.ndarray,
+    measured_pivot_world: np.ndarray,
+    base_transform: np.ndarray,
+    maximum_world_distance: float,
+) -> tuple[np.ndarray, float, float]:
+    candidate_world = transform(candidate_pivot_local[None, :], base_transform)[0]
+    delta = measured_pivot_world - candidate_world
+    raw_distance = float(np.linalg.norm(delta))
+    if raw_distance > maximum_world_distance > 0:
+        delta *= maximum_world_distance / raw_distance
+    refined_world = candidate_world + delta
+    refined_local = transform(refined_world[None, :], np.linalg.inv(base_transform))[0]
+    return refined_local, float(np.linalg.norm(delta)), raw_distance
+
+
 def _fitting_view_iou(
     *,
     input_root: Path,
     candidate: dict[str, object],
     base_transform: np.ndarray,
     records: list[dict[str, object]],
-    joint_mapping: dict[str, dict[str, object]],
+    fitted_joints: list[dict[str, object]],
     fitting_states: list[str],
     transforms: dict[str, np.ndarray],
     state_evidence: dict[str, dict[str, object]],
@@ -132,6 +217,7 @@ def _fitting_view_iou(
     if not isinstance(joints, list) or not isinstance(links, list):
         raise ValueError("candidate links and joints must be lists")
     joint_by_child = {str(item["child_link_id"]): item for item in joints}
+    fitted_by_candidate = {str(item["candidate_joint_id"]): item for item in fitted_joints}
     ious: list[float] = []
     for state_id in fitting_states:
         evidence = state_evidence.get(state_id)
@@ -150,25 +236,16 @@ def _fitting_view_iou(
             matrix = base_transform
             joint = joint_by_child.get(link_id)
             if joint is not None:
-                measured_joint = joint_mapping.get(str(joint["joint_id"]))
-                position = (
-                    next(
-                        (
-                            float(state["position"])
-                            for state in measured_joint["states"]
-                            if str(state["state_id"]) == state_id
-                        ),
-                        0.0,
-                    )
-                    if measured_joint is not None
-                    else 0.0
-                )
+                fitted = fitted_by_candidate.get(str(joint["joint_id"]))
+                if fitted is None:
+                    continue
+                position = float(fitted["fitting_state_q"].get(state_id, 0.0))
                 matrix = base_transform @ joint_transform(
                     str(joint["joint_type"]),
-                    np.asarray(joint["axis"], dtype=np.float64),
+                    np.asarray(fitted["fitted_axis"], dtype=np.float64),
                     (
-                        np.asarray(joint["pivot"], dtype=np.float64)
-                        if joint["pivot"] is not None
+                        np.asarray(fitted["fitted_pivot"], dtype=np.float64)
+                        if fitted["fitted_pivot"] is not None
                         else None
                     ),
                     position,
@@ -228,15 +305,26 @@ def fit(request: dict[str, object], input_root: Path, output_dir: Path) -> None:
     observed_parts = {str(item["parent_part_id"]) for item in measured_joints} | {
         str(item["child_part_id"]) for item in measured_joints
     }
+    generation_states = [str(value) for value in request["generation_state_ids"]]
     fitting_states = [str(value) for value in request["fitting_state_ids"]]
+    structure_states = [*generation_states, *fitting_states]
     state_evidence = {str(item["state_id"]): item for item in request.get("state_evidence", [])}
-    reference_state = fitting_states[0] if fitting_states else next(iter(transforms))
+    reference_state = str(request["reference_state_id"])
+    if reference_state not in transforms or reference_state not in structure_states:
+        raise ValueError("declared reference state must be accepted and materialized for fitting")
+    configuration = request["fitting_configuration"]
+    if not isinstance(configuration, dict):
+        raise ValueError("articulation fitting configuration is invalid")
+    ambiguity_margin = float(configuration["link_assignment_ambiguity_margin"])
+    maximum_axis_refinement = float(configuration["maximum_axis_refinement_degrees"])
+    maximum_pivot_refinement = float(configuration["maximum_pivot_refinement_part_diagonals"])
     assignments = []
     fittings = []
     candidate_by_id = {str(item["candidate_id"]): item for item in candidates["candidates"]}
     for candidate_id_value in request["candidate_ids"]:
         candidate_id = str(candidate_id_value)
         candidate = candidate_by_id[candidate_id]
+        candidate_points_by_link = _candidate_link_points(input_root, candidate)
         child_links = {str(joint["child_link_id"]) for joint in candidate["joints"]}
         roots = [
             str(link["link_id"])
@@ -244,49 +332,344 @@ def fit(request: dict[str, object], input_root: Path, output_dir: Path) -> None:
             if str(link["link_id"]) not in child_links
         ]
         observed_base = str(measured_joints[0]["parent_part_id"])
+        base_state_points = [
+            transform(
+                load_points(
+                    str(
+                        input_root
+                        / geometry_by_state[(state_id, observed_base)]["measured_point_cloud_path"]
+                    )
+                ),
+                transforms[state_id],
+            )
+            for state_id in structure_states
+            if (state_id, observed_base) in geometry_by_state
+        ]
+        if not base_state_points:
+            raise ValueError("no accepted fitting-state base geometry is available")
+        measured_base_points = np.concatenate(base_state_points, axis=0)
+        scene_diagonal = _diagonal(measured_base_points)
+        root_scores: list[tuple[float, str, np.ndarray, np.ndarray]] = []
+        for root_link_id in roots:
+            candidate_base_points = candidate_points_by_link.get(root_link_id)
+            if candidate_base_points is None or len(candidate_base_points) < 3:
+                continue
+            base_transform, residuals = register_sim3(
+                candidate_base_points,
+                measured_base_points,
+            )
+            score = float(np.median(residuals) / scene_diagonal)
+            root_scores.append((score, root_link_id, base_transform, residuals))
+        root_scores.sort(key=lambda item: (item[0], item[1]))
         records = []
         unmatched_observed = set(observed_parts)
         unmatched_candidate = {str(link["link_id"]) for link in candidate["links"]}
-        if not roots:
+        ambiguity_reasons: list[str] = []
+        if not root_scores:
             base_link = None
+            base_transform = None
+            base_residuals = np.asarray([], dtype=np.float64)
         else:
-            base_link = sorted(roots)[0]
+            base_score, base_link, base_transform, base_residuals = root_scores[0]
+            base_ambiguous = (
+                len(root_scores) > 1 and root_scores[1][0] - base_score <= ambiguity_margin
+            )
+            if base_ambiguous:
+                ambiguity_reasons.append("multiple candidate base links have equivalent costs")
             records.append(
                 {
                     "observed_part_id": observed_base,
                     "candidate_link_ids": [base_link],
-                    "assignment_confidence": 0.7,
-                    "evidence": {"graph_root": 1.0, "geometry": 0.5},
-                    "ambiguous": len(roots) > 1,
+                    "assignment_confidence": max(0.0, min(1.0, 1.0 - base_score)),
+                    "evidence": {
+                        "graph_role_cost": 0.0,
+                        "multi_state_geometry_residual": base_score,
+                    },
+                    "ambiguous": base_ambiguous,
                 }
             )
             unmatched_observed.discard(observed_base)
             unmatched_candidate.discard(base_link)
-        joint_mapping: dict[str, dict[str, object]] = {}
+        fitted_joints: list[dict[str, object]] = []
+        candidate_joint_by_id = {str(item["joint_id"]): item for item in candidate["joints"]}
         for measured_joint in measured_joints:
+            if base_transform is None:
+                break
+            measured_joint_type = str(measured_joint["joint_type"])
             compatible = [
                 joint
                 for joint in candidate["joints"]
-                if joint["joint_type"] == measured_joint["joint_type"]
+                if (
+                    str(joint["joint_type"]) == measured_joint_type
+                    or (
+                        measured_joint_type == "revolute"
+                        and str(joint["joint_type"]) == "continuous_candidate"
+                    )
+                )
                 and str(joint["child_link_id"]) in unmatched_candidate
             ]
             if not compatible:
                 continue
-            candidate_joint = sorted(compatible, key=lambda item: str(item["joint_id"]))[0]
             child_part = str(measured_joint["child_part_id"])
+            measured_child_record = geometry_by_state[(reference_state, child_part)]
+            measured_child_points = transform(
+                load_points(str(input_root / measured_child_record["measured_point_cloud_path"])),
+                transforms[reference_state],
+            )
+            part_diagonal = _diagonal(measured_child_points)
+            measured_axis = (
+                np.asarray(measured_joint["axis"], dtype=np.float64)
+                if measured_joint["axis"] is not None
+                else None
+            )
+            measured_range = (
+                float(measured_joint["observed_position_max"])
+                - float(measured_joint["observed_position_min"])
+                if measured_joint["observed_position_min"] is not None
+                and measured_joint["observed_position_max"] is not None
+                else 0.0
+            )
+            candidate_costs: list[tuple[float, str, dict[str, float]]] = []
+            scale = float(np.cbrt(np.linalg.det(base_transform[:3, :3])))
+            rotation = base_transform[:3, :3] / scale
+            measured_size_ratio = part_diagonal / scene_diagonal
+            measured_centroid = np.median(measured_child_points, axis=0)
+            for candidate_joint in compatible:
+                joint_id = str(candidate_joint["joint_id"])
+                child_link = str(candidate_joint["child_link_id"])
+                link_points = candidate_points_by_link.get(child_link)
+                if link_points is None or len(link_points) < 3:
+                    continue
+                candidate_size_ratio = _diagonal(link_points) / max(
+                    _diagonal(candidate_points_by_link[base_link]),
+                    np.finfo(np.float64).eps,
+                )
+                size_cost = abs(
+                    np.log(max(candidate_size_ratio, 1e-9) / max(measured_size_ratio, 1e-9))
+                )
+                axis_cost = 0.0
+                if measured_axis is not None:
+                    candidate_axis_world = rotation @ np.asarray(
+                        candidate_joint["axis"], dtype=np.float64
+                    )
+                    axis_cost = (
+                        _axis_angle_degrees(
+                            candidate_axis_world,
+                            measured_axis,
+                        )
+                        / 180.0
+                    )
+                candidate_centroid = np.median(
+                    transform(link_points, base_transform),
+                    axis=0,
+                )
+                placement_cost = float(
+                    np.linalg.norm(candidate_centroid - measured_centroid) / scene_diagonal
+                )
+                candidate_range = 0.0
+                if (
+                    candidate_joint["candidate_limit_lower"] is not None
+                    and candidate_joint["candidate_limit_upper"] is not None
+                ):
+                    candidate_range = float(candidate_joint["candidate_limit_upper"]) - float(
+                        candidate_joint["candidate_limit_lower"]
+                    )
+                    if measured_joint_type == "prismatic":
+                        candidate_range *= scale
+                range_cost = (
+                    abs(np.log(max(abs(candidate_range), 1e-9) / max(abs(measured_range), 1e-9)))
+                    if measured_range > 1e-9 and candidate_range > 1e-9
+                    else 0.0
+                )
+                measured_positions = {
+                    str(state["state_id"]): float(state["position"])
+                    for state in measured_joint["states"]
+                }
+                candidate_axis = np.asarray(candidate_joint["axis"], dtype=np.float64)
+                candidate_pivot = (
+                    np.asarray(candidate_joint["pivot"], dtype=np.float64)
+                    if candidate_joint["pivot"] is not None
+                    else None
+                )
+                multi_state_residuals: list[float] = []
+                for state_id in structure_states:
+                    measured_record = geometry_by_state.get((state_id, child_part))
+                    if measured_record is None or state_id not in measured_positions:
+                        continue
+                    state_points = transform(
+                        load_points(str(input_root / measured_record["measured_point_cloud_path"])),
+                        transforms[state_id],
+                    )
+                    measured_position = measured_positions[state_id]
+                    candidate_position = (
+                        measured_position / scale
+                        if measured_joint_type == "prismatic"
+                        else measured_position
+                    )
+                    moved_link_points = transform(
+                        link_points,
+                        base_transform
+                        @ joint_transform(
+                            str(candidate_joint["joint_type"]),
+                            candidate_axis,
+                            candidate_pivot,
+                            candidate_position,
+                        ),
+                    )
+                    multi_state_residuals.append(
+                        _trimmed_surface_residual(
+                            moved_link_points,
+                            state_points,
+                        )
+                        / part_diagonal
+                    )
+                geometry_cost = (
+                    float(np.median(multi_state_residuals))
+                    if multi_state_residuals
+                    else float("inf")
+                )
+                if not np.isfinite(geometry_cost):
+                    continue
+                terms = {
+                    "joint_type_cost": 0.0,
+                    "graph_role_cost": 0.0,
+                    "part_size_ratio_cost": float(size_cost),
+                    "observed_axis_cost": float(axis_cost),
+                    "observed_motion_range_cost": float(range_cost),
+                    "relative_parent_child_placement_cost": placement_cost,
+                    "multi_state_geometry_residual": geometry_cost,
+                }
+                total = (
+                    0.15 * size_cost
+                    + 0.20 * axis_cost
+                    + 0.10 * range_cost
+                    + 0.20 * placement_cost
+                    + 0.35 * geometry_cost
+                )
+                candidate_costs.append((float(total), joint_id, terms))
+            candidate_costs.sort(key=lambda item: (item[0], item[1]))
+            if not candidate_costs:
+                continue
+            best_cost, candidate_joint_id, evidence = candidate_costs[0]
+            candidate_joint = candidate_joint_by_id[candidate_joint_id]
             child_link = str(candidate_joint["child_link_id"])
-            joint_mapping[str(candidate_joint["joint_id"])] = measured_joint
+            assignment_ambiguous = (
+                len(candidate_costs) > 1 and candidate_costs[1][0] - best_cost <= ambiguity_margin
+            )
+            if assignment_ambiguous:
+                ambiguity_reasons.append(
+                    f"joint {measured_joint['joint_id']} has multiple assignments "
+                    "within configured margin"
+                )
             records.append(
                 {
                     "observed_part_id": child_part,
                     "candidate_link_ids": [child_link],
-                    "assignment_confidence": 0.75,
-                    "evidence": {"joint_type": 1.0, "motion": 0.75},
-                    "ambiguous": len(compatible) > 1,
+                    "assignment_confidence": max(0.0, min(1.0, 1.0 - best_cost)),
+                    "evidence": evidence,
+                    "ambiguous": assignment_ambiguous,
                 }
             )
             unmatched_observed.discard(child_part)
             unmatched_candidate.discard(child_link)
+            candidate_axis = np.asarray(candidate_joint["axis"], dtype=np.float64)
+            candidate_axis_world = rotation @ candidate_axis
+            if measured_axis is None:
+                refined_axis_world = _normalize(candidate_axis_world)
+                axis_sign = 1
+                axis_refinement = 0.0
+            else:
+                refined_axis_world, axis_sign, axis_refinement = _bounded_axis_refinement(
+                    candidate_axis_world,
+                    measured_axis,
+                    maximum_axis_refinement,
+                )
+            refined_axis_local = _normalize(rotation.T @ refined_axis_world)
+            fitted_pivot = None
+            pivot_refinement_raw = None
+            pivot_refinement_normalized = None
+            if measured_joint_type in {"revolute", "continuous_candidate"}:
+                candidate_pivot = np.asarray(
+                    candidate_joint["pivot"],
+                    dtype=np.float64,
+                )
+                measured_pivot = np.asarray(measured_joint["pivot"], dtype=np.float64)
+                fitted_pivot, pivot_refinement_raw, _ = _refine_pivot(
+                    candidate_pivot_local=candidate_pivot,
+                    measured_pivot_world=measured_pivot,
+                    base_transform=base_transform,
+                    maximum_world_distance=maximum_pivot_refinement * part_diagonal,
+                )
+                pivot_refinement_normalized = pivot_refinement_raw / part_diagonal
+            if measured_joint_type == "prismatic":
+                q_scale = prismatic_candidate_q_scale(scale, axis_sign)
+            elif measured_joint_type in {"revolute", "continuous_candidate"}:
+                q_scale = float(axis_sign)
+            else:
+                q_scale = 0.0
+            q_offset = 0.0
+            fitting_q = {
+                state_id: q_offset
+                + q_scale
+                * next(
+                    float(state["position"])
+                    for state in measured_joint["states"]
+                    if str(state["state_id"]) == state_id
+                )
+                for state_id in structure_states
+                if any(str(state["state_id"]) == state_id for state in measured_joint["states"])
+            }
+            link_points = candidate_points_by_link[child_link]
+            residual_values: list[float] = []
+            for state_id, q_value in fitting_q.items():
+                measured_record = geometry_by_state.get((state_id, child_part))
+                if measured_record is None:
+                    continue
+                measured_points = transform(
+                    load_points(str(input_root / measured_record["measured_point_cloud_path"])),
+                    transforms[state_id],
+                )
+                moved = transform(
+                    link_points,
+                    base_transform
+                    @ joint_transform(
+                        measured_joint_type,
+                        refined_axis_local,
+                        fitted_pivot,
+                        q_value,
+                    ),
+                )
+                residual_values.append(_trimmed_surface_residual(moved, measured_points))
+            fit_residual = float(np.median(residual_values)) if residual_values else float("inf")
+            if not np.isfinite(fit_residual):
+                ambiguity_reasons.append(
+                    f"joint {candidate_joint_id} has no finite multi-state fit residual"
+                )
+                fit_residual = 1_000_000.0
+            fitted_joints.append(
+                {
+                    "candidate_joint_id": candidate_joint_id,
+                    "measured_joint_id": measured_joint["joint_id"],
+                    "parent_observed_part_id": measured_joint["parent_part_id"],
+                    "child_observed_part_id": child_part,
+                    "joint_type": measured_joint_type,
+                    "fitted_axis": [float(value) for value in refined_axis_local],
+                    "fitted_pivot": (
+                        [float(value) for value in fitted_pivot]
+                        if fitted_pivot is not None
+                        else None
+                    ),
+                    "axis_sign": axis_sign,
+                    "q_scale": q_scale,
+                    "q_offset": q_offset,
+                    "fitting_state_q": fitting_q,
+                    "axis_refinement_degrees": axis_refinement,
+                    "pivot_refinement_arbitrary_units": pivot_refinement_raw,
+                    "pivot_refinement_part_diagonals": pivot_refinement_normalized,
+                    "fitting_residual_arbitrary_units": fit_residual,
+                    "fitting_residual_part_diagonals": fit_residual / part_diagonal,
+                }
+            )
         assignment = {
             "schema_version": "0.1.0",
             "candidate_id": candidate_id,
@@ -298,7 +681,8 @@ def fit(request: dict[str, object], input_root: Path, output_dir: Path) -> None:
         failure = (
             base_link is None
             or bool(unmatched_observed)
-            or len(joint_mapping) != len(measured_joints)
+            or len(fitted_joints) != len(measured_joints)
+            or base_transform is None
         )
         if failure:
             fittings.append(
@@ -313,51 +697,52 @@ def fit(request: dict[str, object], input_root: Path, output_dir: Path) -> None:
                     "joint_axis_signs": {},
                     "fitting_median_residual": None,
                     "fitting_part_iou": None,
+                    "fitted_model": None,
+                    "fitted_model_sha256": None,
                     "structure_frozen_before_heldout": True,
                     "failure_reason": "candidate graph cannot match measured parts/joint types",
                 }
             )
             continue
-        base_link_record = next(link for link in candidate["links"] if link["link_id"] == base_link)
-        candidate_base_points = load_points(
-            str(input_root / base_link_record["visual_asset_paths"][0])
-        )
-        measured_base_record = geometry_by_state[(reference_state, observed_base)]
-        measured_base_points = transform(
-            load_points(str(input_root / measured_base_record["measured_point_cloud_path"])),
-            transforms[reference_state],
-        )
-        base_transform, residuals = register_sim3(
-            candidate_base_points,
-            measured_base_points,
-        )
         scale = float(np.cbrt(np.linalg.det(base_transform[:3, :3])))
         fitted_positions = {
             state_id: {
-                candidate_joint_id: next(
-                    float(state["position"])
-                    for state in measured_joint["states"]
-                    if str(state["state_id"]) == state_id
-                )
-                for candidate_joint_id, measured_joint in joint_mapping.items()
-                if any(str(state["state_id"]) == state_id for state in measured_joint["states"])
+                str(item["candidate_joint_id"]): float(item["fitting_state_q"][state_id])
+                for item in fitted_joints
+                if state_id in item["fitting_state_q"]
             }
-            for state_id in fitting_states
+            for state_id in structure_states
         }
         fitting_iou = _fitting_view_iou(
             input_root=input_root,
             candidate=candidate,
             base_transform=base_transform,
             records=records,
-            joint_mapping=joint_mapping,
+            fitted_joints=fitted_joints,
             fitting_states=fitting_states,
             transforms=transforms,
             state_evidence=state_evidence,
         )
+        fitted_model = {
+            "schema_version": "0.1.0",
+            "candidate_id": candidate_id,
+            "matrix_reference_world_from_candidate_base": [
+                float(value) for value in base_transform.reshape(-1)
+            ],
+            "scale": scale,
+            "link_assignments": records,
+            "fitted_joints": fitted_joints,
+            "generation_state_ids": generation_states,
+            "fitting_state_ids": fitting_states,
+            "heldout_state_ids": request["heldout_state_ids"],
+            "fit_residual_arbitrary_units": float(np.median(base_residuals)),
+            "fit_residual_scene_diagonals": (float(np.median(base_residuals)) / scene_diagonal),
+            "ambiguity_reasons": ambiguity_reasons,
+        }
         fittings.append(
             {
                 "candidate_id": candidate_id,
-                "status": ("ambiguous" if any(item["ambiguous"] for item in records) else "fitted"),
+                "status": ("ambiguous" if ambiguity_reasons else "fitted"),
                 "matrix_reference_world_from_candidate_base": [
                     float(value) for value in base_transform.reshape(-1)
                 ],
@@ -365,11 +750,16 @@ def fit(request: dict[str, object], input_root: Path, output_dir: Path) -> None:
                 "fitting_state_ids": fitting_states,
                 "heldout_state_ids": request["heldout_state_ids"],
                 "fitted_joint_positions": fitted_positions,
-                "joint_axis_signs": {candidate_joint_id: 1 for candidate_joint_id in joint_mapping},
-                "fitting_median_residual": float(np.median(residuals)),
+                "joint_axis_signs": {
+                    str(item["candidate_joint_id"]): int(item["axis_sign"])
+                    for item in fitted_joints
+                },
+                "fitting_median_residual": float(np.median(base_residuals)),
                 "fitting_part_iou": fitting_iou,
+                "fitted_model": fitted_model,
+                "fitted_model_sha256": _stable_hash(fitted_model),
                 "structure_frozen_before_heldout": True,
-                "failure_reason": None,
+                "failure_reason": ("; ".join(ambiguity_reasons) if ambiguity_reasons else None),
             }
         )
     candidate_hash = request["candidate_manifest_sha256"]
@@ -396,7 +786,13 @@ def fit(request: dict[str, object], input_root: Path, output_dir: Path) -> None:
     )
 
 
-def _failed_gates(metrics: dict[str, float], gates: dict[str, object]) -> list[str]:
+def _failed_gates(
+    metrics: dict[str, float | None],
+    gates: dict[str, object],
+    *,
+    joint_types: set[str],
+    minimum_usable_views: int,
+) -> list[str]:
     checks = (
         ("minimum_base_mask_iou", metrics["base_mask_iou"], "minimum"),
         (
@@ -428,11 +824,42 @@ def _failed_gates(metrics: dict[str, float], gates: dict[str, object]) -> list[s
     )
     failed = []
     for name, value, direction in checks:
+        if value is None or not np.isfinite(value):
+            failed.append(f"{name}_unavailable")
+            continue
         threshold = float(gates[name])
         if (direction == "minimum" and value < threshold) or (
             direction == "maximum" and value > threshold
         ):
             failed.append(name)
+    if int(metrics.get("usable_heldout_view_count") or 0) < minimum_usable_views:
+        failed.append("minimum_usable_heldout_views")
+    if "prismatic" in joint_types:
+        for name, gate_name in (
+            ("prismatic_orthogonal_residual", "maximum_prismatic_orthogonal_residual"),
+            (
+                "prismatic_rotation_leakage_degrees",
+                "maximum_prismatic_rotation_degrees",
+            ),
+        ):
+            value = metrics.get(name)
+            if value is None or not np.isfinite(value):
+                failed.append(f"{gate_name}_unavailable")
+            elif value > float(gates[gate_name]):
+                failed.append(gate_name)
+    if joint_types & {"revolute", "continuous_candidate"}:
+        for name, gate_name in (
+            ("axis_error_degrees", "maximum_revolute_axis_error_degrees"),
+            (
+                "pivot_residual_part_diagonals",
+                "maximum_revolute_pivot_residual_part_diagonals",
+            ),
+        ):
+            value = metrics.get(name)
+            if value is None or not np.isfinite(value):
+                failed.append(f"{gate_name}_unavailable")
+            elif value > float(gates[gate_name]):
+                failed.append(gate_name)
     return failed
 
 
@@ -441,18 +868,19 @@ def _heldout_joint_position(
     input_root: Path,
     link: dict[str, object],
     joint: dict[str, object],
+    fitted_joint: dict[str, object],
     measured_joint: dict[str, object] | None,
     measured_part: dict[str, object] | None,
     base_matrix: np.ndarray,
     reference_from_state: np.ndarray,
-) -> float:
+) -> tuple[float | None, float | None]:
     if str(joint["joint_type"]) == "fixed":
-        return 0.0
+        return 0.0, 0.0
     if measured_part is None:
-        return 0.0
+        return None, None
     visual_paths = link["visual_asset_paths"]
     if not isinstance(visual_paths, list) or not visual_paths:
-        return 0.0
+        return None, None
     candidate_points = load_points(str(input_root / str(visual_paths[0])))
     measured_points = transform(
         load_points(str(input_root / str(measured_part["measured_point_cloud_path"]))),
@@ -464,7 +892,7 @@ def _heldout_joint_position(
     candidate_points = candidate_points[::candidate_stride][:maximum_points]
     measured_points = measured_points[::measured_stride][:maximum_points]
     if not len(candidate_points) or not len(measured_points):
-        return 0.0
+        return None, None
     lower_value = joint.get("candidate_limit_lower")
     upper_value = joint.get("candidate_limit_upper")
     if (
@@ -474,11 +902,7 @@ def _heldout_joint_position(
     ):
         lower, upper = float(lower_value), float(upper_value)
     else:
-        observed = (
-            [float(item["position"]) for item in measured_joint["states"]]
-            if measured_joint is not None
-            else []
-        )
+        observed = list(fitted_joint["fitting_state_q"].values())
         if len(observed) >= 2:
             span = max(max(observed) - min(observed), 1e-3)
             lower, upper = min(observed) - span, max(observed) + span
@@ -491,9 +915,13 @@ def _heldout_joint_position(
             )
             lower, upper = -diagonal, diagonal
     if not np.isfinite((lower, upper)).all() or upper <= lower:
-        return 0.0
-    axis = np.asarray(joint["axis"], dtype=np.float64)
-    pivot = np.asarray(joint["pivot"], dtype=np.float64) if joint["pivot"] is not None else None
+        return None, None
+    axis = np.asarray(fitted_joint["fitted_axis"], dtype=np.float64)
+    pivot = (
+        np.asarray(fitted_joint["fitted_pivot"], dtype=np.float64)
+        if fitted_joint["fitted_pivot"] is not None
+        else None
+    )
     diagonal = max(
         float(np.linalg.norm(np.ptp(measured_points, axis=0))),
         np.finfo(np.float64).eps,
@@ -524,7 +952,9 @@ def _heldout_joint_position(
         method="bounded",
         options={"maxiter": 40, "xatol": 1e-5},
     )
-    return float(result.x) if result.success and np.isfinite(result.x) else 0.0
+    if not result.success or not np.isfinite(result.x):
+        return None, None
+    return float(result.x), float(result.fun * diagonal)
 
 
 def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> None:
@@ -551,30 +981,46 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
     assignments_by_candidate = {
         str(item["candidate_id"]): item for item in fitting["link_assignments"]
     }
+    reference_state_id = str(request["reference_state_id"])
+    accepted_alignment_state_ids = [str(value) for value in request["accepted_alignment_state_ids"]]
     evaluations = []
     diagnostic_renders: list[Path] = []
     for fit_item in fitting["fittings"]:
         candidate_id = str(fit_item["candidate_id"])
-        if fit_item["status"] == "failed":
+        if fit_item["status"] != "fitted":
+            ambiguous = fit_item["status"] == "ambiguous"
             evaluations.append(
                 {
                     "candidate_id": candidate_id,
-                    "status": "rejected_joint_constraint",
+                    "status": (
+                        "ambiguous_link_assignment" if ambiguous else "rejected_joint_constraint"
+                    ),
                     "fitting_sha256": request["fitting_manifest_sha256"],
                     "state_evaluations": [],
                     "passed_hard_gates": False,
-                    "failed_gates": ["candidate_fitting_failed"],
+                    "failed_gates": [
+                        ("ambiguous_link_assignment" if ambiguous else "candidate_fitting_failed")
+                    ],
                     "heldout_state_validation_used": False,
+                    "capture_state_count": request["capture_state_count"],
+                    "accepted_alignment_state_ids": accepted_alignment_state_ids,
+                    "selected_candidate_validation_level": measured[
+                        "effective_motion_evidence_level"
+                    ],
                     "link_assignment_confidence": 0.0,
                     "runtime_seconds": 0.0,
-                    "warnings": [str(fit_item["failure_reason"])],
+                    "warnings": [str(fit_item.get("failure_reason") or "candidate not fitted")],
                 }
             )
             continue
         candidate = candidate_by_id[candidate_id]
+        fitted_model = fit_item["fitted_model"]
+        if not isinstance(fitted_model, dict):
+            raise ValueError("successful fitting omitted typed fitted kinematic model")
         state_evaluations = []
         base_matrix = np.asarray(
-            fit_item["matrix_reference_world_from_candidate_base"], dtype=np.float64
+            fitted_model["matrix_reference_world_from_candidate_base"],
+            dtype=np.float64,
         ).reshape(4, 4)
         assignment = assignments_by_candidate[candidate_id]
         observed_by_link = {
@@ -582,7 +1028,24 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
             for record in assignment["assignments"]
             for link_id in record["candidate_link_ids"]
         }
+        assignment_records = {
+            str(record["observed_part_id"]): record for record in assignment["assignments"]
+        }
         joint_by_child = {str(item["child_link_id"]): item for item in candidate["joints"]}
+        fitted_joint_by_candidate = {
+            str(item["candidate_joint_id"]): item for item in fitted_model["fitted_joints"]
+        }
+        candidate_link_by_id = {str(item["link_id"]): item for item in candidate["links"]}
+        base_observed_part = next(
+            (str(item["parent_observed_part_id"]) for item in fitted_model["fitted_joints"]),
+            next(iter(assignment_records), ""),
+        )
+        base_assignment = assignment_records.get(base_observed_part)
+        base_candidate_link = (
+            str(base_assignment["candidate_link_ids"][0])
+            if base_assignment is not None and base_assignment["candidate_link_ids"]
+            else ""
+        )
         for state_id_value in request["heldout_state_ids"]:
             state_id = str(state_id_value)
             if state_id not in alignment_by_state or state_id not in evidence_by_state:
@@ -600,27 +1063,36 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
             world_from_camera = camera_world_matrices(camera)
             state_from_reference = np.linalg.inv(alignment_by_state[state_id])
             inferred: dict[str, float] = {}
+            heldout_q_fit_residuals: dict[str, float] = {}
             link_matrices: dict[str, np.ndarray] = {}
             for link in candidate["links"]:
                 link_id = str(link["link_id"])
                 link_matrix = base_matrix
                 joint = joint_by_child.get(link_id)
                 if joint is not None:
+                    fitted_joint = fitted_joint_by_candidate.get(str(joint["joint_id"]))
+                    if fitted_joint is None:
+                        continue
                     observed_part = observed_by_link.get(link_id, "")
-                    position = _heldout_joint_position(
+                    position, q_fit_residual = _heldout_joint_position(
                         input_root=input_root,
                         link=link,
                         joint=joint,
+                        fitted_joint=fitted_joint,
                         measured_joint=measured_joint_by_child.get(observed_part),
                         measured_part=geometry_by_state.get((state_id, observed_part)),
                         base_matrix=base_matrix,
                         reference_from_state=alignment_by_state[state_id],
                     )
+                    if position is None:
+                        continue
                     inferred[str(joint["joint_id"])] = position
-                    axis = np.asarray(joint["axis"], dtype=np.float64)
+                    if q_fit_residual is not None:
+                        heldout_q_fit_residuals[str(joint["joint_id"])] = q_fit_residual
+                    axis = np.asarray(fitted_joint["fitted_axis"], dtype=np.float64)
                     pivot = (
-                        np.asarray(joint["pivot"], dtype=np.float64)
-                        if joint["pivot"] is not None
+                        np.asarray(fitted_joint["fitted_pivot"], dtype=np.float64)
+                        if fitted_joint["fitted_pivot"] is not None
                         else None
                     )
                     link_matrix = base_matrix @ joint_transform(
@@ -639,8 +1111,11 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                 str(item["link_id"]): [] for item in candidate["links"]
             }
             render_paths: dict[str, str] = {}
-            for frame_id_value in request["heldout_views_by_state"].get(state_id, []):
-                frame_id = str(frame_id_value)
+            requested_views = [
+                str(value) for value in request["heldout_views_by_state"].get(state_id, [])
+            ]
+            usable_views = rendered_views = target_views = valid_depth_views = 0
+            for frame_id in requested_views:
                 if (
                     frame_id not in world_from_camera
                     or frame_id not in undistortion
@@ -652,6 +1127,9 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                     input_root / str(depth_by_frame[frame_id]["depth_path"]),
                     1,
                 )
+                if not np.any(np.isfinite(scene_depth) & (scene_depth > 0)):
+                    continue
+                valid_depth_views += 1
                 intrinsics = tuple(float(value) for value in record["dense_intrinsics"])
                 dimensions = tuple(int(value) for value in record["dense_dimensions"])
                 camera_from_reference = (
@@ -666,6 +1144,10 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                             input_root / str(mask_path),
                             record,
                         )
+                if not part_masks or not any(np.any(mask) for mask in part_masks.values()):
+                    continue
+                target_views += 1
+                usable_views += 1
                 for link in candidate["links"]:
                     link_id = str(link["link_id"])
                     visual_paths = link["visual_asset_paths"]
@@ -680,6 +1162,11 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                     )
                 if not link_depths:
                     continue
+                if not any(
+                    np.any(np.isfinite(value) & (value > 0)) for value in link_depths.values()
+                ):
+                    continue
+                rendered_views += 1
                 whole_target = np.zeros(scene_depth.shape, dtype=bool)
                 whole_depth = np.full(scene_depth.shape, np.nan, dtype=np.float32)
                 for link_id, candidate_depth in link_depths.items():
@@ -727,27 +1214,249 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                 )
                 render_paths[frame_id] = render_path.relative_to(input_root).as_posix()
                 diagnostic_renders.append(render_path)
-            metrics = {
-                "base_mask_iou": float(np.mean(base_ious)) if base_ious else 0.0,
-                "movable_part_mask_iou": (float(np.mean(movable_ious)) if movable_ious else 0.0),
-                "whole_object_mask_iou": (float(np.mean(whole_ious)) if whole_ious else 0.0),
-                "depth_inlier_fraction": (float(np.mean(depth_inliers)) if depth_inliers else 0.0),
-                "negative_space_violation_ratio": (negative_pixels / max(rendered_pixels, 1)),
-                "front_of_scene_violation_ratio": (front_pixels / max(rendered_pixels, 1)),
-                "base_motion_scene_diagonals": 0.0,
+            base_state_geometry = geometry_by_state.get((state_id, base_observed_part))
+            reference_base_geometry = geometry_by_state.get(
+                (reference_state_id, base_observed_part)
+            )
+            base_link = candidate_link_by_id.get(base_candidate_link)
+            base_point_residual_raw: float | None = None
+            base_motion_raw: float | None = None
+            scene_diagonal: float | None = None
+            if (
+                base_state_geometry is not None
+                and reference_base_geometry is not None
+                and base_link is not None
+                and base_link["visual_asset_paths"]
+            ):
+                heldout_base_points = transform(
+                    load_points(
+                        str(input_root / str(base_state_geometry["measured_point_cloud_path"]))
+                    ),
+                    alignment_by_state[state_id],
+                )
+                reference_base_points = transform(
+                    load_points(
+                        str(input_root / str(reference_base_geometry["measured_point_cloud_path"]))
+                    ),
+                    alignment_by_state[reference_state_id],
+                )
+                candidate_base_points = transform(
+                    load_points(str(input_root / str(base_link["visual_asset_paths"][0]))),
+                    base_matrix,
+                )
+                scene_diagonal = _diagonal(reference_base_points)
+                base_point_residual_raw = _trimmed_surface_residual(
+                    candidate_base_points,
+                    heldout_base_points,
+                )
+                base_motion_raw = float(
+                    np.linalg.norm(
+                        np.median(heldout_base_points, axis=0)
+                        - np.median(reference_base_points, axis=0)
+                    )
+                )
+            movable_residuals_raw: list[float] = []
+            prismatic_orthogonal: list[float] = []
+            prismatic_rotation: list[float] = []
+            q_residuals: list[float] = []
+            axis_errors: list[float] = []
+            pivot_residuals: list[float] = []
+            part_diagonals: list[float] = []
+            base_scale = float(np.cbrt(np.linalg.det(base_matrix[:3, :3])))
+            base_rotation = base_matrix[:3, :3] / base_scale
+            for fitted_joint in fitted_model["fitted_joints"]:
+                candidate_joint_id = str(fitted_joint["candidate_joint_id"])
+                candidate_joint = next(
+                    item
+                    for item in candidate["joints"]
+                    if str(item["joint_id"]) == candidate_joint_id
+                )
+                child_part = str(fitted_joint["child_observed_part_id"])
+                child_link_id = str(candidate_joint["child_link_id"])
+                child_geometry = geometry_by_state.get((state_id, child_part))
+                reference_child_geometry = geometry_by_state.get((reference_state_id, child_part))
+                link = candidate_link_by_id.get(child_link_id)
+                q_value = inferred.get(candidate_joint_id)
+                if (
+                    child_geometry is None
+                    or reference_child_geometry is None
+                    or link is None
+                    or not link["visual_asset_paths"]
+                    or q_value is None
+                ):
+                    continue
+                heldout_points = transform(
+                    load_points(str(input_root / str(child_geometry["measured_point_cloud_path"]))),
+                    alignment_by_state[state_id],
+                )
+                reference_points = transform(
+                    load_points(
+                        str(input_root / str(reference_child_geometry["measured_point_cloud_path"]))
+                    ),
+                    alignment_by_state[reference_state_id],
+                )
+                part_diagonal = _diagonal(reference_points)
+                part_diagonals.append(part_diagonal)
+                link_points = transform(
+                    load_points(str(input_root / str(link["visual_asset_paths"][0]))),
+                    link_matrices[child_link_id],
+                )
+                raw_residual = _trimmed_surface_residual(link_points, heldout_points)
+                movable_residuals_raw.append(raw_residual)
+                measured_joint = measured_joint_by_child.get(child_part)
+                fitted_axis_world = _normalize(
+                    base_rotation @ np.asarray(fitted_joint["fitted_axis"], dtype=np.float64)
+                )
+                displacement = np.median(heldout_points, axis=0) - np.median(
+                    reference_points, axis=0
+                )
+                measured_q = float(np.dot(displacement, fitted_axis_world))
+                q_scale = float(fitted_joint["q_scale"])
+                q_offset = float(fitted_joint["q_offset"])
+                inferred_measured_q = (
+                    (q_value - q_offset) / q_scale if abs(q_scale) > 1e-12 else 0.0
+                )
+                joint_type = str(fitted_joint["joint_type"])
+                if joint_type == "prismatic":
+                    orthogonal = displacement - measured_q * fitted_axis_world
+                    prismatic_orthogonal.append(float(np.linalg.norm(orthogonal) / part_diagonal))
+                    relative_fit, _ = register_sim3(
+                        reference_points,
+                        heldout_points,
+                    )
+                    relative_scale = float(np.cbrt(np.linalg.det(relative_fit[:3, :3])))
+                    relative_rotation = relative_fit[:3, :3] / relative_scale
+                    rotation_angle = float(
+                        np.degrees(
+                            np.arccos(
+                                np.clip(
+                                    (np.trace(relative_rotation) - 1.0) / 2.0,
+                                    -1.0,
+                                    1.0,
+                                )
+                            )
+                        )
+                    )
+                    prismatic_rotation.append(rotation_angle)
+                    q_residuals.append(abs(inferred_measured_q - measured_q))
+                elif joint_type in {"revolute", "continuous_candidate"}:
+                    if measured_joint is not None and measured_joint["axis"] is not None:
+                        axis_errors.append(
+                            _axis_angle_degrees(
+                                fitted_axis_world,
+                                np.asarray(measured_joint["axis"], dtype=np.float64),
+                            )
+                        )
+                    if (
+                        measured_joint is not None
+                        and measured_joint["pivot"] is not None
+                        and fitted_joint["fitted_pivot"] is not None
+                    ):
+                        fitted_pivot_world = transform(
+                            np.asarray(fitted_joint["fitted_pivot"], dtype=np.float64)[None, :],
+                            base_matrix,
+                        )[0]
+                        pivot_residuals.append(
+                            float(
+                                np.linalg.norm(
+                                    fitted_pivot_world
+                                    - np.asarray(measured_joint["pivot"], dtype=np.float64)
+                                )
+                                / part_diagonal
+                            )
+                        )
+                    relative_fit, _ = register_sim3(
+                        reference_points,
+                        heldout_points,
+                    )
+                    relative_scale = float(np.cbrt(np.linalg.det(relative_fit[:3, :3])))
+                    relative_rotation = relative_fit[:3, :3] / relative_scale
+                    angle = float(
+                        np.arccos(
+                            np.clip(
+                                (np.trace(relative_rotation) - 1.0) / 2.0,
+                                -1.0,
+                                1.0,
+                            )
+                        )
+                    )
+                    q_residuals.append(abs(inferred_measured_q - angle))
+            base_depth_values = link_depth_residuals.get(base_candidate_link, [])
+            metrics: dict[str, float | None] = {
+                "base_mask_iou": float(np.mean(base_ious)) if base_ious else None,
+                "movable_part_mask_iou": (float(np.mean(movable_ious)) if movable_ious else None),
+                "whole_object_mask_iou": (float(np.mean(whole_ious)) if whole_ious else None),
+                "depth_inlier_fraction": (float(np.mean(depth_inliers)) if depth_inliers else None),
+                "negative_space_violation_ratio": (
+                    negative_pixels / rendered_pixels if rendered_pixels else None
+                ),
+                "front_of_scene_violation_ratio": (
+                    front_pixels / rendered_pixels if rendered_pixels else None
+                ),
+                "base_motion_scene_diagonals": (
+                    base_motion_raw / scene_diagonal
+                    if base_motion_raw is not None and scene_diagonal is not None
+                    else None
+                ),
+                "usable_heldout_view_count": float(usable_views),
+                "prismatic_orthogonal_residual": (
+                    float(np.median(prismatic_orthogonal)) if prismatic_orthogonal else None
+                ),
+                "prismatic_rotation_leakage_degrees": (
+                    float(np.median(prismatic_rotation)) if prismatic_rotation else None
+                ),
+                "axis_error_degrees": (float(np.median(axis_errors)) if axis_errors else None),
+                "pivot_residual_part_diagonals": (
+                    float(np.median(pivot_residuals)) if pivot_residuals else None
+                ),
             }
             state_evaluations.append(
                 {
                     "state_id": state_id,
                     "heldout": True,
-                    **metrics,
+                    "requested_heldout_view_count": len(requested_views),
+                    "usable_heldout_view_count": usable_views,
+                    "rendered_heldout_view_count": rendered_views,
+                    "views_with_target_masks": target_views,
+                    "views_with_valid_depth": valid_depth_views,
+                    "base_mask_iou": metrics["base_mask_iou"],
+                    "movable_part_mask_iou": metrics["movable_part_mask_iou"],
+                    "whole_object_mask_iou": metrics["whole_object_mask_iou"],
                     "per_link_depth_residual": {
-                        link_id: (float(np.median(values)) if values else 1_000_000.0)
+                        link_id: (float(np.median(values)) if values else None)
                         for link_id, values in link_depth_residuals.items()
                     },
-                    "joint_constraint_residual": 0.0,
-                    "axis_error_degrees": None,
-                    "pivot_residual_part_diagonals": None,
+                    "base_depth_residual": (
+                        float(np.median(base_depth_values)) if base_depth_values else None
+                    ),
+                    "depth_inlier_fraction": metrics["depth_inlier_fraction"],
+                    "negative_space_violation_ratio": metrics["negative_space_violation_ratio"],
+                    "front_of_scene_violation_ratio": metrics["front_of_scene_violation_ratio"],
+                    "scene_diagonal_arbitrary_units": scene_diagonal,
+                    "base_point_residual_arbitrary_units": base_point_residual_raw,
+                    "base_point_residual_scene_diagonals": (
+                        base_point_residual_raw / scene_diagonal
+                        if base_point_residual_raw is not None and scene_diagonal is not None
+                        else None
+                    ),
+                    "base_motion_arbitrary_units": base_motion_raw,
+                    "base_motion_scene_diagonals": metrics["base_motion_scene_diagonals"],
+                    "movable_point_residual_arbitrary_units": (
+                        float(np.median(movable_residuals_raw)) if movable_residuals_raw else None
+                    ),
+                    "joint_constraint_residual": (
+                        float(np.median(heldout_q_fit_residuals.values()))
+                        / float(np.median(part_diagonals))
+                        if heldout_q_fit_residuals and part_diagonals
+                        else None
+                    ),
+                    "prismatic_orthogonal_residual": metrics["prismatic_orthogonal_residual"],
+                    "prismatic_rotation_leakage_degrees": metrics[
+                        "prismatic_rotation_leakage_degrees"
+                    ],
+                    "joint_q_residual": (float(np.median(q_residuals)) if q_residuals else None),
+                    "axis_error_degrees": metrics["axis_error_degrees"],
+                    "pivot_residual_part_diagonals": metrics["pivot_residual_part_diagonals"],
                     "inferred_joint_positions": inferred,
                     "joint_position_source": "measured_geometry",
                     "render_paths": render_paths,
@@ -761,22 +1470,59 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
             "negative_space_violation_ratio",
             "front_of_scene_violation_ratio",
             "base_motion_scene_diagonals",
+            "prismatic_orthogonal_residual",
+            "prismatic_rotation_leakage_degrees",
+            "axis_error_degrees",
+            "pivot_residual_part_diagonals",
         )
         aggregate = {
             name: (
-                float(np.mean([float(item[name]) for item in state_evaluations]))
-                if state_evaluations
-                else 0.0
+                float(
+                    np.mean(
+                        [float(item[name]) for item in state_evaluations if item[name] is not None]
+                    )
+                )
+                if any(item[name] is not None for item in state_evaluations)
+                else None
             )
             for name in metric_names
         }
-        failed = _failed_gates(aggregate, gates)
-        if len(fit_item["fitting_state_ids"]) + len(state_evaluations) < int(
-            gates["minimum_valid_states"]
-        ):
+        aggregate["usable_heldout_view_count"] = (
+            float(min(item["usable_heldout_view_count"] for item in state_evaluations))
+            if state_evaluations
+            else 0.0
+        )
+        joint_types = {str(item["joint_type"]) for item in fitted_model["fitted_joints"]}
+        failed = _failed_gates(
+            aggregate,
+            gates,
+            joint_types=joint_types,
+            minimum_usable_views=int(gates["minimum_usable_heldout_views"]),
+        )
+        evaluated_state_ids = {str(item["state_id"]) for item in state_evaluations}
+        distinct_valid_states = (
+            set(str(value) for value in request["generation_state_ids"])
+            | set(str(value) for value in request["fitting_state_ids"])
+            | evaluated_state_ids
+        ) & set(accepted_alignment_state_ids)
+        if len(distinct_valid_states) < int(gates["minimum_valid_states"]):
             failed.append("minimum_valid_states")
-        if len(request["heldout_state_ids"]) < int(gates["minimum_heldout_states"]):
+        if len(evaluated_state_ids) < int(gates["minimum_heldout_states"]):
             failed.append("minimum_heldout_states")
+        failed = sorted(set(failed))
+        heldout_ran = bool(state_evaluations)
+        validation_level = (
+            "multi_state_heldout_validated"
+            if not failed and len(accepted_alignment_state_ids) >= 3 and heldout_ran
+            else (
+                "multi_state_heldout_available"
+                if len(accepted_alignment_state_ids) >= 3 and heldout_ran
+                else measured["effective_motion_evidence_level"]
+            )
+        )
+        assignment_confidences = [
+            float(record["assignment_confidence"]) for record in assignment["assignments"]
+        ]
         evaluations.append(
             {
                 "candidate_id": candidate_id,
@@ -786,7 +1532,12 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                 "passed_hard_gates": not failed,
                 "failed_gates": failed,
                 "heldout_state_validation_used": bool(state_evaluations),
-                "link_assignment_confidence": 0.7,
+                "capture_state_count": request["capture_state_count"],
+                "accepted_alignment_state_ids": accepted_alignment_state_ids,
+                "selected_candidate_validation_level": validation_level,
+                "link_assignment_confidence": (
+                    min(assignment_confidences) if assignment_confidences else 0.0
+                ),
                 "runtime_seconds": 0.0,
                 "warnings": (
                     [] if not failed else ["candidate failed frozen-structure held-out state gates"]

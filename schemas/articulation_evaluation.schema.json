@@ -3,10 +3,22 @@
     "ArticulatedCandidateEvaluation": {
       "additionalProperties": false,
       "properties": {
+        "accepted_alignment_state_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Accepted Alignment State Ids",
+          "type": "array"
+        },
         "candidate_id": {
           "minLength": 1,
           "title": "Candidate Id",
           "type": "string"
+        },
+        "capture_state_count": {
+          "minimum": 1,
+          "title": "Capture State Count",
+          "type": "integer"
         },
         "failed_gates": {
           "items": {
@@ -39,6 +51,9 @@
           "title": "Runtime Seconds",
           "type": "number"
         },
+        "selected_candidate_validation_level": {
+          "$ref": "#/$defs/ArticulationEvidenceLevel"
+        },
         "state_evaluations": {
           "items": {
             "$ref": "#/$defs/ArticulationStateEvaluation"
@@ -65,6 +80,9 @@
         "passed_hard_gates",
         "failed_gates",
         "heldout_state_validation_used",
+        "capture_state_count",
+        "accepted_alignment_state_ids",
+        "selected_candidate_validation_level",
         "link_assignment_confidence",
         "runtime_seconds"
       ],
@@ -90,6 +108,16 @@
       "title": "ArticulatedCandidateStatus",
       "type": "string"
     },
+    "ArticulationEvidenceLevel": {
+      "enum": [
+        "single_state_prior_only",
+        "two_state_motion_supported",
+        "multi_state_heldout_available",
+        "multi_state_heldout_validated"
+      ],
+      "title": "ArticulationEvidenceLevel",
+      "type": "string"
+    },
     "ArticulationStateEvaluation": {
       "additionalProperties": false,
       "properties": {
@@ -107,28 +135,112 @@
           "default": null,
           "title": "Axis Error Degrees"
         },
+        "base_depth_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Depth Residual"
+        },
         "base_mask_iou": {
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Base Mask Iou",
-          "type": "number"
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Mask Iou"
+        },
+        "base_motion_arbitrary_units": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Motion Arbitrary Units"
         },
         "base_motion_scene_diagonals": {
-          "minimum": 0,
-          "title": "Base Motion Scene Diagonals",
-          "type": "number"
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Motion Scene Diagonals"
+        },
+        "base_point_residual_arbitrary_units": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Point Residual Arbitrary Units"
+        },
+        "base_point_residual_scene_diagonals": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Point Residual Scene Diagonals"
         },
         "depth_inlier_fraction": {
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Depth Inlier Fraction",
-          "type": "number"
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Inlier Fraction"
         },
         "front_of_scene_violation_ratio": {
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Front Of Scene Violation Ratio",
-          "type": "number"
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Front Of Scene Violation Ratio"
         },
         "heldout": {
           "title": "Heldout",
@@ -142,9 +254,17 @@
           "type": "object"
         },
         "joint_constraint_residual": {
-          "minimum": 0,
-          "title": "Joint Constraint Residual",
-          "type": "number"
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Joint Constraint Residual"
         },
         "joint_position_source": {
           "enum": [
@@ -155,21 +275,70 @@
           "title": "Joint Position Source",
           "type": "string"
         },
+        "joint_q_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Joint Q Residual"
+        },
         "movable_part_mask_iou": {
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Movable Part Mask Iou",
-          "type": "number"
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Movable Part Mask Iou"
+        },
+        "movable_point_residual_arbitrary_units": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Movable Point Residual Arbitrary Units"
         },
         "negative_space_violation_ratio": {
-          "maximum": 1,
-          "minimum": 0,
-          "title": "Negative Space Violation Ratio",
-          "type": "number"
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Negative Space Violation Ratio"
         },
         "per_link_depth_residual": {
           "additionalProperties": {
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "title": "Per Link Depth Residual",
           "type": "object"
@@ -187,6 +356,32 @@
           "default": null,
           "title": "Pivot Residual Part Diagonals"
         },
+        "prismatic_orthogonal_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prismatic Orthogonal Residual"
+        },
+        "prismatic_rotation_leakage_degrees": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prismatic Rotation Leakage Degrees"
+        },
         "render_paths": {
           "additionalProperties": {
             "type": "string"
@@ -194,30 +389,73 @@
           "title": "Render Paths",
           "type": "object"
         },
+        "rendered_heldout_view_count": {
+          "minimum": 0,
+          "title": "Rendered Heldout View Count",
+          "type": "integer"
+        },
+        "requested_heldout_view_count": {
+          "minimum": 0,
+          "title": "Requested Heldout View Count",
+          "type": "integer"
+        },
+        "scene_diagonal_arbitrary_units": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Diagonal Arbitrary Units"
+        },
         "state_id": {
           "minLength": 1,
           "title": "State Id",
           "type": "string"
         },
-        "whole_object_mask_iou": {
-          "maximum": 1,
+        "usable_heldout_view_count": {
           "minimum": 0,
-          "title": "Whole Object Mask Iou",
-          "type": "number"
+          "title": "Usable Heldout View Count",
+          "type": "integer"
+        },
+        "views_with_target_masks": {
+          "minimum": 0,
+          "title": "Views With Target Masks",
+          "type": "integer"
+        },
+        "views_with_valid_depth": {
+          "minimum": 0,
+          "title": "Views With Valid Depth",
+          "type": "integer"
+        },
+        "whole_object_mask_iou": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Whole Object Mask Iou"
         }
       },
       "required": [
         "state_id",
         "heldout",
-        "base_mask_iou",
-        "movable_part_mask_iou",
-        "whole_object_mask_iou",
+        "requested_heldout_view_count",
+        "usable_heldout_view_count",
+        "rendered_heldout_view_count",
+        "views_with_target_masks",
+        "views_with_valid_depth",
         "per_link_depth_residual",
-        "depth_inlier_fraction",
-        "negative_space_violation_ratio",
-        "front_of_scene_violation_ratio",
-        "base_motion_scene_diagonals",
-        "joint_constraint_residual",
         "inferred_joint_positions",
         "joint_position_source"
       ],

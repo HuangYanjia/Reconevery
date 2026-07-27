@@ -32,6 +32,10 @@
 10. Run CPU fake DAG and synthetic prismatic/revolute/leakage/license tests
     before official Particulate and real three-state H100 acceptance, preview
     inspection, and identical resume validation.
+11. Phase 5C.1 separates stable cross-state part IDs from state-local SAM track
+    IDs, derives effective evidence from accepted alignments, writes one typed
+    constrained fitted model, and makes that exact model the selection and Scene
+    IR source of truth.
 
 Phase 5C does not implement physical joint validation, collision generation,
 dynamics identification, metric scale, gravity alignment, scene replacement, or

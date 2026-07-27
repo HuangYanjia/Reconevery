@@ -1,5 +1,15 @@
 {
   "$defs": {
+    "ArticulationEvidenceLevel": {
+      "enum": [
+        "single_state_prior_only",
+        "two_state_motion_supported",
+        "multi_state_heldout_available",
+        "multi_state_heldout_validated"
+      ],
+      "title": "ArticulationEvidenceLevel",
+      "type": "string"
+    },
     "EndToEndConsistencyCheck": {
       "additionalProperties": false,
       "properties": {
@@ -29,11 +39,26 @@
   },
   "additionalProperties": false,
   "properties": {
+    "accepted_alignment_state_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Accepted Alignment State Ids",
+      "type": "array"
+    },
     "canonical_gravity_alignment_known": {
       "const": false,
       "default": false,
       "title": "Canonical Gravity Alignment Known",
       "type": "boolean"
+    },
+    "capture_evidence_tier": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
+    "capture_state_count": {
+      "minimum": 1,
+      "title": "Capture State Count",
+      "type": "integer"
     },
     "checks": {
       "items": {
@@ -53,6 +78,9 @@
       "default": false,
       "title": "Dynamics Identification Implemented",
       "type": "boolean"
+    },
+    "effective_motion_evidence_level": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
     },
     "heldout_state_validation_used": {
       "title": "Heldout State Validation Used",
@@ -88,6 +116,9 @@
       "title": "Schema Version",
       "type": "string"
     },
+    "selected_candidate_validation_level": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
     "sim_ready_scene_implemented": {
       "const": false,
       "default": false,
@@ -107,7 +138,12 @@
     "checks",
     "multi_state_evidence_available",
     "measured_joint_motion_available",
-    "heldout_state_validation_used"
+    "heldout_state_validation_used",
+    "capture_state_count",
+    "capture_evidence_tier",
+    "accepted_alignment_state_ids",
+    "effective_motion_evidence_level",
+    "selected_candidate_validation_level"
   ],
   "title": "Phase5CConsistencyReport",
   "type": "object"

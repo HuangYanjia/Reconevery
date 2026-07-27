@@ -191,7 +191,9 @@ policy. GenRecon is not a canonical dependency.
 state runs. `articulation_state_alignment` sees all state base geometry but explicitly
 excludes movable parts. `articulation_motion` and `articulation_fitting` receive only
 the generation/fitting state subset. Held-out state geometry is materialized only for
-`articulation_evaluation`.
+`articulation_evaluation`. Stable part IDs map to state-local SAM track IDs. The
+selection boundary references exact candidate, assignment, fitted-model, and
+evaluation hashes; Scene IR consumes the fitted base Sim(3) and refined joints.
 
 ArtVIP and PartNet retrieval consume immutable local indices without network access.
 Official Particulate is a parallel research candidate source. Selection retains the

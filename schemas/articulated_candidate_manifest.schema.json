@@ -85,6 +85,37 @@
           "title": "Warnings",
           "type": "array"
         },
+        "working_frame_hypotheses_evaluated": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Working Frame Hypotheses Evaluated",
+          "type": "array"
+        },
+        "working_frame_hypothesis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Frame Hypothesis"
+        },
+        "working_frame_selection_evidence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Frame Selection Evidence"
+        },
         "working_transform_particulate_to_source": {
           "anyOf": [
             {

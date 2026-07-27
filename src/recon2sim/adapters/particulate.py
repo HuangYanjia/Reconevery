@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 
 from pydantic import Field, model_validator
 
@@ -60,6 +60,7 @@ class ParticulateAdapterConfig(ArticulationWorkerConfig):
     partfield_checkpoint_path: str | None = None
     source_meshes: dict[str, str] = Field(default_factory=dict)
     maximum_candidates: int = Field(default=4, ge=1, le=12)
+    working_axis_hint: Literal["+X", "-X", "+Y", "-Y", "+Z", "-Z"] | None = None
     generation_configuration: dict[str, object] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -73,6 +74,11 @@ class ParticulateAdapterConfig(ArticulationWorkerConfig):
             raise ValueError("Particulate source identity differs from the reviewed official pin")
         if self.execution_mode == "fake_worker":
             return self
+        if self.working_axis_hint is None:
+            raise ValueError(
+                "real Particulate execution requires an explicit working_axis_hint; "
+                "Phase 5C does not assume gravity"
+            )
         if self.checkpoint_hashes != {"model.pt": PARTICULATE_MODEL_SHA256}:
             raise ValueError("Particulate checkpoint hash does not match the official pin")
         if self.runtime_model_revisions != {PARTFIELD_REPOSITORY: PARTFIELD_REVISION}:
@@ -293,6 +299,7 @@ class ParticulateAdapter:
                 )
             )
         requests: list[ParticulateCandidateRequest] = []
+        working_hint = config.working_axis_hint or "+Z"
         for index, (source_id, source_path, representation) in enumerate(
             source_items[: config.maximum_candidates]
         ):
@@ -325,14 +332,12 @@ class ParticulateAdapter:
                         config.runtime_model_hashes
                         or {"model_objaverse.ckpt": PARTFIELD_MODEL_SHA256}
                     ),
-                    working_frame_hypotheses=[
-                        "+Z",
-                        "+X",
-                        "-X",
-                        "+Y",
-                        "-Y",
-                        "-Z",
-                    ],
+                    working_frame_hypothesis=working_hint,
+                    hypotheses_evaluated=[working_hint],
+                    hypothesis_selection_evidence=(
+                        "explicit configured up-axis prior; no gravity claim and no "
+                        "alternate hypothesis evaluation"
+                    ),
                     generation_configuration=config.generation_configuration,
                     output_directory=(
                         "reconstruction/articulation/candidates/"

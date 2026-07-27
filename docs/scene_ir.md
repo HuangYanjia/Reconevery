@@ -121,4 +121,7 @@ separate from candidate mechanical limits. Measured part assets remain
 `partial_measured`. A selected generated link is
 `articulated_visual_candidate` and `selected_by_multi_state_validation`. All Phase 5C
 objects keep `physical_validation=not_implemented`, `collision_ready=false`, and
-`sim_ready=false`.
+`sim_ready=false`. Selected objects use the fitted candidate-base Sim(3); joints use
+fitted/refined axes and pivots, visual formats come from actual suffixes, and the
+articulation records exact fitting/evaluation paths and hashes. Measured link assets
+remain attached beside retrieved/generated visual links.

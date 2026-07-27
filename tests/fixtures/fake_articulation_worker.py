@@ -37,6 +37,12 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def stable_hash(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
 def write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -112,9 +118,14 @@ def align(request: dict[str, object], input_root: Path, output_dir: Path) -> Non
     write_json(
         output_dir / "state_alignment.json",
         {
-            "schema_version": "0.1.0",
+            "schema_version": "0.2.0",
             "capture_manifest_sha256": request["capture_manifest_sha256"],
             "reference_state_id": capture["reference_state_id"],
+            "capture_state_count": len(capture["states"]),
+            "accepted_alignment_state_ids": [
+                item["state_id"] for item in transforms if item["accepted"]
+            ],
+            "aligned_state_count": sum(bool(item["accepted"]) for item in transforms),
             "transforms": transforms,
             "static_evidence_only": True,
             "source_states_unchanged": True,
@@ -181,11 +192,16 @@ def estimate_motion(
     write_json(
         output_dir / "measured_motion.json",
         {
-            "schema_version": "0.1.0",
+            "schema_version": "0.2.0",
             "capture_manifest_sha256": request["capture_manifest_sha256"],
             "state_alignment_sha256": request["state_alignment_sha256"],
             "articulated_object_id": request["articulated_object_id"],
-            "evidence_level": request["evidence_level"],
+            "reference_state_id": request["reference_state_id"],
+            "capture_state_count": request["capture_state_count"],
+            "accepted_alignment_state_ids": request["accepted_alignment_state_ids"],
+            "effective_motion_evidence_level": (
+                "two_state_motion_supported" if state_count >= 2 else "single_state_prior_only"
+            ),
             "part_geometries": geometries,
             "joint_hypotheses": [
                 {
@@ -204,6 +220,12 @@ def estimate_motion(
                     "orthogonal_residual": 0.005 if state_count > 1 else None,
                     "rotation_leakage_degrees": 0.2 if state_count > 1 else None,
                     "axis_consistency_degrees": None,
+                    "normalization_part_diagonal": 1.0,
+                    "fixed_translation_residual_arbitrary_units": (
+                        0.0 if state_count > 1 else None
+                    ),
+                    "fixed_translation_residual_part_diagonals": (0.0 if state_count > 1 else None),
+                    "pivot_residual_arbitrary_units": None,
                     "pivot_residual_part_diagonals": None,
                     "confidence": 0.95 if state_count > 1 else 0.3,
                     "warnings": [],
@@ -408,6 +430,9 @@ def generate(
             "native_units": "normalized_arbitrary_units",
             "working_transform_source_to_particulate": IDENTITY,
             "working_transform_particulate_to_source": IDENTITY,
+            "working_frame_hypothesis": item["working_frame_hypothesis"],
+            "working_frame_hypotheses_evaluated": item["hypotheses_evaluated"],
+            "working_frame_selection_evidence": item["hypothesis_selection_evidence"],
             "license_record": license_record,
             "production_selectable": False,
             "provenance": {
@@ -465,29 +490,66 @@ def fit(request: dict[str, object], output_dir: Path) -> None:
     fittings = []
     failed = request.get("fake_mode") == "wrong_joint_type"
     for candidate_id in request["candidate_ids"]:
-        assignments.append(
-            {
-                "candidate_id": candidate_id,
-                "assignments": [
-                    {
-                        "observed_part_id": "cabinet_body",
-                        "candidate_link_ids": ["cabinet_body"],
-                        "assignment_confidence": 0.98,
-                        "evidence": {"semantic": 1.0, "geometry": 0.95},
-                        "ambiguous": False,
-                    },
-                    {
-                        "observed_part_id": "drawer_0001",
-                        "candidate_link_ids": ["drawer_0001"],
-                        "assignment_confidence": 0.97,
-                        "evidence": {"semantic": 1.0, "motion": 0.94},
-                        "ambiguous": False,
-                    },
-                ],
-                "unmatched_candidate_links": [],
-                "unmatched_observed_parts": [],
-            }
+        assignment = {
+            "candidate_id": candidate_id,
+            "assignments": [
+                {
+                    "observed_part_id": "cabinet_body",
+                    "candidate_link_ids": ["cabinet_body"],
+                    "assignment_confidence": 0.98,
+                    "evidence": {"semantic": 1.0, "geometry": 0.95},
+                    "ambiguous": False,
+                },
+                {
+                    "observed_part_id": "drawer",
+                    "candidate_link_ids": ["drawer_0001"],
+                    "assignment_confidence": 0.97,
+                    "evidence": {"semantic": 1.0, "motion": 0.94},
+                    "ambiguous": False,
+                },
+            ],
+            "unmatched_candidate_links": [],
+            "unmatched_observed_parts": [],
+        }
+        assignments.append(assignment)
+        structure_states = list(
+            dict.fromkeys([*request["generation_state_ids"], *request["fitting_state_ids"]])
         )
+        fitted_model = {
+            "schema_version": "0.1.0",
+            "candidate_id": candidate_id,
+            "matrix_reference_world_from_candidate_base": IDENTITY,
+            "scale": 1.0,
+            "link_assignments": assignment["assignments"],
+            "fitted_joints": [
+                {
+                    "candidate_joint_id": "drawer_joint",
+                    "measured_joint_id": "drawer_joint",
+                    "parent_observed_part_id": "cabinet_body",
+                    "child_observed_part_id": "drawer",
+                    "joint_type": "prismatic",
+                    "fitted_axis": [1.0, 0.0, 0.0],
+                    "fitted_pivot": None,
+                    "axis_sign": 1,
+                    "q_scale": 1.0,
+                    "q_offset": 0.0,
+                    "fitting_state_q": {
+                        state_id: index * 0.35 for index, state_id in enumerate(structure_states)
+                    },
+                    "axis_refinement_degrees": 0.0,
+                    "pivot_refinement_arbitrary_units": None,
+                    "pivot_refinement_part_diagonals": None,
+                    "fitting_residual_arbitrary_units": 0.01,
+                    "fitting_residual_part_diagonals": 0.01,
+                }
+            ],
+            "generation_state_ids": request["generation_state_ids"],
+            "fitting_state_ids": request["fitting_state_ids"],
+            "heldout_state_ids": request["heldout_state_ids"],
+            "fit_residual_arbitrary_units": 0.01,
+            "fit_residual_scene_diagonals": 0.01,
+            "ambiguity_reasons": [],
+        }
         fittings.append(
             {
                 "candidate_id": candidate_id,
@@ -502,6 +564,8 @@ def fit(request: dict[str, object], output_dir: Path) -> None:
                 "joint_axis_signs": {"drawer_joint": 1},
                 "fitting_median_residual": None if failed else 0.01,
                 "fitting_part_iou": None if failed else 0.82,
+                "fitted_model": None if failed else fitted_model,
+                "fitted_model_sha256": None if failed else stable_hash(fitted_model),
                 "structure_frozen_before_heldout": True,
                 "failure_reason": "wrong joint type" if failed else None,
             }
@@ -532,12 +596,21 @@ def fit(request: dict[str, object], output_dir: Path) -> None:
 def evaluate(request: dict[str, object], output_dir: Path) -> None:
     maybe_fail(request)
     reject = request.get("fake_mode") in {"heldout_state_failure", "wrong_joint_type"}
+    missing_views = request.get("fake_mode") == "missing_heldout_views"
+    missing_target = request.get("fake_mode") == "no_target_mask"
     evaluations = []
     for candidate_id in request["frozen_candidate_ids"]:
         state_evaluations = [
             {
                 "state_id": state_id,
                 "heldout": True,
+                "requested_heldout_view_count": max(
+                    1, len(request["heldout_views_by_state"].get(state_id, []))
+                ),
+                "usable_heldout_view_count": 0 if missing_views else 1,
+                "rendered_heldout_view_count": 0 if missing_views else 1,
+                "views_with_target_masks": 0 if missing_target else 1,
+                "views_with_valid_depth": 1,
                 "base_mask_iou": 0.78 if not reject else 0.30,
                 "movable_part_mask_iou": 0.74 if not reject else 0.10,
                 "whole_object_mask_iou": 0.79 if not reject else 0.25,
@@ -548,8 +621,16 @@ def evaluate(request: dict[str, object], output_dir: Path) -> None:
                 "depth_inlier_fraction": 0.86 if not reject else 0.2,
                 "negative_space_violation_ratio": 0.03 if not reject else 0.3,
                 "front_of_scene_violation_ratio": 0.02 if not reject else 0.2,
+                "scene_diagonal_arbitrary_units": 1.0,
+                "base_point_residual_arbitrary_units": 0.003,
+                "base_point_residual_scene_diagonals": 0.003,
+                "base_motion_arbitrary_units": 0.003,
                 "base_motion_scene_diagonals": 0.003,
+                "movable_point_residual_arbitrary_units": (0.01 if not reject else 0.2),
                 "joint_constraint_residual": 0.01 if not reject else 0.2,
+                "prismatic_orthogonal_residual": 0.01 if not reject else 0.2,
+                "prismatic_rotation_leakage_degrees": (0.5 if not reject else 10.0),
+                "joint_q_residual": 0.01 if not reject else 0.2,
                 "axis_error_degrees": 2.0,
                 "pivot_residual_part_diagonals": None,
                 "inferred_joint_positions": {"drawer_joint": 0.7},
@@ -557,7 +638,7 @@ def evaluate(request: dict[str, object], output_dir: Path) -> None:
             }
             for state_id in request["heldout_state_ids"]
         ]
-        passed = not reject and bool(state_evaluations)
+        passed = not reject and not missing_views and not missing_target and bool(state_evaluations)
         evaluations.append(
             {
                 "candidate_id": candidate_id,
@@ -566,11 +647,26 @@ def evaluate(request: dict[str, object], output_dir: Path) -> None:
                 "state_evaluations": state_evaluations,
                 "passed_hard_gates": passed,
                 "failed_gates": (
-                    ["minimum_movable_part_mask_iou"]
+                    ["minimum_usable_heldout_views"]
+                    if missing_views
+                    else ["target_part_mask_unavailable"]
+                    if missing_target
+                    else ["minimum_movable_part_mask_iou"]
                     if reject
                     else ([] if state_evaluations else ["minimum_heldout_states"])
                 ),
                 "heldout_state_validation_used": bool(state_evaluations),
+                "capture_state_count": request["capture_state_count"],
+                "accepted_alignment_state_ids": request["accepted_alignment_state_ids"],
+                "selected_candidate_validation_level": (
+                    "multi_state_heldout_validated"
+                    if passed
+                    else (
+                        "multi_state_heldout_available"
+                        if len(request["accepted_alignment_state_ids"]) >= 3
+                        else "two_state_motion_supported"
+                    )
+                ),
                 "link_assignment_confidence": 0.97,
                 "runtime_seconds": 0.03,
                 "warnings": [],

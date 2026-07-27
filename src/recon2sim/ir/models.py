@@ -417,16 +417,26 @@ class Articulation(StrictModel):
         Literal[
             "single_state_prior_only",
             "two_state_motion_supported",
+            "multi_state_heldout_available",
             "multi_state_heldout_validated",
         ]
         | None
     ) = None
     validation_artifact_path: str | None = None
+    fitting_artifact_path: str | None = None
+    fitting_artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    evaluation_artifact_path: str | None = None
+    evaluation_artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    selected_candidate_id: str | None = None
     physical_validation: Literal["not_implemented"] | None = None
     collision_ready: bool | None = None
     sim_ready: bool | None = None
 
-    @field_validator("validation_artifact_path")
+    @field_validator(
+        "validation_artifact_path",
+        "fitting_artifact_path",
+        "evaluation_artifact_path",
+    )
     @classmethod
     def relative_articulation_validation_path(cls, value: str | None) -> str | None:
         return _relative_path(value) if value is not None else None

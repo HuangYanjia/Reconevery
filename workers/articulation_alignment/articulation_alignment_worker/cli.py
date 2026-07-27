@@ -103,13 +103,17 @@ def align(request: dict[str, object], input_root: Path, output_dir: Path) -> Non
                 "failure_reason": None if accepted else "static alignment gates failed",
             }
         )
+    accepted_state_ids = [str(item["state_id"]) for item in transforms if item["accepted"]]
     write_json(
         output_dir / "state_alignment.json",
         {
-            "schema_version": "0.1.0",
+            "schema_version": "0.2.0",
             "capture_manifest_sha256": request["capture_manifest_sha256"],
             "reference_state_id": reference_state,
             "transforms": transforms,
+            "capture_state_count": len(transforms),
+            "accepted_alignment_state_ids": accepted_state_ids,
+            "aligned_state_count": len(accepted_state_ids),
             "static_evidence_only": True,
             "source_states_unchanged": True,
             "runtime_seconds": time.monotonic() - started,
@@ -144,6 +148,9 @@ def estimate_motion_action(
         if item["accepted"]
     }
     state_ids = [str(value) for value in request["accepted_state_ids"]]
+    reference_state_id = str(request["reference_state_id"])
+    if not state_ids or state_ids[0] != reference_state_id:
+        raise ValueError("declared reference state must be first in measured-motion evidence")
     movable_parts = request["movable_parts"]
     if not isinstance(movable_parts, list):
         raise ValueError("movable part request is invalid")
@@ -161,7 +168,7 @@ def estimate_motion_action(
         raise ValueError("motion configuration is invalid")
     for part in movable_parts:
         part_id = str(part["part_id"])
-        reference_state = state_ids[0]
+        reference_state = reference_state_id
         reference_points = apply_transform(
             load_points(
                 input_root / str(by_state[(reference_state, part_id)]["measured_point_cloud_path"])
@@ -191,6 +198,10 @@ def estimate_motion_action(
                     len(points),
                 )
             )
+        part_diagonal = max(
+            float(np.linalg.norm(np.ptp(reference_points, axis=0))),
+            np.finfo(np.float64).eps,
+        )
         joint = (
             JointEstimate(
                 joint_type="unknown",
@@ -207,7 +218,8 @@ def estimate_motion_action(
                 transforms,
                 max_fixed_translation=float(
                     configuration.get("maximum_fixed_translation_part_diagonals", 0.01)
-                ),
+                )
+                * part_diagonal,
                 max_fixed_rotation_degrees=float(
                     configuration.get("maximum_fixed_rotation_degrees", 2.0)
                 ),
@@ -222,6 +234,29 @@ def estimate_motion_action(
                 ),
             )
         )
+        pivot_residual_raw = joint.pivot_residual
+        pivot_residual_normalized = (
+            pivot_residual_raw / part_diagonal if pivot_residual_raw is not None else None
+        )
+        pivot_limit = float(
+            configuration.get("maximum_revolute_pivot_residual_part_diagonals", 0.10)
+        )
+        pivot_rejected = (
+            joint.joint_type == "revolute"
+            and pivot_residual_normalized is not None
+            and pivot_residual_normalized > pivot_limit
+        )
+        if pivot_rejected:
+            joint = JointEstimate(
+                joint_type="unknown",
+                axis=None,
+                pivot=None,
+                positions=[0.0] * len(transforms),
+                orthogonal_residual=None,
+                rotation_leakage_degrees=None,
+                axis_consistency_degrees=None,
+                pivot_residual=pivot_residual_raw,
+            )
         confidence = 0.25 if joint.joint_type == "unknown" else 0.8
         states = [
             {
@@ -259,7 +294,26 @@ def estimate_motion_action(
                 "orthogonal_residual": joint.orthogonal_residual,
                 "rotation_leakage_degrees": joint.rotation_leakage_degrees,
                 "axis_consistency_degrees": joint.axis_consistency_degrees,
-                "pivot_residual_part_diagonals": joint.pivot_residual,
+                "normalization_part_diagonal": part_diagonal,
+                "fixed_translation_residual_arbitrary_units": (
+                    float(
+                        max(
+                            np.linalg.norm(matrix[:3, 3] - transforms[0][:3, 3])
+                            for matrix in transforms
+                        )
+                    )
+                ),
+                "fixed_translation_residual_part_diagonals": (
+                    float(
+                        max(
+                            np.linalg.norm(matrix[:3, 3] - transforms[0][:3, 3])
+                            for matrix in transforms
+                        )
+                    )
+                    / part_diagonal
+                ),
+                "pivot_residual_arbitrary_units": pivot_residual_raw,
+                "pivot_residual_part_diagonals": pivot_residual_normalized,
                 "confidence": confidence,
                 "warnings": (
                     [
@@ -267,18 +321,37 @@ def estimate_motion_action(
                         f"configured joint hint={part.get('expected_joint_hint')}"
                     ]
                     if len(transforms) == 1
-                    else []
+                    else (
+                        [
+                            "revolute hypothesis rejected because normalized pivot "
+                            "residual exceeded the configured gate"
+                        ]
+                        if pivot_rejected
+                        else []
+                    )
                 ),
             }
         )
+    valid_measured_motion = any(
+        item["joint_type"] in {"fixed", "prismatic", "revolute"} for item in hypotheses
+    )
+    accepted_count = len(request["accepted_alignment_state_ids"])
+    effective_level = (
+        "single_state_prior_only"
+        if accepted_count < 2 or not valid_measured_motion
+        else "two_state_motion_supported"
+    )
     write_json(
         output_dir / "measured_motion.json",
         {
-            "schema_version": "0.1.0",
+            "schema_version": "0.2.0",
             "capture_manifest_sha256": request["capture_manifest_sha256"],
             "state_alignment_sha256": request["state_alignment_sha256"],
             "articulated_object_id": request["articulated_object_id"],
-            "evidence_level": request["evidence_level"],
+            "reference_state_id": reference_state_id,
+            "capture_state_count": request["capture_state_count"],
+            "accepted_alignment_state_ids": request["accepted_alignment_state_ids"],
+            "effective_motion_evidence_level": effective_level,
             "part_geometries": copied_geometries,
             "joint_hypotheses": hypotheses,
             "base_link_fixed": True,

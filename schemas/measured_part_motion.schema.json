@@ -87,12 +87,22 @@
           "title": "Point Count",
           "type": "integer"
         },
+        "prompt_id": {
+          "minLength": 1,
+          "title": "Prompt Id",
+          "type": "string"
+        },
         "scale_status": {
           "$ref": "#/$defs/ScaleStatus"
         },
         "semantic_label": {
           "minLength": 1,
           "title": "Semantic Label",
+          "type": "string"
+        },
+        "source_track_id": {
+          "minLength": 1,
+          "title": "Source Track Id",
           "type": "string"
         },
         "state_alignment_sha256": {
@@ -121,6 +131,8 @@
         "state_id",
         "articulated_object_id",
         "part_id",
+        "source_track_id",
+        "prompt_id",
         "semantic_label",
         "measured_point_cloud_path",
         "measured_point_cloud_sha256",
@@ -140,6 +152,7 @@
       "enum": [
         "single_state_prior_only",
         "two_state_motion_supported",
+        "multi_state_heldout_available",
         "multi_state_heldout_validated"
       ],
       "title": "ArticulationEvidenceLevel",
@@ -280,6 +293,32 @@
           "title": "Confidence",
           "type": "number"
         },
+        "fixed_translation_residual_arbitrary_units": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed Translation Residual Arbitrary Units"
+        },
+        "fixed_translation_residual_part_diagonals": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed Translation Residual Part Diagonals"
+        },
         "joint_id": {
           "minLength": 1,
           "title": "Joint Id",
@@ -297,6 +336,19 @@
           ],
           "title": "Limit Source",
           "type": "string"
+        },
+        "normalization_part_diagonal": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Normalization Part Diagonal"
         },
         "observed_position_max": {
           "anyOf": [
@@ -364,6 +416,19 @@
           ],
           "default": null,
           "title": "Pivot"
+        },
+        "pivot_residual_arbitrary_units": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pivot Residual Arbitrary Units"
         },
         "pivot_residual_part_diagonals": {
           "anyOf": [
@@ -490,6 +555,13 @@
   },
   "additionalProperties": false,
   "properties": {
+    "accepted_alignment_state_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Accepted Alignment State Ids",
+      "type": "array"
+    },
     "articulated_object_id": {
       "minLength": 1,
       "title": "Articulated Object Id",
@@ -504,7 +576,12 @@
       "title": "Capture Manifest Sha256",
       "type": "string"
     },
-    "evidence_level": {
+    "capture_state_count": {
+      "minimum": 1,
+      "title": "Capture State Count",
+      "type": "integer"
+    },
+    "effective_motion_evidence_level": {
       "$ref": "#/$defs/ArticulationEvidenceLevel"
     },
     "joint_hypotheses": {
@@ -521,14 +598,19 @@
       "title": "Part Geometries",
       "type": "array"
     },
+    "reference_state_id": {
+      "minLength": 1,
+      "title": "Reference State Id",
+      "type": "string"
+    },
     "runtime_seconds": {
       "minimum": 0,
       "title": "Runtime Seconds",
       "type": "number"
     },
     "schema_version": {
-      "const": "0.1.0",
-      "default": "0.1.0",
+      "const": "0.2.0",
+      "default": "0.2.0",
       "title": "Schema Version",
       "type": "string"
     },
@@ -549,7 +631,10 @@
     "capture_manifest_sha256",
     "state_alignment_sha256",
     "articulated_object_id",
-    "evidence_level",
+    "reference_state_id",
+    "capture_state_count",
+    "accepted_alignment_state_ids",
+    "effective_motion_evidence_level",
     "part_geometries",
     "joint_hypotheses",
     "base_link_fixed",

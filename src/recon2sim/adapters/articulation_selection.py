@@ -16,6 +16,7 @@ from recon2sim.adapters.base import (
     StageResult,
 )
 from recon2sim.articulation import (
+    effective_evidence_level,
     invert_sim3,
     proper_positive_sim3,
     select_articulated_candidate,
@@ -40,7 +41,9 @@ from recon2sim.artifacts import (
     ArticulationFittingManifest,
     ArticulationPartPromptManifest,
     ArticulationPreviewManifest,
+    ArticulationStateAlignmentArtifact,
     EndToEndConsistencyCheck,
+    FittedArticulatedJoint,
     MeasuredPartMotionArtifact,
     Phase5CConsistencyReport,
 )
@@ -56,6 +59,7 @@ from recon2sim.ir import (
     ProvenanceRecord,
     ScaleStatus,
     SceneIR,
+    Transform,
 )
 from recon2sim.storage import atomic_write_json
 
@@ -69,6 +73,81 @@ def _preview(path: Path, title: str, lines: list[str]) -> None:
         draw.text((42, 112 + index * 42), line, fill=(30, 38, 46))
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, format="PNG", optimize=False, compress_level=9)
+
+
+_EVIDENCE_ORDER = {
+    ArticulationEvidenceLevel.SINGLE_STATE_PRIOR_ONLY: 0,
+    ArticulationEvidenceLevel.TWO_STATE_MOTION_SUPPORTED: 1,
+    ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_AVAILABLE: 2,
+    ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED: 3,
+}
+
+
+def _matrix_to_transform(values: tuple[float, ...]) -> Transform:
+    if len(values) != 16:
+        raise ValueError("candidate base transform must contain 16 values")
+    matrix = [list(values[row * 4 : row * 4 + 4]) for row in range(4)]
+    determinant = (
+        matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
+        - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
+        + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0])
+    )
+    if not math.isfinite(determinant) or determinant <= 0:
+        raise ValueError("candidate base transform is not a positive-scale Sim(3)")
+    scale = determinant ** (1.0 / 3.0)
+    rotation = [[matrix[row][column] / scale for column in range(3)] for row in range(3)]
+    trace = rotation[0][0] + rotation[1][1] + rotation[2][2]
+    if trace > 0:
+        factor = math.sqrt(trace + 1.0) * 2
+        quaternion = (
+            (rotation[2][1] - rotation[1][2]) / factor,
+            (rotation[0][2] - rotation[2][0]) / factor,
+            (rotation[1][0] - rotation[0][1]) / factor,
+            0.25 * factor,
+        )
+    elif rotation[0][0] > rotation[1][1] and rotation[0][0] > rotation[2][2]:
+        factor = math.sqrt(1.0 + rotation[0][0] - rotation[1][1] - rotation[2][2]) * 2
+        quaternion = (
+            0.25 * factor,
+            (rotation[0][1] + rotation[1][0]) / factor,
+            (rotation[0][2] + rotation[2][0]) / factor,
+            (rotation[2][1] - rotation[1][2]) / factor,
+        )
+    elif rotation[1][1] > rotation[2][2]:
+        factor = math.sqrt(1.0 + rotation[1][1] - rotation[0][0] - rotation[2][2]) * 2
+        quaternion = (
+            (rotation[0][1] + rotation[1][0]) / factor,
+            0.25 * factor,
+            (rotation[1][2] + rotation[2][1]) / factor,
+            (rotation[0][2] - rotation[2][0]) / factor,
+        )
+    else:
+        factor = math.sqrt(1.0 + rotation[2][2] - rotation[0][0] - rotation[1][1]) * 2
+        quaternion = (
+            (rotation[0][2] + rotation[2][0]) / factor,
+            (rotation[1][2] + rotation[2][1]) / factor,
+            0.25 * factor,
+            (rotation[1][0] - rotation[0][1]) / factor,
+        )
+    norm = math.sqrt(sum(value * value for value in quaternion))
+    normalized_quaternion = tuple(float(value / norm) for value in quaternion)
+    return Transform(
+        translation=(matrix[0][3], matrix[1][3], matrix[2][3]),
+        rotation_xyzw=(
+            normalized_quaternion[0],
+            normalized_quaternion[1],
+            normalized_quaternion[2],
+            normalized_quaternion[3],
+        ),
+        scale=(scale, scale, scale),
+    )
+
+
+def _geometry_format(path: str) -> Literal["obj", "glb", "ply"]:
+    suffix = Path(path).suffix.lower().removeprefix(".")
+    if suffix not in {"obj", "glb", "ply"}:
+        raise ValueError(f"unsupported articulated visual asset format: {path}")
+    return suffix  # type: ignore[return-value]
 
 
 class ArticulationSelectionAdapter:
@@ -100,6 +179,10 @@ class ArticulationSelectionAdapter:
                 "measured_part_motion",
             ),
             InputSpec(
+                "reconstruction/articulation/state_alignment.json",
+                "articulation_state_alignment",
+            ),
+            InputSpec(
                 "reconstruction/articulation/measured_states/manifest.json",
                 "articulated_part_state_geometry_manifest",
             ),
@@ -110,6 +193,10 @@ class ArticulationSelectionAdapter:
             InputSpec(
                 "reconstruction/articulation/fitting_manifest.json",
                 "articulation_fitting_manifest",
+            ),
+            InputSpec(
+                "reconstruction/articulation/link_assignments.json",
+                "articulated_link_assignment_manifest",
             ),
             InputSpec(
                 "reconstruction/articulation/evaluation_manifest.json",
@@ -202,6 +289,9 @@ class ArticulationSelectionAdapter:
         capture = ArticulationCaptureManifest.model_validate_json(
             (root / "capture_manifest.json").read_text(encoding="utf-8")
         )
+        alignment = ArticulationStateAlignmentArtifact.model_validate_json(
+            (root / "state_alignment.json").read_text(encoding="utf-8")
+        )
         measured = MeasuredPartMotionArtifact.model_validate_json(
             (root / "measured_motion.json").read_text(encoding="utf-8")
         )
@@ -218,6 +308,9 @@ class ArticulationSelectionAdapter:
             (root / "evaluation_manifest.json").read_text(encoding="utf-8")
         )
         candidate_by_id = {item.candidate_id: item for item in candidates.candidates}
+        fitting_by_id = {item.candidate_id: item for item in fitting.fittings}
+        assignment_by_id = {item.candidate_id: item for item in fitting.link_assignments}
+        evaluation_by_id = {item.candidate_id: item for item in evaluation.evaluations}
         production = {
             item.candidate_id: item.production_selectable for item in candidates.candidates
         }
@@ -227,6 +320,23 @@ class ArticulationSelectionAdapter:
             mode=mode,
         )
         selected_candidate = candidate_by_id.get(selected_id) if selected_id else None
+        selected_fitting = fitting_by_id.get(selected_id) if selected_id else None
+        selected_assignment = assignment_by_id.get(selected_id) if selected_id else None
+        selected_evaluation = evaluation_by_id.get(selected_id) if selected_id else None
+        if selected_id is not None and (
+            selected_candidate is None
+            or selected_fitting is None
+            or selected_fitting.fitted_model is None
+            or selected_assignment is None
+            or selected_evaluation is None
+            or not selected_evaluation.passed_hard_gates
+        ):
+            raise ValueError("selected candidate lacks a passing fitted/evaluated model")
+        selected_validation_level = (
+            selected_evaluation.selected_candidate_validation_level
+            if selected_evaluation is not None
+            else measured.effective_motion_evidence_level
+        )
         if (
             selected_candidate is not None
             and selected_candidate.source_family is ArticulatedSourceFamily.MEASURED_MOTION
@@ -238,10 +348,13 @@ class ArticulationSelectionAdapter:
                 ArticulationEvidenceLevel.TWO_STATE_MOTION_SUPPORTED: (
                     ArticulatedCandidateStatus.TWO_STATE
                 ),
+                ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_AVAILABLE: (
+                    ArticulatedCandidateStatus.TWO_STATE
+                ),
                 ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED: (
                     ArticulatedCandidateStatus.MULTI_STATE
                 ),
-            }[capture.evidence_level]
+            }[selected_validation_level]
             rationale = [
                 "measured-motion analytic baseline passed its available evidence gates",
                 "no hidden visual geometry is implied by the measured baseline",
@@ -266,10 +379,33 @@ class ArticulationSelectionAdapter:
         selected = ArticulatedObjectSelection(
             articulated_object_id=capture.articulated_object_id,
             status=status,
-            evidence_level=capture.evidence_level,
+            capture_state_count=capture.capture_state_count,
+            capture_evidence_tier=capture.capture_evidence_tier,
+            accepted_alignment_state_ids=alignment.accepted_alignment_state_ids,
+            effective_motion_evidence_level=measured.effective_motion_evidence_level,
+            selected_candidate_validation_level=selected_validation_level,
             best_research_articulated_candidate=research_id,
             best_production_eligible_articulated_candidate=production_id,
             selected_candidate_id=selected_id,
+            candidate_manifest_sha256=sha256_file(root / "candidate_manifest.json"),
+            fitted_model_sha256=(
+                selected_fitting.fitted_model_sha256 if selected_fitting is not None else None
+            ),
+            link_assignment_sha256=(
+                stable_digest(selected_assignment.model_dump(mode="json"))
+                if selected_assignment is not None
+                else None
+            ),
+            evaluation_sha256=(
+                stable_digest(selected_evaluation.model_dump(mode="json"))
+                if selected_evaluation is not None
+                else None
+            ),
+            selected_candidate_sha256=(
+                stable_digest(selected_candidate.model_dump(mode="json"))
+                if selected_candidate is not None
+                else None
+            ),
             selection_rationale=rationale,
             geometry_status=(
                 (
@@ -286,7 +422,8 @@ class ArticulationSelectionAdapter:
                 if selected_id
                 and selected_candidate is not None
                 and selected_candidate.source_family is not ArticulatedSourceFamily.MEASURED_MOTION
-                and capture.evidence_level.value == "multi_state_heldout_validated"
+                and selected_validation_level
+                is ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED
                 else None
             ),
         )
@@ -316,11 +453,17 @@ class ArticulationSelectionAdapter:
             measured,
             geometry,
             selected_candidate,
+            selected_fitting,
+            selected_evaluation,
         )
         atomic_write_json(context.path("scene_ir", "phase5c_scene.json"), scene)
         diagnostics = ArticulationDiagnostics(
-            state_count=len(capture.states),
-            aligned_state_count=len(capture.states),
+            capture_state_count=capture.capture_state_count,
+            capture_evidence_tier=capture.capture_evidence_tier,
+            accepted_alignment_state_ids=alignment.accepted_alignment_state_ids,
+            effective_motion_evidence_level=measured.effective_motion_evidence_level,
+            selected_candidate_validation_level=selected_validation_level,
+            aligned_state_count=alignment.aligned_state_count,
             measured_part_count=len({item.part_id for item in geometry.geometries}),
             joint_hypothesis_count=len(measured.joint_hypotheses),
             candidate_count_by_family={
@@ -420,10 +563,53 @@ class ArticulationSelectionAdapter:
                     "schema_version": "0.1.0",
                     "articulated_object_id": capture.articulated_object_id,
                     "candidate": selected_candidate.model_dump(mode="json"),
+                    "fitted_kinematic_model": (
+                        selected_fitting.fitted_model.model_dump(mode="json")
+                        if selected_fitting is not None
+                        and selected_fitting.fitted_model is not None
+                        else None
+                    ),
+                    "base_sim3": (
+                        selected_fitting.fitted_model.matrix_reference_world_from_candidate_base
+                        if selected_fitting is not None
+                        and selected_fitting.fitted_model is not None
+                        else None
+                    ),
+                    "candidate_to_observed_link_map": (
+                        selected_assignment.model_dump(mode="json")
+                        if selected_assignment is not None
+                        else None
+                    ),
+                    "fitting_state_q": (
+                        selected_fitting.fitted_joint_positions
+                        if selected_fitting is not None
+                        else {}
+                    ),
+                    "heldout_inferred_q": (
+                        {
+                            state.state_id: state.inferred_joint_positions
+                            for state in selected_evaluation.state_evaluations
+                        }
+                        if selected_evaluation is not None
+                        else {}
+                    ),
+                    "evaluation": (
+                        selected_evaluation.model_dump(mode="json")
+                        if selected_evaluation is not None
+                        else None
+                    ),
+                    "identity_hashes": {
+                        "candidate_manifest": selected.candidate_manifest_sha256,
+                        "candidate": selected.selected_candidate_sha256,
+                        "fitted_model": selected.fitted_model_sha256,
+                        "link_assignment": selected.link_assignment_sha256,
+                        "evaluation": selected.evaluation_sha256,
+                    },
+                    "license_record": selected_candidate.license_record.model_dump(mode="json"),
                     "measured_joint_hypotheses": [
                         item.model_dump(mode="json") for item in measured.joint_hypotheses
                     ],
-                    "evidence_level": capture.evidence_level,
+                    "evidence_level": selected_validation_level,
                     "coordinate_convention": scene.metadata.coordinate_convention,
                     "scale_status": "scale_ambiguous",
                     "physical_validation": "not_implemented",
@@ -436,6 +622,7 @@ class ArticulationSelectionAdapter:
                 urdf_path,
                 capture.articulated_object_id,
                 selected_candidate,
+                selected_fitting,
             )
             relative_root = f"reconstruction/articulation/selected/{capture.articulated_object_id}"
             dynamic_outputs.extend(
@@ -469,11 +656,20 @@ class ArticulationSelectionAdapter:
         path: Path,
         object_id: str,
         candidate: object,
+        fitting: object,
     ) -> None:
-        from recon2sim.artifacts import ArticulatedCandidate
+        from recon2sim.artifacts import ArticulatedCandidate, ArticulationFittingArtifact
 
         if not isinstance(candidate, ArticulatedCandidate):
             raise TypeError("preview URDF requires an articulated candidate")
+        fitted_model = (
+            fitting.fitted_model if isinstance(fitting, ArticulationFittingArtifact) else None
+        )
+        fitted_by_joint = (
+            {item.candidate_joint_id: item for item in fitted_model.fitted_joints}
+            if fitted_model is not None
+            else {}
+        )
         robot = ElementTree.Element(
             "robot",
             {
@@ -494,6 +690,7 @@ class ArticulationSelectionAdapter:
                 geometry = ElementTree.SubElement(visual, "geometry")
                 ElementTree.SubElement(geometry, "mesh", {"filename": visual_path})
         for joint in candidate.joints:
+            fitted_joint = fitted_by_joint.get(joint.joint_id)
             joint_type = (
                 "continuous"
                 if joint.joint_type is ArticulatedJointType.CONTINUOUS_CANDIDATE
@@ -509,13 +706,21 @@ class ArticulationSelectionAdapter:
             ElementTree.SubElement(
                 node,
                 "axis",
-                {"xyz": " ".join(f"{value:.12g}" for value in joint.axis)},
+                {
+                    "xyz": " ".join(
+                        f"{value:.12g}"
+                        for value in (
+                            fitted_joint.fitted_axis if fitted_joint is not None else joint.axis
+                        )
+                    )
+                },
             )
-            if joint.pivot is not None:
+            pivot = fitted_joint.fitted_pivot if fitted_joint is not None else joint.pivot
+            if pivot is not None:
                 ElementTree.SubElement(
                     node,
                     "origin",
-                    {"xyz": " ".join(f"{value:.12g}" for value in joint.pivot)},
+                    {"xyz": " ".join(f"{value:.12g}" for value in pivot)},
                 )
             if (
                 joint.candidate_limit_lower is not None
@@ -589,10 +794,21 @@ class ArticulationSelectionAdapter:
         measured: MeasuredPartMotionArtifact,
         geometry: ArticulatedPartStateGeometryManifest,
         candidate: object,
+        fitting: object,
+        evaluation: object,
     ) -> SceneIR:
-        from recon2sim.artifacts import ArticulatedCandidate
+        from recon2sim.artifacts import (
+            ArticulatedCandidate,
+            ArticulatedCandidateEvaluation,
+            ArticulationFittingArtifact,
+        )
 
         selected_candidate = candidate if isinstance(candidate, ArticulatedCandidate) else None
+        selected_fitting = fitting if isinstance(fitting, ArticulationFittingArtifact) else None
+        selected_evaluation = (
+            evaluation if isinstance(evaluation, ArticulatedCandidateEvaluation) else None
+        )
+        fitted_model = selected_fitting.fitted_model if selected_fitting is not None else None
         reference_geometries = [
             item for item in geometry.geometries if item.state_id == capture.reference_state_id
         ]
@@ -639,7 +855,7 @@ class ArticulationSelectionAdapter:
                             asset_id=f"{selected_candidate.candidate_id}.{link.link_id}.{index}",
                             asset_type=AssetType.ARTICULATED,
                             uri=path,
-                            format="ply",
+                            format=_geometry_format(path),
                             source=GeometrySourceType.GENERATED,
                             coordinate_convention=scene.metadata.coordinate_convention,
                             scale_status=ScaleStatus.SCALE_AMBIGUOUS,
@@ -680,22 +896,46 @@ class ArticulationSelectionAdapter:
             }
             if selected_candidate.source_family is ArticulatedSourceFamily.MEASURED_MOTION:
                 visual_ids_by_link = {}
-            links = [
-                Link(
-                    link_id=link.link_id,
-                    name=link.name,
-                    geometry_asset_ids=[
-                        *(
-                            [measured_ids_by_part[link.link_id]]
-                            if link.link_id in measured_ids_by_part
-                            else []
-                        ),
-                        *visual_ids_by_link.get(link.link_id, []),
-                    ],
+            observed_parts_by_link = (
+                {
+                    candidate_link_id: assignment.observed_part_id
+                    for assignment in fitted_model.link_assignments
+                    for candidate_link_id in assignment.candidate_link_ids
+                }
+                if fitted_model is not None
+                else {}
+            )
+            links = []
+            for link in selected_candidate.links:
+                observed_part_id = observed_parts_by_link.get(link.link_id)
+                measured_asset_ids = (
+                    [measured_ids_by_part[observed_part_id]]
+                    if observed_part_id in measured_ids_by_part
+                    else []
                 )
-                for link in selected_candidate.links
-            ]
+                links.append(
+                    Link(
+                        link_id=link.link_id,
+                        name=link.name,
+                        geometry_asset_ids=[
+                            *measured_asset_ids,
+                            *visual_ids_by_link.get(link.link_id, []),
+                        ],
+                    )
+                )
             measured_by_joint = {item.joint_id: item for item in measured.joint_hypotheses}
+            fitted_by_candidate_joint = (
+                {item.candidate_joint_id: item for item in fitted_model.fitted_joints}
+                if fitted_model is not None
+                else {}
+            )
+            heldout_positions_by_joint: dict[str, dict[str, float]] = {}
+            if selected_evaluation is not None:
+                for state in selected_evaluation.state_evaluations:
+                    for joint_id, position in state.inferred_joint_positions.items():
+                        heldout_positions_by_joint.setdefault(joint_id, {})[state.state_id] = (
+                            position
+                        )
             joints = []
             for item in selected_candidate.joints:
                 scene_joint_type: Literal["fixed", "prismatic", "revolute"]
@@ -707,7 +947,14 @@ class ArticulationSelectionAdapter:
                     scene_joint_type = "revolute"
                 else:
                     continue
-                measured_joint = measured_by_joint.get(item.joint_id)
+                fitted_joint = fitted_by_candidate_joint.get(item.joint_id)
+                if fitted_model is not None and fitted_joint is None:
+                    continue
+                measured_joint = (
+                    measured_by_joint.get(fitted_joint.measured_joint_id)
+                    if fitted_joint is not None
+                    else measured_by_joint.get(item.joint_id)
+                )
                 observed_range = (
                     (
                         measured_joint.observed_position_min,
@@ -724,8 +971,12 @@ class ArticulationSelectionAdapter:
                         parent_link_id=item.parent_link_id,
                         child_link_id=item.child_link_id,
                         joint_type=scene_joint_type,
-                        axis_xyz=item.axis,
-                        origin_xyz=item.pivot,
+                        axis_xyz=(
+                            fitted_joint.fitted_axis if fitted_joint is not None else item.axis
+                        ),
+                        origin_xyz=(
+                            fitted_joint.fitted_pivot if fitted_joint is not None else item.pivot
+                        ),
                         limits=(
                             (item.candidate_limit_lower, item.candidate_limit_upper)
                             if item.candidate_limit_lower is not None
@@ -734,9 +985,21 @@ class ArticulationSelectionAdapter:
                         ),
                         observed_position_range=observed_range,
                         observed_state_positions=(
-                            {state.state_id: state.position for state in measured_joint.states}
-                            if measured_joint is not None
-                            else {}
+                            {
+                                **(
+                                    fitted_joint.fitting_state_q
+                                    if fitted_joint is not None
+                                    else (
+                                        {
+                                            state.state_id: state.position
+                                            for state in measured_joint.states
+                                        }
+                                        if measured_joint is not None
+                                        else {}
+                                    )
+                                ),
+                                **heldout_positions_by_joint.get(item.joint_id, {}),
+                            }
                         ),
                         limit_source=item.limit_source,
                     )
@@ -798,13 +1061,45 @@ class ArticulationSelectionAdapter:
                 object_id=capture.articulated_object_id,
                 name=capture.articulated_object_id,
                 asset_type=AssetType.ARTICULATED,
+                transform=(
+                    _matrix_to_transform(fitted_model.matrix_reference_world_from_candidate_base)
+                    if fitted_model is not None
+                    else Transform()
+                ),
                 geometry_asset_ids=list(measured_ids_by_part.values()),
                 articulation=Articulation(
                     articulation_id=f"{capture.articulated_object_id}.articulation",
                     links=links,
                     joints=joints,
-                    evidence_level=capture.evidence_level.value,
+                    evidence_level=(
+                        selected_evaluation.selected_candidate_validation_level.value
+                        if selected_evaluation is not None
+                        else measured.effective_motion_evidence_level.value
+                    ),
                     validation_artifact_path=("validation/phase5c_articulated_reconstruction.json"),
+                    fitting_artifact_path=(
+                        "reconstruction/articulation/fitting_manifest.json"
+                        if selected_fitting is not None
+                        else None
+                    ),
+                    fitting_artifact_sha256=(
+                        selected_fitting.fitted_model_sha256
+                        if selected_fitting is not None
+                        else None
+                    ),
+                    evaluation_artifact_path=(
+                        "reconstruction/articulation/evaluation_manifest.json"
+                        if selected_evaluation is not None
+                        else None
+                    ),
+                    evaluation_artifact_sha256=(
+                        stable_digest(selected_evaluation.model_dump(mode="json"))
+                        if selected_evaluation is not None
+                        else None
+                    ),
+                    selected_candidate_id=(
+                        selected_candidate.candidate_id if selected_candidate is not None else None
+                    ),
                     physical_validation="not_implemented",
                     collision_ready=False,
                     sim_ready=False,
@@ -1067,6 +1362,33 @@ class Phase5CConsistencyValidationAdapter:
         accepted_alignment_states = {
             item.state_id for item in alignment.transforms if item.accepted
         }
+        valid_measured_motion = any(
+            item.joint_type
+            in {
+                ArticulatedJointType.FIXED,
+                ArticulatedJointType.PRISMATIC,
+                ArticulatedJointType.REVOLUTE,
+            }
+            for item in measured.joint_hypotheses
+        )
+        expected_effective_level = effective_evidence_level(
+            len(accepted_alignment_states),
+            valid_measured_motion=valid_measured_motion,
+        )
+        check(
+            "accepted_alignment_state_count",
+            alignment.accepted_alignment_state_ids
+            == [item.state_id for item in alignment.transforms if item.accepted]
+            and alignment.aligned_state_count == len(accepted_alignment_states),
+            "aligned_state_count and accepted IDs derive from accepted transforms",
+        )
+        check(
+            "effective_evidence_from_accepted_states",
+            measured.capture_state_count == capture.capture_state_count
+            and set(measured.accepted_alignment_state_ids) == accepted_alignment_states
+            and measured.effective_motion_evidence_level == expected_effective_level,
+            "effective motion evidence derives from accepted alignments and a valid motion model",
+        )
         used_alignment_states = (
             {state.state_id for joint in measured.joint_hypotheses for state in joint.states}
             | {state_id for item in fitting.fittings for state_id in item.fitting_state_ids}
@@ -1082,7 +1404,7 @@ class Phase5CConsistencyValidationAdapter:
             and used_alignment_states.issubset(accepted_alignment_states),
             "every state actually used by Phase 5C passed static-alignment gates",
         )
-        expected_parts = {prompt_object.base.prompt_id, *movable_ids}
+        expected_parts = {prompt_object.base.part_id, *movable_ids}
         geometry_parts_by_state = {
             state.state_id: {
                 item.part_id for item in geometry.geometries if item.state_id == state.state_id
@@ -1093,6 +1415,24 @@ class Phase5CConsistencyValidationAdapter:
             "stable_part_ids",
             all(parts == expected_parts for parts in geometry_parts_by_state.values()),
             "configured part IDs are stable and complete across states",
+        )
+        geometry_by_state_part = {
+            (item.state_id, item.part_id): item for item in geometry.geometries
+        }
+        check(
+            "state_local_track_mapping",
+            all(
+                set(state.part_track_ids) == expected_parts
+                and len(set(state.part_track_ids.values())) == len(expected_parts)
+                and all(
+                    (geometry_item := geometry_by_state_part.get((state.state_id, part_id)))
+                    is not None
+                    and geometry_item.source_track_id == track_id
+                    for part_id, track_id in state.part_track_ids.items()
+                )
+                for state in capture.states
+            ),
+            "stable part IDs map explicitly to unique state-local SAM track IDs",
         )
         check(
             "measured_part_geometry_lineage",
@@ -1111,6 +1451,54 @@ class Phase5CConsistencyValidationAdapter:
                 for joint in measured.joint_hypotheses
             ),
             "measured joint hypotheses use only accepted aligned states",
+        )
+        check(
+            "declared_reference_state_used",
+            measured.reference_state_id == capture.reference_state_id
+            and capture.reference_state_id in accepted_alignment_states
+            and all(
+                any(state.state_id == capture.reference_state_id for state in joint.states)
+                for joint in measured.joint_hypotheses
+            ),
+            "measured motion uses the declared accepted reference state",
+        )
+
+        def normalized_residual_valid(
+            raw: float | None,
+            normalized: float | None,
+            diagonal: float | None,
+        ) -> bool:
+            if raw is None:
+                return normalized is None
+            return (
+                normalized is not None
+                and diagonal is not None
+                and diagonal > 0
+                and math.isclose(
+                    normalized,
+                    raw / diagonal,
+                    rel_tol=1e-6,
+                    abs_tol=1e-9,
+                )
+            )
+
+        normalized_thresholds_valid = all(
+            normalized_residual_valid(
+                joint.fixed_translation_residual_arbitrary_units,
+                joint.fixed_translation_residual_part_diagonals,
+                joint.normalization_part_diagonal,
+            )
+            and normalized_residual_valid(
+                joint.pivot_residual_arbitrary_units,
+                joint.pivot_residual_part_diagonals,
+                joint.normalization_part_diagonal,
+            )
+            for joint in measured.joint_hypotheses
+        )
+        check(
+            "normalized_part_threshold_semantics",
+            normalized_thresholds_valid,
+            "part-diagonal thresholds record consistent raw and normalized residuals",
         )
         split_sets = (
             set(split.candidate_generation_states),
@@ -1213,6 +1601,26 @@ class Phase5CConsistencyValidationAdapter:
             "candidate joint graphs contain no unsupported cycles",
         )
         check(
+            "particulate_working_frame_audit",
+            all(
+                candidate.source_family is not ArticulatedSourceFamily.PARTICULATE
+                or (
+                    candidate.working_frame_hypothesis is not None
+                    and candidate.working_frame_hypothesis
+                    in candidate.working_frame_hypotheses_evaluated
+                    and candidate.working_frame_selection_evidence is not None
+                    and candidate.working_transform_source_to_particulate is not None
+                    and candidate.working_transform_particulate_to_source is not None
+                    and proper_positive_sim3(
+                        candidate.working_transform_source_to_particulate,
+                        candidate.working_transform_particulate_to_source,
+                    )
+                )
+                for candidate in candidates.candidates
+            ),
+            "Particulate candidates record an explicit reversible working-frame prior",
+        )
+        check(
             "candidate_base_transforms",
             all(
                 item.matrix_reference_world_from_candidate_base is None
@@ -1227,6 +1635,41 @@ class Phase5CConsistencyValidationAdapter:
                 for item in fitting.fittings
             ),
             "successful candidate base transforms are finite positive-scale Sim(3)",
+        )
+        check(
+            "fitted_model_hashes",
+            all(
+                (
+                    item.fitted_model is None
+                    and item.fitted_model_sha256 is None
+                    and item.status == "failed"
+                )
+                or (
+                    item.fitted_model is not None
+                    and item.fitted_model_sha256
+                    == stable_digest(item.fitted_model.model_dump(mode="json"))
+                    and item.matrix_reference_world_from_candidate_base
+                    == item.fitted_model.matrix_reference_world_from_candidate_base
+                )
+                for item in fitting.fittings
+            ),
+            "every successful fit has an exact typed fitted-model hash",
+        )
+        check(
+            "ambiguous_assignments_not_accepted",
+            all(
+                not any(record.ambiguous for record in assignment.assignments)
+                or next(
+                    (
+                        fit.status == "ambiguous"
+                        for fit in fitting.fittings
+                        if fit.candidate_id == assignment.candidate_id
+                    ),
+                    False,
+                )
+                for assignment in fitting.link_assignments
+            ),
+            "ambiguous link assignments cannot become accepted fits",
         )
         check(
             "frozen_joint_model",
@@ -1246,6 +1689,78 @@ class Phase5CConsistencyValidationAdapter:
             "held-out evaluation estimates only allowed joint positions",
         )
         check(
+            "heldout_render_coverage",
+            all(
+                state.requested_heldout_view_count > 0
+                and state.usable_heldout_view_count > 0
+                and state.rendered_heldout_view_count > 0
+                and state.views_with_target_masks > 0
+                and state.views_with_valid_depth > 0
+                for item in evaluation.evaluations
+                if item.passed_hard_gates
+                for state in item.state_evaluations
+                if state.heldout
+            ),
+            "passing candidates have rendered target masks and dense depth on held-out views",
+        )
+        fitted_by_id = {item.candidate_id: item for item in fitting.fittings}
+
+        def fitted_joints_for(candidate_id: str) -> list[FittedArticulatedJoint]:
+            fitted = fitted_by_id[candidate_id].fitted_model
+            return list(fitted.fitted_joints) if fitted is not None else []
+
+        check(
+            "joint_metrics_are_measured",
+            all(
+                state.base_point_residual_arbitrary_units is not None
+                and state.base_motion_scene_diagonals is not None
+                and state.joint_constraint_residual is not None
+                and all(
+                    (
+                        joint.joint_type is not ArticulatedJointType.PRISMATIC
+                        or state.prismatic_orthogonal_residual is not None
+                        and state.prismatic_rotation_leakage_degrees is not None
+                    )
+                    and (
+                        joint.joint_type
+                        not in {
+                            ArticulatedJointType.REVOLUTE,
+                            ArticulatedJointType.CONTINUOUS_CANDIDATE,
+                        }
+                        or state.axis_error_degrees is not None
+                        and state.pivot_residual_part_diagonals is not None
+                    )
+                    for joint in fitted_joints_for(item.candidate_id)
+                )
+                for item in evaluation.evaluations
+                if item.passed_hard_gates
+                for state in item.state_evaluations
+                if state.heldout
+            ),
+            "passing held-out evaluations contain non-placeholder joint-specific metrics",
+        )
+        check(
+            "exact_three_state_accounting",
+            all(
+                item.selected_candidate_validation_level
+                is not ArticulationEvidenceLevel.MULTI_STATE_HELDOUT_VALIDATED
+                or (
+                    (model := fitted_by_id[item.candidate_id].fitted_model) is not None
+                    and len(
+                        (
+                            set(model.generation_state_ids)
+                            | set(model.fitting_state_ids)
+                            | {state.state_id for state in item.state_evaluations if state.heldout}
+                        )
+                        & accepted_alignment_states
+                    )
+                    >= 3
+                )
+                for item in evaluation.evaluations
+            ),
+            "three-state validity counts generation, fitting, and evaluated held-out states",
+        )
+        check(
             "license_policy",
             all(
                 item.selected_candidate_id is None
@@ -1256,6 +1771,7 @@ class Phase5CConsistencyValidationAdapter:
             "selection follows the configured research/production license policy",
         )
         evaluation_by_id = {item.candidate_id: item for item in evaluation.evaluations}
+        candidate_by_id = {item.candidate_id: item for item in candidates.candidates}
         check(
             "selected_candidate_was_evaluated",
             all(
@@ -1267,6 +1783,36 @@ class Phase5CConsistencyValidationAdapter:
                 for item in selection.objects
             ),
             "every selected Scene IR candidate passed its held-out evaluation",
+        )
+        check(
+            "selected_fitted_model_identity",
+            all(
+                item.selected_candidate_id is None
+                or (
+                    item.candidate_manifest_sha256 == sha256_file(root / "candidate_manifest.json")
+                    and (selected_fit := fitted_by_id.get(item.selected_candidate_id)) is not None
+                    and selected_fit.fitted_model is not None
+                    and item.fitted_model_sha256 == selected_fit.fitted_model_sha256
+                    and (
+                        selected_assignment := assignment_by_candidate.get(
+                            item.selected_candidate_id
+                        )
+                    )
+                    is not None
+                    and item.link_assignment_sha256
+                    == stable_digest(selected_assignment.model_dump(mode="json"))
+                    and item.evaluation_sha256
+                    == stable_digest(
+                        evaluation_by_id[item.selected_candidate_id].model_dump(mode="json")
+                    )
+                    and item.selected_candidate_sha256
+                    == stable_digest(
+                        candidate_by_id[item.selected_candidate_id].model_dump(mode="json")
+                    )
+                )
+                for item in selection.objects
+            ),
+            "selection references the exact candidate, fit, assignment, and evaluation",
         )
         check(
             "measured_geometry_retained",
@@ -1296,6 +1842,49 @@ class Phase5CConsistencyValidationAdapter:
                 for selected in selection.objects
             ),
             "Scene IR articulation matches the deterministic selection artifact",
+        )
+        selected_record = selection.objects[0] if selection.objects else None
+        selected_fit = (
+            fitted_by_id.get(selected_record.selected_candidate_id)
+            if selected_record is not None and selected_record.selected_candidate_id is not None
+            else None
+        )
+        expected_scene_transform = (
+            _matrix_to_transform(
+                selected_fit.fitted_model.matrix_reference_world_from_candidate_base
+            )
+            if selected_fit is not None and selected_fit.fitted_model is not None
+            else Transform()
+        )
+        check(
+            "scene_ir_fitted_base_transform",
+            scene_object is not None and scene_object.transform == expected_scene_transform,
+            "Scene IR object transform equals the selected fitted base Sim(3)",
+        )
+        expected_fitted_joints = (
+            {item.candidate_joint_id: item for item in selected_fit.fitted_model.fitted_joints}
+            if selected_fit is not None and selected_fit.fitted_model is not None
+            else {}
+        )
+        scene_joints = (
+            {item.joint_id: item for item in scene_object.articulation.joints}
+            if scene_object is not None and scene_object.articulation is not None
+            else {}
+        )
+        check(
+            "scene_ir_fitted_joints",
+            all(
+                joint_id in scene_joints
+                and scene_joints[joint_id].axis_xyz == fitted.fitted_axis
+                and scene_joints[joint_id].origin_xyz == fitted.fitted_pivot
+                for joint_id, fitted in expected_fitted_joints.items()
+            ),
+            "Scene IR joints use selected fitted/refined axes and pivots",
+        )
+        check(
+            "scene_ir_visual_asset_formats",
+            all(asset.format == _geometry_format(asset.uri) for asset in scene.geometry_assets),
+            "Scene IR visual formats match their actual file extensions",
         )
         check(
             "no_collision_assets",
@@ -1342,9 +1931,20 @@ class Phase5CConsistencyValidationAdapter:
         report = Phase5CConsistencyReport(
             passed=all(item.passed for item in checks),
             checks=checks,
-            multi_state_evidence_available=len(capture.states) >= 2,
+            multi_state_evidence_available=(
+                alignment.aligned_state_count >= 3 and bool(split.heldout_validation_states)
+            ),
             measured_joint_motion_available=bool(measured.joint_hypotheses),
             heldout_state_validation_used=bool(heldout_states),
+            capture_state_count=capture.capture_state_count,
+            capture_evidence_tier=capture.capture_evidence_tier,
+            accepted_alignment_state_ids=alignment.accepted_alignment_state_ids,
+            effective_motion_evidence_level=measured.effective_motion_evidence_level,
+            selected_candidate_validation_level=(
+                selection.objects[0].selected_candidate_validation_level
+                if selection.objects
+                else measured.effective_motion_evidence_level
+            ),
             warnings=["articulated hypotheses are visual and kinematic only; dynamics are unknown"],
         )
         atomic_write_json(

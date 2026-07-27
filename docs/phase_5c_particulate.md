@@ -28,9 +28,11 @@ official GLB/NPZ/OBJ outputs, and normalizes official face-part and joint predic
 The official requirements leave Transformers unbounded. The reviewed environment
 pins Transformers 4.46.3 because the current 5.x release imports APIs unavailable
 in the official PyTorch 2.4.0 stack.
-Particulate expects +Z up. Reconevery enumerates reversible working-axis hypotheses,
-records both matrices, and transforms links, axes, and pivots back. This is not
-gravity alignment.
+Particulate expects +Z up. The first real-capture implementation requires an explicit
+`working_axis_hint`, records it as a prior, records the single evaluated hypothesis
+and both reversible matrices, and transforms links, axes, and pivots back. It does
+not silently choose the first item from a hypothesis list and does not claim gravity
+alignment. Multi-hypothesis scoring remains future work.
 
 The official model card declares Apache-2.0 code and CC-BY-4.0 model weights.
 PartField's checkpoint is NVIDIA non-commercial research-only. Therefore the current

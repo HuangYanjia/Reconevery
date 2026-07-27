@@ -4,6 +4,7 @@
       "enum": [
         "single_state_prior_only",
         "two_state_motion_supported",
+        "multi_state_heldout_available",
         "multi_state_heldout_validated"
       ],
       "title": "ArticulationEvidenceLevel",
@@ -69,6 +70,17 @@
           "title": "Part Mask Hashes",
           "type": "object"
         },
+        "part_track_ids": {
+          "additionalProperties": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "propertyNames": {
+            "minLength": 1
+          },
+          "title": "Part Track Ids",
+          "type": "object"
+        },
         "phase5a_consistency_passed": {
           "title": "Phase5A Consistency Passed",
           "type": "boolean"
@@ -113,6 +125,7 @@
         "state_id",
         "run_dir",
         "semantic_state_label",
+        "part_track_ids",
         "phase5a_consistency_passed",
         "ingest_manifest_sha256",
         "frame_sequence_digest",
@@ -140,8 +153,13 @@
       "title": "Articulated Object Id",
       "type": "string"
     },
-    "evidence_level": {
+    "capture_evidence_tier": {
       "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
+    "capture_state_count": {
+      "minimum": 1,
+      "title": "Capture State Count",
+      "type": "integer"
     },
     "prompt_manifest_sha256": {
       "pattern": "^[0-9a-f]{64}$",
@@ -154,8 +172,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "0.1.0",
-      "default": "0.1.0",
+      "const": "0.2.0",
+      "default": "0.2.0",
       "title": "Schema Version",
       "type": "string"
     },
@@ -173,7 +191,8 @@
     "reference_state_id",
     "states",
     "prompt_manifest_sha256",
-    "evidence_level"
+    "capture_state_count",
+    "capture_evidence_tier"
   ],
   "title": "ArticulationCaptureManifest",
   "type": "object"

@@ -26,5 +26,7 @@ stages:
           model_objaverse.ckpt: 463efc8a3afd3913142aa025e0125c00f16ef452b8de6a132ebe32bbe7877ee4
         source_meshes:
           cabinet_visual: /absolute/path/to/cabinet.glb
+        # Explicit Particulate working-frame prior. This is not gravity alignment.
+        working_axis_hint: +Z
         maximum_candidates: 4
     depends_on: [articulation_motion, artvip_retrieval, partnet_retrieval]

@@ -40,6 +40,7 @@ class ArticulationFittingConfig(ArticulationWorkerConfig):
     maximum_axis_refinement_degrees: float = 10.0
     maximum_pivot_refinement_part_diagonals: float = 0.05
     maximum_fitting_views_per_state: int = Field(default=6, ge=1, le=64)
+    link_assignment_ambiguity_margin: float = Field(default=0.05, ge=0)
     allow_nonuniform_scale: bool = False
     allow_per_state_arbitrary_link_transforms: bool = False
 
@@ -78,7 +79,9 @@ class ArticulationFittingAdapter:
             ).read_text(encoding="utf-8")
         )
         accepted_states = {item.state_id for item in alignment.transforms if item.accepted}
-        fitting_states = set(split.kinematic_fitting_states) & accepted_states
+        fitting_states = (
+            set(split.candidate_generation_states) | set(split.kinematic_fitting_states)
+        ) & accepted_states
         specs = [
             InputSpec(
                 "reconstruction/articulation/candidate_manifest.json",
@@ -217,9 +220,22 @@ class ArticulationFittingAdapter:
             (root / "state_alignment.json").read_text(encoding="utf-8")
         )
         accepted_states = {item.state_id for item in alignment.transforms if item.accepted}
+        generation_state_ids = [
+            state_id
+            for state_id in split.candidate_generation_states
+            if state_id in accepted_states
+        ]
         fitting_state_ids = [
             state_id for state_id in split.kinematic_fitting_states if state_id in accepted_states
         ]
+        structure_state_ids = [*generation_state_ids, *fitting_state_ids]
+        if (
+            capture.reference_state_id not in accepted_states
+            or capture.reference_state_id not in structure_state_ids
+        ):
+            raise RuntimeError(
+                "declared reference state must be accepted and present in fitting geometry"
+            )
         geometries = ArticulatedPartStateGeometryManifest.model_validate_json(
             (root / "measured_states/fitting_manifest.json").read_text(encoding="utf-8")
         )
@@ -228,7 +244,7 @@ class ArticulationFittingAdapter:
             geometry_by_state.setdefault(geometry.state_id, []).append(geometry)
         state_evidence = []
         for state in capture.states:
-            if state.state_id not in set(fitting_state_ids):
+            if state.state_id not in set(structure_state_ids):
                 continue
             state_evidence.append(
                 {
@@ -266,7 +282,10 @@ class ArticulationFittingAdapter:
                 "evidence_split_sha256": sha256_file(root / "evidence_split.json"),
                 "state_evidence": state_evidence,
                 "candidate_ids": [item.candidate_id for item in candidates.candidates],
+                "reference_state_id": capture.reference_state_id,
+                "generation_state_ids": generation_state_ids,
                 "fitting_state_ids": fitting_state_ids,
+                "accepted_alignment_state_ids": alignment.accepted_alignment_state_ids,
                 "heldout_state_ids": split.heldout_validation_states,
                 "joint_hypotheses": [
                     item.model_dump(mode="json") for item in measured.joint_hypotheses
@@ -277,6 +296,7 @@ class ArticulationFittingAdapter:
                         config.maximum_pivot_refinement_part_diagonals
                     ),
                     "maximum_fitting_views_per_state": (config.maximum_fitting_views_per_state),
+                    "link_assignment_ambiguity_margin": (config.link_assignment_ambiguity_margin),
                     "allow_nonuniform_scale": False,
                     "allow_per_state_arbitrary_link_transforms": False,
                 },

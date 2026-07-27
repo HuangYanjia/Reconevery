@@ -30,12 +30,38 @@
           "default": null,
           "title": "Collision Ready"
         },
+        "evaluation_artifact_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evaluation Artifact Path"
+        },
+        "evaluation_artifact_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evaluation Artifact Sha256"
+        },
         "evidence_level": {
           "anyOf": [
             {
               "enum": [
                 "single_state_prior_only",
                 "two_state_motion_supported",
+                "multi_state_heldout_available",
                 "multi_state_heldout_validated"
               ],
               "type": "string"
@@ -46,6 +72,31 @@
           ],
           "default": null,
           "title": "Evidence Level"
+        },
+        "fitting_artifact_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Artifact Path"
+        },
+        "fitting_artifact_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Artifact Sha256"
         },
         "joints": {
           "items": {
@@ -74,6 +125,18 @@
           ],
           "default": null,
           "title": "Physical Validation"
+        },
+        "selected_candidate_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Candidate Id"
         },
         "sim_ready": {
           "anyOf": [

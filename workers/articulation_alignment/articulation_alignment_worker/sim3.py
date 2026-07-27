@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import permutations, product
 
 import numpy as np
 from scipy.spatial import cKDTree
@@ -49,33 +50,41 @@ def umeyama(source: np.ndarray, target: np.ndarray, *, with_scale: bool) -> np.n
     return matrix
 
 
-def robust_icp_sim3(
+def _right_handed_axis_rotations() -> tuple[np.ndarray, ...]:
+    rotations: list[np.ndarray] = []
+    for permutation in permutations(range(3)):
+        basis = np.eye(3)[:, permutation]
+        for signs in product((-1.0, 1.0), repeat=3):
+            rotation = basis @ np.diag(signs)
+            if np.linalg.det(rotation) > 0.0:
+                rotations.append(rotation)
+    rotations.sort(key=lambda value: tuple(float(item) for item in value.reshape(-1)))
+    return tuple(rotations)
+
+
+def _initial_matrix(
     source: np.ndarray,
     target: np.ndarray,
-    *,
-    with_scale: bool = True,
-    iterations: int = 20,
-    trim_fraction: float = 0.8,
-) -> Sim3Fit:
-    if min(len(source), len(target)) < 3:
-        raise ValueError("alignment requires at least three points per state")
-    source = np.asarray(source, dtype=np.float64)
-    target = np.asarray(target, dtype=np.float64)
-    if not np.isfinite(source).all() or not np.isfinite(target).all():
-        raise ValueError("alignment points must be finite")
+    rotation: np.ndarray,
+    scale: float,
+) -> np.ndarray:
     matrix = np.eye(4)
-    source_extent = np.percentile(source, 90, axis=0) - np.percentile(source, 10, axis=0)
-    target_extent = np.percentile(target, 90, axis=0) - np.percentile(target, 10, axis=0)
-    valid = source_extent > np.finfo(np.float64).eps
-    initial_scale = (
-        float(np.median(target_extent[valid] / source_extent[valid]))
-        if with_scale and np.any(valid)
-        else 1.0
-    )
-    matrix[:3, :3] *= initial_scale
-    matrix[:3, 3] = np.median(target, axis=0) - initial_scale * np.median(source, axis=0)
-    tree = cKDTree(target)
-    keep_count = max(3, int(min(len(source), len(target)) * trim_fraction))
+    matrix[:3, :3] = scale * rotation
+    matrix[:3, 3] = np.median(target, axis=0) - scale * (rotation @ np.median(source, axis=0))
+    return matrix
+
+
+def _refine_icp(
+    source: np.ndarray,
+    target: np.ndarray,
+    tree: cKDTree,
+    initial: np.ndarray,
+    *,
+    with_scale: bool,
+    iterations: int,
+    keep_count: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    matrix = initial.copy()
     for _ in range(iterations):
         transformed = apply_transform(source, matrix)
         distances, indices = tree.query(transformed, k=1)
@@ -92,6 +101,68 @@ def robust_icp_sim3(
         matrix = updated
     transformed = apply_transform(source, matrix)
     distances, _ = tree.query(transformed, k=1)
+    return matrix, np.asarray(distances, dtype=np.float64)
+
+
+def robust_icp_sim3(
+    source: np.ndarray,
+    target: np.ndarray,
+    *,
+    with_scale: bool = True,
+    iterations: int = 20,
+    trim_fraction: float = 0.8,
+) -> Sim3Fit:
+    if min(len(source), len(target)) < 3:
+        raise ValueError("alignment requires at least three points per state")
+    source = np.asarray(source, dtype=np.float64)
+    target = np.asarray(target, dtype=np.float64)
+    if not np.isfinite(source).all() or not np.isfinite(target).all():
+        raise ValueError("alignment points must be finite")
+    source_extent = np.percentile(source, 90, axis=0) - np.percentile(source, 10, axis=0)
+    target_extent = np.percentile(target, 90, axis=0) - np.percentile(target, 10, axis=0)
+    valid = source_extent > np.finfo(np.float64).eps
+    initial_scale = (
+        float(np.median(target_extent[valid] / source_extent[valid]))
+        if with_scale and np.any(valid)
+        else 1.0
+    )
+    tree = cKDTree(target)
+    keep_count = max(3, int(min(len(source), len(target)) * trim_fraction))
+    scored_initializations: list[tuple[float, np.ndarray]] = []
+    for rotation in _right_handed_axis_rotations():
+        initial = _initial_matrix(source, target, rotation, initial_scale)
+        distances, _ = tree.query(apply_transform(source, initial), k=1)
+        score = float(np.median(np.partition(distances, keep_count - 1)[:keep_count]))
+        scored_initializations.append((score, initial))
+    scored_initializations.sort(
+        key=lambda item: (
+            item[0],
+            tuple(float(value) for value in item[1][:3, :3].reshape(-1)),
+        )
+    )
+
+    refined: list[tuple[float, np.ndarray, np.ndarray]] = []
+    for _, initial in scored_initializations[:4]:
+        candidate_matrix, candidate_distances = _refine_icp(
+            source,
+            target,
+            tree,
+            initial,
+            with_scale=with_scale,
+            iterations=iterations,
+            keep_count=keep_count,
+        )
+        robust_score = float(
+            np.median(np.partition(candidate_distances, keep_count - 1)[:keep_count])
+        )
+        refined.append((robust_score, candidate_matrix, candidate_distances))
+    refined.sort(
+        key=lambda item: (
+            item[0],
+            tuple(float(value) for value in item[1][:3, :3].reshape(-1)),
+        )
+    )
+    _, matrix, distances = refined[0]
     linear = matrix[:3, :3]
     scale = float(np.cbrt(np.linalg.det(linear)))
     rotation = linear / scale

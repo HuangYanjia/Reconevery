@@ -14,7 +14,11 @@ from recon2sim.adapters.base import (
     StageContext,
     StageResult,
 )
-from recon2sim.articulation import evidence_level, sha256_file
+from recon2sim.articulation import (
+    effective_evidence_level,
+    ordered_motion_state_ids,
+    sha256_file,
+)
 from recon2sim.artifacts import (
     ArticulatedPartStateGeometryManifest,
     ArticulationCaptureManifest,
@@ -135,11 +139,20 @@ class ArticulationMotionAdapter:
             (root / "evidence_split.json").read_text(encoding="utf-8")
         )
         request_path = root / "raw" / "measured_motion_request.json"
-        accepted_state_ids = [
+        accepted_nonheldout = {
             item.state_id
             for item in alignment.transforms
             if item.accepted and item.state_id not in set(split.heldout_validation_states)
-        ]
+        }
+        try:
+            accepted_state_ids = ordered_motion_state_ids(
+                capture.reference_state_id,
+                [state.state_id for state in capture.states],
+                accepted_nonheldout,
+            )
+        except ValueError as error:
+            raise RuntimeError(str(error)) from error
+        provisional_motion = len(accepted_state_ids) >= 2
         atomic_write_json(
             request_path,
             {
@@ -159,8 +172,14 @@ class ArticulationMotionAdapter:
                 "state_alignment_path": "reconstruction/articulation/state_alignment.json",
                 "state_alignment_sha256": sha256_file(root / "state_alignment.json"),
                 "articulated_object_id": capture.articulated_object_id,
-                "evidence_level": evidence_level(len(accepted_state_ids)),
-                "base_part_id": prompt.objects[0].base.prompt_id,
+                "reference_state_id": capture.reference_state_id,
+                "capture_state_count": capture.capture_state_count,
+                "accepted_alignment_state_ids": alignment.accepted_alignment_state_ids,
+                "effective_motion_evidence_level": effective_evidence_level(
+                    len(alignment.accepted_alignment_state_ids),
+                    valid_measured_motion=provisional_motion,
+                ),
+                "base_part_id": prompt.objects[0].base.part_id,
                 "movable_parts": [
                     part.model_dump(mode="json")
                     for part in prompt.objects[0].movable_parts

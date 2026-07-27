@@ -111,6 +111,26 @@
       "title": "Generation Configuration",
       "type": "object"
     },
+    "hypotheses_evaluated": {
+      "items": {
+        "enum": [
+          "+X",
+          "-X",
+          "+Y",
+          "-Y",
+          "+Z",
+          "-Z"
+        ],
+        "type": "string"
+      },
+      "title": "Hypotheses Evaluated",
+      "type": "array"
+    },
+    "hypothesis_selection_evidence": {
+      "minLength": 1,
+      "title": "Hypothesis Selection Evidence",
+      "type": "string"
+    },
     "official_code_commit": {
       "const": "dee37a75c449f324d9989993461ee09eaccc1686",
       "title": "Official Code Commit",
@@ -178,12 +198,17 @@
       "title": "Visual Completeness Status",
       "type": "string"
     },
-    "working_frame_hypotheses": {
-      "items": {
-        "type": "string"
-      },
-      "title": "Working Frame Hypotheses",
-      "type": "array"
+    "working_frame_hypothesis": {
+      "enum": [
+        "+X",
+        "-X",
+        "+Y",
+        "-Y",
+        "+Z",
+        "-Z"
+      ],
+      "title": "Working Frame Hypothesis",
+      "type": "string"
     }
   },
   "required": [
@@ -202,7 +227,9 @@
     "checkpoint_hashes",
     "runtime_model_revisions",
     "runtime_model_hashes",
-    "working_frame_hypotheses",
+    "working_frame_hypothesis",
+    "hypotheses_evaluated",
+    "hypothesis_selection_evidence",
     "generation_configuration",
     "output_directory",
     "seed"
