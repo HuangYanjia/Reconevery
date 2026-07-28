@@ -218,7 +218,11 @@ def test_fake_colmap_full_adapter_workflow_and_multiple_model_selection(
 
 def test_colmap_4_uses_feature_gpu_option_names(tmp_path: Path) -> None:
     adapter = ColmapCameraRecoveryAdapter()
-    config = ColmapAdapterConfig(executable="colmap", matcher="sequential", use_gpu=True)
+    config = ColmapAdapterConfig(
+        executable=str(_write_fake_colmap(tmp_path / "fake_colmap")),
+        matcher="sequential",
+        use_gpu=True,
+    )
     context = StageContext(
         stage_name="camera_recovery",
         input_dir=tmp_path,
