@@ -2589,7 +2589,7 @@ class Phase5CConsistencyValidationAdapter:
         check(
             "no_dynamics_claims",
             all(
-                item.physical_validation == "not_implemented" and not item.sim_ready
+                item.physical_validation in {None, "not_implemented"} and not item.sim_ready
                 for item in scene.objects
             ),
             "Phase 5C makes no dynamics or simulation-ready claim",

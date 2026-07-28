@@ -1869,11 +1869,20 @@ def preflight_articulation_capture(
             if not masks or any(not path.is_file() for path in masks):
                 state_errors.append(f"mask_missing:{part_id}->{track_id}")
             supporting_raw = hypothesis.get("supporting_frame_ids", [])
-            supporting = (
-                set(str(value) for value in supporting_raw) & registered
-                if isinstance(supporting_raw, list)
-                else set()
-            )
+            supporting: set[str] = set()
+            if isinstance(supporting_raw, list):
+                supporting.update(str(value) for value in supporting_raw)
+            measured_observations = hypothesis.get("observations", [])
+            if isinstance(measured_observations, list):
+                supporting.update(
+                    str(observation["frame_id"])
+                    for observation in measured_observations
+                    if isinstance(observation, dict)
+                    and observation.get("registered") is True
+                    and int(observation.get("validated_sample_count", 0)) > 0
+                    and observation.get("frame_id")
+                )
+            supporting &= registered
             if len(supporting) < 2:
                 state_errors.append(f"insufficient_registered_views:{part_id}->{track_id}")
         errors.extend(f"{state_id}: {message}" for message in state_errors)

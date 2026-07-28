@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import random
 import time
 from collections import defaultdict
@@ -13,7 +14,6 @@ from sam3_worker.frame_preparation import (
     prepared_video_frames,
     resolve_worker_output_directory,
 )
-from sam3_worker.model_loader import load_predictor, sha256_file
 from sam3_worker.official_compat import official_propagation_directions
 from sam3_worker.schema import (
     InferenceRequest,
@@ -134,6 +134,14 @@ def _collect_outputs(
     frame_id = request.frame_order[frame_index]
     frame_width, frame_height = request.frame_dimensions[frame_id]
     for index, object_id in enumerate(object_ids):
+        score = float(_scalar(probabilities[index]))
+        if not math.isfinite(score):
+            raise RuntimeError("official SAM output contains a non-finite confidence score")
+        if score < 0:
+            # Multiplex emits a negative sentinel when a propagated object is absent.
+            continue
+        if score > 1:
+            raise RuntimeError("official SAM output contains a confidence score above one")
         raw_id = f"{prompt.prompt_id}:{int(_scalar(object_id))}"
         mask_path = output_dir / "masks" / raw_id / f"{frame_id}.png"
         mask = _binary_mask_image(masks[index])
@@ -157,7 +165,7 @@ def _collect_outputs(
             raw_model_object_id=raw_id,
             prompt_id=prompt.prompt_id,
             semantic_label=prompt.label,
-            score=float(_scalar(probabilities[index])),
+            score=score,
             mask_path=relative_mask,
             model_box_xyxy=model_box,
         )
@@ -252,6 +260,8 @@ def _run_prompts(
 
 
 def run_inference(request_path: Path, output_dir: Path) -> None:
+    from sam3_worker.model_loader import load_predictor, sha256_file
+
     started = time.monotonic()
     request_path = request_path.resolve()
     root = request_path.parent.parent

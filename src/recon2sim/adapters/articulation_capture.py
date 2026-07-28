@@ -446,7 +446,7 @@ class ArticulationCaptureAdapter:
                     relative_mask = f"{evidence_root}/masks/{part_id}/{frame}.png"
                     mask_path = context.path(*Path(relative_mask).parts)
                     mask_path.parent.mkdir(parents=True, exist_ok=True)
-                    Image.new("RGB", (16, 16), (255, 255, 255)).save(mask_path)
+                    Image.new("L", (16, 16), 255).save(mask_path)
                     mask_paths_by_part[part_id].append(relative_mask)
                     outputs.append(
                         OutputSpec(
@@ -454,7 +454,7 @@ class ArticulationCaptureAdapter:
                             "articulated_part_mask",
                             "image/png",
                             self.name,
-                            validation="png",
+                            validation="binary_png",
                         )
                     )
             evidence_payloads = {
@@ -634,6 +634,8 @@ class ArticulationCaptureAdapter:
             measured_by_id = {item["object_id"]: item for item in measured["hypotheses"]}
             point_hashes: dict[str, str] = {}
             mask_hashes: dict[str, str] = {}
+            registered = list(camera["registered_frame_ids"])
+            registered_by_state[state_id] = registered
             part_specs = [
                 (
                     prompt_object.base.part_id,
@@ -709,7 +711,7 @@ class ArticulationCaptureAdapter:
                             "articulated_part_mask",
                             "image/png",
                             self.name,
-                            validation="png",
+                            validation="binary_png",
                         )
                     )
                 geometries.append(
@@ -724,7 +726,23 @@ class ArticulationCaptureAdapter:
                         measured_point_cloud_sha256=point_hashes[part_id],
                         point_count=int(hypothesis["point_cloud"]["point_count"]),
                         normal_count=int(hypothesis.get("validated_sample_count", 0)),
-                        supporting_frame_ids=list(hypothesis["supporting_frame_ids"]),
+                        supporting_frame_ids=sorted(
+                            {
+                                *(
+                                    str(frame_id)
+                                    for frame_id in hypothesis.get("supporting_frame_ids", [])
+                                ),
+                                *(
+                                    str(observation["frame_id"])
+                                    for observation in hypothesis.get("observations", [])
+                                    if isinstance(observation, dict)
+                                    and observation.get("registered") is True
+                                    and int(observation.get("validated_sample_count", 0)) > 0
+                                    and observation.get("frame_id")
+                                ),
+                            }
+                            & set(registered)
+                        ),
                         mask_paths=output_masks,
                         state_alignment_sha256="0" * 64,
                         transformed_to_reference_frame=(
@@ -734,8 +752,6 @@ class ArticulationCaptureAdapter:
                         scale_status=ScaleStatus.SCALE_AMBIGUOUS,
                     )
                 )
-            registered = list(camera["registered_frame_ids"])
-            registered_by_state[state_id] = registered
             evidence_root_relative = (
                 f"reconstruction/articulation/measured_states/{state_id}/evidence"
             )

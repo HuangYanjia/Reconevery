@@ -13,7 +13,7 @@ from recon2sim.adapters import (
     StageResult,
 )
 from recon2sim.config import AdapterConfig, PipelineConfig, StageConfig, load_config
-from recon2sim.images import write_solid_png
+from recon2sim.images import validate_binary_mask_png, write_solid_png
 from recon2sim.pipeline import PipelineConfigurationError, PipelineRunner
 
 
@@ -71,6 +71,23 @@ def _simple_config(stages: dict[str, list[str]]) -> PipelineConfig:
             for name, dependencies in stages.items()
         }
     )
+
+
+def test_binary_mask_validation_requires_grayscale_zero_or_255(tmp_path: Path) -> None:
+    from PIL import Image
+
+    valid = tmp_path / "valid.png"
+    invalid_value = tmp_path / "invalid_value.png"
+    invalid_mode = tmp_path / "invalid_mode.png"
+    Image.frombytes("L", (2, 2), bytes([0, 255, 255, 0])).save(valid)
+    Image.frombytes("L", (2, 2), bytes([0, 128, 255, 0])).save(invalid_value)
+    Image.new("RGB", (2, 2), (255, 255, 255)).save(invalid_mode)
+
+    validate_binary_mask_png(valid)
+    with pytest.raises(ValueError, match="binary mask"):
+        validate_binary_mask_png(invalid_value)
+    with pytest.raises(ValueError, match="grayscale"):
+        validate_binary_mask_png(invalid_mode)
 
 
 def test_dag_rejects_unknown_dependency(tmp_path: Path) -> None:

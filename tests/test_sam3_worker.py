@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections import defaultdict
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
@@ -16,6 +18,7 @@ from sam3_worker.frame_preparation import (  # noqa: E402
     prepared_video_frames,
     resolve_worker_output_directory,
 )
+from sam3_worker.inference import _collect_outputs  # noqa: E402
 from sam3_worker.official_compat import (  # noqa: E402
     apply_sam31_start_session_compatibility,
     official_propagation_directions,
@@ -183,3 +186,48 @@ def test_forward_backward_uses_independent_official_propagations() -> None:
         "backward",
     )
     assert official_propagation_directions("forward") == ("forward",)
+
+
+def test_negative_official_absence_score_is_not_materialized(tmp_path: Path) -> None:
+    tracks: defaultdict[str, dict[str, object]] = defaultdict(dict)
+    _collect_outputs(
+        tmp_path,
+        tmp_path / "observations" / "raw",
+        SimpleNamespace(
+            frame_order=["frame_000000"],
+            frame_dimensions={"frame_000000": (2, 2)},
+        ),
+        SimpleNamespace(prompt_id="drawer", label="drawer"),
+        0,
+        {
+            "out_obj_ids": [0],
+            "out_binary_masks": [[[True, True], [True, True]]],
+            "out_probs": [-10000.0],
+            "out_boxes_xywh": [[0.0, 0.0, 1.0, 1.0]],
+        },
+        tracks,
+    )
+
+    assert not tracks
+    assert not (tmp_path / "observations" / "raw" / "masks").exists()
+
+
+def test_official_confidence_above_one_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="above one"):
+        _collect_outputs(
+            tmp_path,
+            tmp_path / "observations" / "raw",
+            SimpleNamespace(
+                frame_order=["frame_000000"],
+                frame_dimensions={"frame_000000": (2, 2)},
+            ),
+            SimpleNamespace(prompt_id="drawer", label="drawer"),
+            0,
+            {
+                "out_obj_ids": [0],
+                "out_binary_masks": [[[True, True], [True, True]]],
+                "out_probs": [1.5],
+                "out_boxes_xywh": [[0.0, 0.0, 1.0, 1.0]],
+            },
+            defaultdict(dict),
+        )

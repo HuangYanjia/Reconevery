@@ -14,6 +14,7 @@ from recon2sim.adapters.articulation_selection import (
     ArticulationSelectionAdapter,
     articulated_candidate_geometry_source,
 )
+from recon2sim.adapters.particulate import ParticulateAdapterConfig
 from recon2sim.articulation import (
     capture_evidence_tier,
     effective_evidence_level,
@@ -524,7 +525,19 @@ def test_capture_template_and_real_preflight_use_state_local_tracks(
                 {
                     "object_id": track_id,
                     "point_cloud": {"relative_path": point_path.relative_to(run_dir).as_posix()},
-                    "supporting_frame_ids": ["frame_000", "frame_001"],
+                    "supporting_view_count": 2,
+                    "observations": [
+                        {
+                            "frame_id": "frame_000",
+                            "registered": True,
+                            "validated_sample_count": 12,
+                        },
+                        {
+                            "frame_id": "frame_001",
+                            "registered": True,
+                            "validated_sample_count": 9,
+                        },
+                    ],
                 }
             )
         (run_dir / "observations/object_tracks.json").write_text(json.dumps({"tracks": tracks}))
@@ -724,6 +737,21 @@ def test_state_alignment_sim3_recovers_known_transform() -> None:
     recovered = sim3.apply_transform(source, fit.matrix)
     assert np.median(np.linalg.norm(recovered - target, axis=1)) < 1e-6
     assert fit.scale == pytest.approx(1.7, rel=1e-6)
+
+
+def test_prismatic_prior_uses_translation_only_for_partial_geometry() -> None:
+    np = pytest.importorskip("numpy")
+    sim3 = _worker_module("articulation_alignment_worker.sim3")
+    generator = np.random.default_rng(17)
+    shared = generator.normal(size=(1000, 3))
+    translation = np.array([0.35, -0.2, 0.55])
+    partial_view_density = shared[:500] - translation
+    source = np.concatenate([shared - translation, partial_view_density], axis=0)
+
+    fit = sim3.robust_translation_registration(source, shared)
+
+    assert fit.matrix[:3, :3] == pytest.approx(np.eye(3))
+    assert fit.matrix[:3, 3] == pytest.approx(translation, abs=1e-6)
 
 
 def test_heldout_joint_position_fits_only_q(tmp_path: Path) -> None:
@@ -1087,6 +1115,25 @@ def test_offline_retrieval_normalizes_selected_candidate_assets(tmp_path: Path) 
     assert {path for link in candidate.links for path in link.visual_asset_paths} == set(
         retrieved.visual_asset_paths
     )
+
+
+def test_particulate_accepts_one_explicit_local_retrieval_manifest() -> None:
+    config = ParticulateAdapterConfig(
+        execution_mode="fake_worker",
+        worker_script="tests/fixtures/fake_articulation_worker.py",
+        retrieval_manifests=["artvip_retrieval.json"],
+    )
+    assert config.retrieval_manifests == ["artvip_retrieval.json"]
+
+    with pytest.raises(ValueError, match="must be unique"):
+        ParticulateAdapterConfig(
+            execution_mode="fake_worker",
+            worker_script="tests/fixtures/fake_articulation_worker.py",
+            retrieval_manifests=[
+                "artvip_retrieval.json",
+                "artvip_retrieval.json",
+            ],
+        )
 
 
 def test_fake_phase5c_pipeline_resume_and_cli(tmp_path: Path) -> None:

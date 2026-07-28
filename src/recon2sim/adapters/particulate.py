@@ -46,6 +46,12 @@ PARTFIELD_REVISION = "90b9b1e08b6a12fdcb6ee26b4854a26235e1765f"
 PARTFIELD_MODEL_SHA256 = "463efc8a3afd3913142aa025e0125c00f16ef452b8de6a132ebe32bbe7877ee4"
 
 
+def default_retrieval_manifests() -> list[
+    Literal["artvip_retrieval.json", "partnet_retrieval.json"]
+]:
+    return ["artvip_retrieval.json", "partnet_retrieval.json"]
+
+
 class ParticulateAdapterConfig(ArticulationWorkerConfig):
     worker_module: str = "particulate_worker"
     docker_image: str = "reconevery/particulate:phase5c"
@@ -60,12 +66,18 @@ class ParticulateAdapterConfig(ArticulationWorkerConfig):
     checkpoint_path: str | None = None
     partfield_checkpoint_path: str | None = None
     source_meshes: dict[str, str] = Field(default_factory=dict)
+    retrieval_manifests: list[Literal["artvip_retrieval.json", "partnet_retrieval.json"]] = Field(
+        default_factory=default_retrieval_manifests,
+        min_length=1,
+    )
     maximum_candidates: int = Field(default=4, ge=1, le=12)
     working_axis_hint: Literal["+X", "-X", "+Y", "-Y", "+Z", "-Z"] | None = None
     generation_configuration: dict[str, object] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def verified_official_identity(self) -> ParticulateAdapterConfig:
+        if len(self.retrieval_manifests) != len(set(self.retrieval_manifests)):
+            raise ValueError("Particulate retrieval manifests must be unique")
         if (
             self.official_repository != PARTICULATE_REPOSITORY
             or self.official_code_commit != PARTICULATE_COMMIT
@@ -134,14 +146,30 @@ class ParticulateAdapter:
     version = "0.1.0"
 
     @staticmethod
-    def _retrieved_candidate_specs(context: StageContext) -> list[InputSpec]:
-        specs: list[InputSpec] = []
-        for filename in ("artvip_retrieval.json", "partnet_retrieval.json"):
-            result = ArticulatedRetrievalResult.model_validate_json(
-                context.canonical_path("reconstruction", "articulation", filename).read_text(
-                    encoding="utf-8"
-                )
+    def _retrieval_results(
+        context: StageContext,
+        config: ParticulateAdapterConfig,
+    ) -> list[tuple[str, ArticulatedRetrievalResult]]:
+        return [
+            (
+                filename,
+                ArticulatedRetrievalResult.model_validate_json(
+                    context.canonical_path("reconstruction", "articulation", filename).read_text(
+                        encoding="utf-8"
+                    )
+                ),
             )
+            for filename in config.retrieval_manifests
+        ]
+
+    @classmethod
+    def _retrieved_candidate_specs(
+        cls,
+        context: StageContext,
+        config: ParticulateAdapterConfig,
+    ) -> list[InputSpec]:
+        specs: list[InputSpec] = []
+        for _, result in cls._retrieval_results(context, config):
             for candidate in result.candidates:
                 if candidate.candidate_bundle_path is None:
                     continue
@@ -175,16 +203,15 @@ class ParticulateAdapter:
                 "reconstruction/articulation/measured_states/manifest.json",
                 "articulated_part_state_geometry_manifest",
             ),
-            InputSpec(
-                "reconstruction/articulation/artvip_retrieval.json",
-                "articulated_retrieval_result",
-            ),
-            InputSpec(
-                "reconstruction/articulation/partnet_retrieval.json",
-                "articulated_retrieval_result",
-            ),
         ]
-        specs.extend(self._retrieved_candidate_specs(context))
+        specs.extend(
+            InputSpec(
+                f"reconstruction/articulation/{filename}",
+                "articulated_retrieval_result",
+            )
+            for filename in config.retrieval_manifests
+        )
+        specs.extend(self._retrieved_candidate_specs(context, config))
         for source_id, value in sorted(config.source_meshes.items()):
             specs.append(
                 InputSpec(
@@ -238,12 +265,9 @@ class ParticulateAdapter:
     def run(self, context: StageContext) -> StageResult:
         config = ParticulateAdapterConfig.model_validate(context.config.adapter.config)
         root = context.path("reconstruction", "articulation")
-        artvip = ArticulatedRetrievalResult.model_validate_json(
-            (root / "artvip_retrieval.json").read_text(encoding="utf-8")
-        )
-        partnet = ArticulatedRetrievalResult.model_validate_json(
-            (root / "partnet_retrieval.json").read_text(encoding="utf-8")
-        )
+        retrieval_results = self._retrieval_results(context, config)
+        retrievals = [result for _, result in retrieval_results]
+        primary_retrieval_path, primary_retrieval = retrieval_results[0]
         geometries = ArticulatedPartStateGeometryManifest.model_validate_json(
             (root / "measured_states/manifest.json").read_text(encoding="utf-8")
         )
@@ -251,7 +275,7 @@ class ParticulateAdapter:
             (root / "measured_motion.json").read_text(encoding="utf-8")
         )
         direct_candidates: list[ArticulatedCandidate] = []
-        for retrieval in (artvip, partnet):
+        for retrieval in retrievals:
             for retrieved in retrieval.candidates:
                 if retrieved.candidate_bundle_path is None:
                     continue
@@ -307,8 +331,10 @@ class ParticulateAdapter:
             source = context.path(*Path(source_path).parts)
             requests.append(
                 ParticulateCandidateRequest(
-                    candidate_id=f"{artvip.articulated_object_id}__particulate__{index:02d}",
-                    articulated_object_id=artvip.articulated_object_id,
+                    candidate_id=(
+                        f"{primary_retrieval.articulated_object_id}__particulate__{index:02d}"
+                    ),
+                    articulated_object_id=primary_retrieval.articulated_object_id,
                     source_mesh_path=source_path,
                     source_mesh_sha256=sha256_file(source),
                     source_backend=source_id,
@@ -342,7 +368,7 @@ class ParticulateAdapter:
                     generation_configuration=config.generation_configuration,
                     output_directory=(
                         "reconstruction/articulation/candidates/"
-                        f"{artvip.articulated_object_id}__particulate__{index:02d}"
+                        f"{primary_retrieval.articulated_object_id}__particulate__{index:02d}"
                     ),
                     seed=context.seed + index,
                 )
@@ -353,9 +379,11 @@ class ParticulateAdapter:
             {
                 "schema_version": "0.1.0",
                 "requests": [item.model_dump(mode="json") for item in requests],
-                "measured_motion_sha256": artvip.measured_motion_sha256,
-                "retrieval_manifest_sha256": sha256_file(root / "artvip_retrieval.json"),
-                "partnet_retrieval_manifest_sha256": sha256_file(root / "partnet_retrieval.json"),
+                "measured_motion_sha256": primary_retrieval.measured_motion_sha256,
+                "retrieval_manifest_sha256": sha256_file(root / primary_retrieval_path),
+                "retrieval_manifest_hashes": {
+                    filename: sha256_file(root / filename) for filename, _ in retrieval_results
+                },
                 "license_policy": particulate_license().model_dump(mode="json"),
                 "official_repository_path": config.official_repository_path,
                 "checkpoint_path": config.checkpoint_path,
@@ -540,7 +568,7 @@ class ParticulateAdapter:
             outputs=outputs,
             metrics={
                 "particulate_candidates": len(result.candidates),
-                "retrieval_candidates": len(artvip.candidates) + len(partnet.candidates),
+                "retrieval_candidates": sum(len(retrieval.candidates) for retrieval in retrievals),
             },
         )
 

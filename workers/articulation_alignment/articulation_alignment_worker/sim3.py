@@ -177,6 +177,56 @@ def robust_icp_sim3(
     )
 
 
+def robust_translation_registration(
+    source: np.ndarray,
+    target: np.ndarray,
+    *,
+    iterations: int = 30,
+    trim_fraction: float = 0.5,
+) -> Sim3Fit:
+    if min(len(source), len(target)) < 3:
+        raise ValueError("translation registration requires at least three points per state")
+    source = np.asarray(source, dtype=np.float64)
+    target = np.asarray(target, dtype=np.float64)
+    if not np.isfinite(source).all() or not np.isfinite(target).all():
+        raise ValueError("translation registration points must be finite")
+    tree = cKDTree(target)
+    keep_count = max(3, int(min(len(source), len(target)) * trim_fraction))
+    initializations = (
+        np.zeros(3, dtype=np.float64),
+        target.mean(axis=0) - source.mean(axis=0),
+        np.median(target, axis=0) - np.median(source, axis=0),
+    )
+    candidates: list[tuple[float, np.ndarray, np.ndarray]] = []
+    for initial in initializations:
+        translation = initial.copy()
+        for _ in range(iterations):
+            transformed = source + translation
+            distances, indices = tree.query(transformed, k=1)
+            keep = np.argsort(distances, kind="stable")[:keep_count]
+            delta = np.median(
+                target[indices[keep]] - transformed[keep],
+                axis=0,
+            )
+            translation += delta
+            if np.linalg.norm(delta) < 1e-10:
+                break
+        distances, _ = tree.query(source + translation, k=1)
+        score = float(np.median(np.partition(distances, keep_count - 1)[:keep_count]))
+        candidates.append((score, translation, np.asarray(distances, dtype=np.float64)))
+    candidates.sort(key=lambda item: (item[0], tuple(float(value) for value in item[1])))
+    _, translation, distances = candidates[0]
+    matrix = np.eye(4)
+    matrix[:3, 3] = translation
+    return Sim3Fit(
+        matrix=matrix,
+        inverse=np.linalg.inv(matrix),
+        scale=1.0,
+        residuals=distances,
+        correspondence_count=keep_count,
+    )
+
+
 def rotation_axis_angle(matrix: np.ndarray) -> tuple[np.ndarray, float]:
     rotation = matrix[:3, :3]
     scale = float(np.cbrt(np.linalg.det(rotation)))

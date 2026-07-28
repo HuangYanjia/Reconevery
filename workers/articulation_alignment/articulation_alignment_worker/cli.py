@@ -18,6 +18,7 @@ from articulation_alignment_worker.motion import JointEstimate, estimate_joint
 from articulation_alignment_worker.sim3 import (
     apply_transform,
     robust_icp_sim3,
+    robust_translation_registration,
 )
 
 
@@ -168,6 +169,7 @@ def estimate_motion_action(
         raise ValueError("motion configuration is invalid")
     for part in movable_parts:
         part_id = str(part["part_id"])
+        expected_joint_hint = str(part.get("expected_joint_hint", "unknown"))
         reference_state = reference_state_id
         reference_points = apply_transform(
             load_points(
@@ -184,7 +186,11 @@ def estimate_motion_action(
                 ),
                 alignment_by_state[state_id],
             )
-            fit = robust_icp_sim3(points, reference_points, with_scale=False)
+            fit = (
+                robust_translation_registration(points, reference_points)
+                if expected_joint_hint == "prismatic"
+                else robust_icp_sim3(points, reference_points, with_scale=False)
+            )
             transforms.append(fit.matrix)
             diagonal = max(
                 float(np.linalg.norm(np.ptp(reference_points, axis=0))),
@@ -257,7 +263,14 @@ def estimate_motion_action(
                 axis_consistency_degrees=None,
                 pivot_residual=pivot_residual_raw,
             )
-        confidence = 0.25 if joint.joint_type == "unknown" else 0.8
+        constrained_by_prismatic_prior = expected_joint_hint == "prismatic" and len(transforms) > 1
+        confidence = (
+            0.25
+            if joint.joint_type == "unknown"
+            else 0.6
+            if constrained_by_prismatic_prior
+            else 0.8
+        )
         states = [
             {
                 "state_id": state_id,
@@ -327,7 +340,14 @@ def estimate_motion_action(
                             "residual exceeded the configured gate"
                         ]
                         if pivot_rejected
-                        else []
+                        else (
+                            [
+                                "explicit prismatic hint constrained part registration "
+                                "to translation-only; held-out validation remains required"
+                            ]
+                            if constrained_by_prismatic_prior
+                            else []
+                        )
                     )
                 ),
             }

@@ -82,9 +82,14 @@ def render_mesh_depth(
         import nvdiffrast.torch as dr
     except ImportError as exc:
         raise RuntimeError("nvdiffrast is required for articulated rendering") from exc
-    loaded = trimesh.load(path, force="mesh", process=False)
+    loaded = trimesh.load(path, process=False)
+    if isinstance(loaded, trimesh.Scene):
+        loaded = loaded.to_geometry()
     vertices = np.ascontiguousarray(loaded.vertices, dtype=np.float32)
-    faces = np.ascontiguousarray(loaded.faces, dtype=np.int32)
+    faces = np.ascontiguousarray(
+        getattr(loaded, "faces", np.empty((0, 3), dtype=np.int32)),
+        dtype=np.int32,
+    )
     if vertices.ndim != 2 or vertices.shape[1] != 3 or not len(vertices):
         raise ValueError(f"invalid articulated link vertices: {path}")
     if faces.ndim != 2 or faces.shape[1] != 3 or not len(faces):

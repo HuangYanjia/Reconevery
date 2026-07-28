@@ -1703,7 +1703,7 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                         float(np.median(movable_residuals_raw)) if movable_residuals_raw else None
                     ),
                     "joint_constraint_residual": (
-                        float(np.median(heldout_q_fit_residuals.values()))
+                        float(np.median(list(heldout_q_fit_residuals.values())))
                         / float(np.median(part_diagonals))
                         if heldout_q_fit_residuals and part_diagonals
                         else None

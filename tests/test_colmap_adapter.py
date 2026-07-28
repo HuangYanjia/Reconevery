@@ -210,8 +210,30 @@ def test_fake_colmap_full_adapter_workflow_and_multiple_model_selection(
     matcher_command = workspace.commands[1].command
     assert "--SiftExtraction.use_gpu" in feature_command
     assert feature_command[feature_command.index("--SiftExtraction.use_gpu") + 1] == "0"
+    assert "--SiftMatching.use_gpu" in matcher_command
+    assert matcher_command[matcher_command.index("--SiftMatching.use_gpu") + 1] == "0"
     assert matcher_command[1] == "sequential_matcher"
     assert result["stages"]["camera_recovery"]["metrics"]["selected_model"] == "1"
+
+
+def test_colmap_4_uses_feature_gpu_option_names(tmp_path: Path) -> None:
+    adapter = ColmapCameraRecoveryAdapter()
+    config = ColmapAdapterConfig(executable="colmap", matcher="sequential", use_gpu=True)
+    context = StageContext(
+        stage_name="camera_recovery",
+        input_dir=tmp_path,
+        run_dir=tmp_path / "run",
+        canonical_run_dir=tmp_path / "run",
+        config=StageConfig(adapter=AdapterConfig(name=adapter.name)),
+        seed=7,
+    )
+
+    commands = adapter._commands(config, context, tool_version="COLMAP 4.0.4")
+
+    assert "--FeatureExtraction.use_gpu" in commands[0][1]
+    assert "--FeatureMatching.use_gpu" in commands[1][1]
+    assert "--SiftExtraction.use_gpu" not in commands[0][1]
+    assert "--SiftMatching.use_gpu" not in commands[1][1]
 
 
 def test_real_ingest_and_colmap_artifacts_feed_complete_mock_downstream(

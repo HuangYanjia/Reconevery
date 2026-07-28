@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 from recon2sim.config import StageConfig
 from recon2sim.ir import StrictModel
 
-OutputValidation = Literal["exists", "json", "png", "obj", "scene_ir"]
+OutputValidation = Literal["exists", "json", "png", "binary_png", "obj", "scene_ir"]
 InputMaterialization = Literal["reflink_or_copy", "copy", "reference_only"]
 
 
