@@ -1,0 +1,1203 @@
+{
+  "$defs": {
+    "AprilTagCalibrationRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "code_license": {
+          "const": "BSD-2-Clause",
+          "default": "BSD-2-Clause",
+          "title": "Code License",
+          "type": "string"
+        },
+        "detection_edge_size_m": {
+          "exclusiveMinimum": 0,
+          "title": "Detection Edge Size M",
+          "type": "number"
+        },
+        "detections": {
+          "items": {
+            "$ref": "#/$defs/AprilTagDetectionRecord"
+          },
+          "title": "Detections",
+          "type": "array"
+        },
+        "detector_source_path": {
+          "minLength": 1,
+          "title": "Detector Source Path",
+          "type": "string"
+        },
+        "image_sources": {
+          "items": {
+            "$ref": "#/$defs/AprilTagImageSourceRecord"
+          },
+          "title": "Image Sources",
+          "type": "array"
+        },
+        "official_commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Official Commit",
+          "type": "string"
+        },
+        "official_repository": {
+          "const": "https://github.com/AprilRobotics/apriltag",
+          "default": "https://github.com/AprilRobotics/apriltag",
+          "title": "Official Repository",
+          "type": "string"
+        },
+        "tag_family": {
+          "minLength": 1,
+          "title": "Tag Family",
+          "type": "string"
+        },
+        "tag_id": {
+          "minimum": 0,
+          "title": "Tag Id",
+          "type": "integer"
+        },
+        "world_contract": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AprilTagWorldContract"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "official_commit",
+        "tag_family",
+        "tag_id",
+        "detection_edge_size_m",
+        "detector_source_path"
+      ],
+      "title": "AprilTagCalibrationRecord",
+      "type": "object"
+    },
+    "AprilTagDetectionRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "camera_center_tag_m": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Camera Center Tag M"
+        },
+        "corners_xy": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Corners Xy",
+          "type": "array"
+        },
+        "decision_margin": {
+          "title": "Decision Margin",
+          "type": "number"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "hamming": {
+          "minimum": 0,
+          "title": "Hamming",
+          "type": "integer"
+        },
+        "image_path": {
+          "title": "Image Path",
+          "type": "string"
+        },
+        "image_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Image Sha256",
+          "type": "string"
+        },
+        "pose_error": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pose Error"
+        },
+        "rotation_tag_from_camera": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 9,
+              "minItems": 9,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rotation Tag From Camera"
+        },
+        "split": {
+          "enum": [
+            "fitting",
+            "heldout"
+          ],
+          "title": "Split",
+          "type": "string"
+        },
+        "tag_id": {
+          "minimum": 0,
+          "title": "Tag Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "frame_id",
+        "image_path",
+        "image_sha256",
+        "tag_id",
+        "corners_xy",
+        "decision_margin",
+        "hamming",
+        "split"
+      ],
+      "title": "AprilTagDetectionRecord",
+      "type": "object"
+    },
+    "AprilTagImageSourceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "image_coordinate_space": {
+          "const": "registered_undistorted",
+          "default": "registered_undistorted",
+          "title": "Image Coordinate Space",
+          "type": "string"
+        },
+        "image_path": {
+          "title": "Image Path",
+          "type": "string"
+        },
+        "image_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Image Sha256",
+          "type": "string"
+        },
+        "intrinsics_fx_fy_cx_cy": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Intrinsics Fx Fy Cx Cy",
+          "type": "array"
+        },
+        "split": {
+          "enum": [
+            "fitting",
+            "heldout"
+          ],
+          "title": "Split",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "frame_id",
+        "image_path",
+        "image_sha256",
+        "width",
+        "height",
+        "intrinsics_fx_fy_cx_cy",
+        "split"
+      ],
+      "title": "AprilTagImageSourceRecord",
+      "type": "object"
+    },
+    "AprilTagSignedAxis": {
+      "enum": [
+        "+X_tag",
+        "-X_tag",
+        "+Y_tag",
+        "-Y_tag",
+        "+Z_tag",
+        "-Z_tag"
+      ],
+      "title": "AprilTagSignedAxis",
+      "type": "string"
+    },
+    "AprilTagWorldContract": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_forward_from_tag_axis": {
+          "$ref": "#/$defs/AprilTagSignedAxis"
+        },
+        "canonical_up_from_tag_axis": {
+          "$ref": "#/$defs/AprilTagSignedAxis"
+        },
+        "mounting_description": {
+          "minLength": 1,
+          "title": "Mounting Description",
+          "type": "string"
+        },
+        "mounting_uncertainty_degrees": {
+          "minimum": 0,
+          "title": "Mounting Uncertainty Degrees",
+          "type": "number"
+        },
+        "origin_uncertainty_m": {
+          "minimum": 0,
+          "title": "Origin Uncertainty M",
+          "type": "number"
+        },
+        "tag_origin_policy": {
+          "const": "tag_center",
+          "default": "tag_center",
+          "title": "Tag Origin Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonical_up_from_tag_axis",
+        "canonical_forward_from_tag_axis",
+        "mounting_description",
+        "mounting_uncertainty_degrees",
+        "origin_uncertainty_m"
+      ],
+      "title": "AprilTagWorldContract",
+      "type": "object"
+    },
+    "CalibrationEvidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "configuration": {
+          "additionalProperties": true,
+          "title": "Configuration",
+          "type": "object"
+        },
+        "evidence_id": {
+          "minLength": 1,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "evidence_type": {
+          "$ref": "#/$defs/CalibrationEvidenceType"
+        },
+        "measurement_uncertainty": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measurement Uncertainty"
+        },
+        "role": {
+          "$ref": "#/$defs/CalibrationEvidenceRole"
+        },
+        "source_files": {
+          "items": {
+            "$ref": "#/$defs/CalibrationFileReference"
+          },
+          "title": "Source Files",
+          "type": "array"
+        },
+        "supports_forward": {
+          "default": false,
+          "title": "Supports Forward",
+          "type": "boolean"
+        },
+        "supports_gravity": {
+          "default": false,
+          "title": "Supports Gravity",
+          "type": "boolean"
+        },
+        "supports_metric_scale": {
+          "default": false,
+          "title": "Supports Metric Scale",
+          "type": "boolean"
+        },
+        "supports_origin": {
+          "default": false,
+          "title": "Supports Origin",
+          "type": "boolean"
+        },
+        "trust": {
+          "$ref": "#/$defs/WorldCalibrationTrust"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "evidence_type",
+        "trust",
+        "role"
+      ],
+      "title": "CalibrationEvidenceRecord",
+      "type": "object"
+    },
+    "CalibrationEvidenceRole": {
+      "enum": [
+        "fitting",
+        "heldout",
+        "diagnostic"
+      ],
+      "title": "CalibrationEvidenceRole",
+      "type": "string"
+    },
+    "CalibrationEvidenceType": {
+      "enum": [
+        "apriltag",
+        "known_distance",
+        "external_metric",
+        "imu_gravity",
+        "fiducial_orientation",
+        "user_up_landmarks",
+        "floor_plane",
+        "manhattan_diagnostic",
+        "forward_landmarks",
+        "reference_camera_forward",
+        "origin_landmark",
+        "fiducial_origin"
+      ],
+      "title": "CalibrationEvidenceType",
+      "type": "string"
+    },
+    "CalibrationFileReference": {
+      "additionalProperties": false,
+      "properties": {
+        "media_type": {
+          "minLength": 1,
+          "title": "Media Type",
+          "type": "string"
+        },
+        "relative_path": {
+          "title": "Relative Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relative_path",
+        "sha256",
+        "media_type"
+      ],
+      "title": "CalibrationFileReference",
+      "type": "object"
+    },
+    "CalibrationLandmarkObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "annotation_confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Annotation Confidence"
+        },
+        "annotation_method": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Annotation Method"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "pixel_xy": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Pixel Xy",
+          "type": "array"
+        },
+        "point_id": {
+          "minLength": 1,
+          "title": "Point Id",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/CalibrationEvidenceRole"
+        }
+      },
+      "required": [
+        "frame_id",
+        "point_id",
+        "pixel_xy",
+        "role"
+      ],
+      "title": "CalibrationLandmarkObservation",
+      "type": "object"
+    },
+    "CanonicalForwardEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "forward_vector_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Forward Vector Colmap",
+          "type": "array"
+        },
+        "policy": {
+          "minLength": 1,
+          "title": "Policy",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/CalibrationEvidenceType"
+        },
+        "supporting_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supporting Ids",
+          "type": "array"
+        },
+        "uncertainty_degrees": {
+          "minimum": 0,
+          "title": "Uncertainty Degrees",
+          "type": "number"
+        }
+      },
+      "required": [
+        "source",
+        "policy",
+        "forward_vector_colmap",
+        "uncertainty_degrees",
+        "supporting_ids"
+      ],
+      "title": "CanonicalForwardEvidence",
+      "type": "object"
+    },
+    "CanonicalOriginEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "origin_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Colmap",
+          "type": "array"
+        },
+        "policy": {
+          "minLength": 1,
+          "title": "Policy",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/CalibrationEvidenceType"
+        },
+        "supporting_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supporting Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source",
+        "policy",
+        "origin_colmap",
+        "supporting_ids"
+      ],
+      "title": "CanonicalOriginEvidence",
+      "type": "object"
+    },
+    "ExternalMetricEvidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "accuracy_estimate_m": {
+          "exclusiveMinimum": 0,
+          "title": "Accuracy Estimate M",
+          "type": "number"
+        },
+        "coordinate_convention": {
+          "minLength": 1,
+          "title": "Coordinate Convention",
+          "type": "string"
+        },
+        "evidence_id": {
+          "minLength": 1,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "frame_mapping": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Frame Mapping",
+          "type": "object"
+        },
+        "source_device": {
+          "minLength": 1,
+          "title": "Source Device",
+          "type": "string"
+        },
+        "source_files": {
+          "items": {
+            "$ref": "#/$defs/CalibrationFileReference"
+          },
+          "minItems": 1,
+          "title": "Source Files",
+          "type": "array"
+        },
+        "timestamp_mapping": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Timestamp Mapping",
+          "type": "object"
+        },
+        "units": {
+          "const": "meters",
+          "title": "Units",
+          "type": "string"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "source_device",
+        "coordinate_convention",
+        "timestamp_mapping",
+        "frame_mapping",
+        "units",
+        "source_files",
+        "accuracy_estimate_m"
+      ],
+      "title": "ExternalMetricEvidenceRecord",
+      "type": "object"
+    },
+    "FloorPlaneEvidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "minLength": 1,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "fitting_median_residual_colmap": {
+          "minimum": 0,
+          "title": "Fitting Median Residual Colmap",
+          "type": "number"
+        },
+        "floor_mask_paths": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Floor Mask Paths",
+          "type": "array"
+        },
+        "heldout_median_residual_colmap": {
+          "minimum": 0,
+          "title": "Heldout Median Residual Colmap",
+          "type": "number"
+        },
+        "heldout_normal_error_degrees": {
+          "minimum": 0,
+          "title": "Heldout Normal Error Degrees",
+          "type": "number"
+        },
+        "plane_normal_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Plane Normal Colmap",
+          "type": "array"
+        },
+        "plane_offset_colmap": {
+          "title": "Plane Offset Colmap",
+          "type": "number"
+        },
+        "point_count": {
+          "exclusiveMinimum": 0,
+          "title": "Point Count",
+          "type": "integer"
+        },
+        "sign_policy": {
+          "minLength": 1,
+          "title": "Sign Policy",
+          "type": "string"
+        },
+        "spatial_extent_colmap": {
+          "exclusiveMinimum": 0,
+          "title": "Spatial Extent Colmap",
+          "type": "number"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "floor_mask_paths",
+        "point_count",
+        "spatial_extent_colmap",
+        "plane_normal_colmap",
+        "plane_offset_colmap",
+        "sign_policy",
+        "fitting_median_residual_colmap",
+        "heldout_median_residual_colmap",
+        "heldout_normal_error_degrees"
+      ],
+      "title": "FloorPlaneEvidenceRecord",
+      "type": "object"
+    },
+    "GravityEvidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "angular_uncertainty_degrees": {
+          "minimum": 0,
+          "title": "Angular Uncertainty Degrees",
+          "type": "number"
+        },
+        "evidence_id": {
+          "minLength": 1,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "fitting_residual_degrees": {
+          "minimum": 0,
+          "title": "Fitting Residual Degrees",
+          "type": "number"
+        },
+        "heldout_residual_degrees": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Residual Degrees"
+        },
+        "sign_evidence": {
+          "minLength": 1,
+          "title": "Sign Evidence",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/CalibrationEvidenceType"
+        },
+        "supporting_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supporting Ids",
+          "type": "array"
+        },
+        "trust": {
+          "$ref": "#/$defs/WorldCalibrationTrust"
+        },
+        "up_vector_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Up Vector Colmap",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "source",
+        "trust",
+        "up_vector_colmap",
+        "sign_evidence",
+        "fitting_residual_degrees",
+        "angular_uncertainty_degrees",
+        "supporting_ids"
+      ],
+      "title": "GravityEvidenceRecord",
+      "type": "object"
+    },
+    "KnownDistanceLandmark": {
+      "additionalProperties": false,
+      "properties": {
+        "known_distance_m": {
+          "exclusiveMinimum": 0,
+          "title": "Known Distance M",
+          "type": "number"
+        },
+        "landmark_id": {
+          "minLength": 1,
+          "title": "Landmark Id",
+          "type": "string"
+        },
+        "measurement_provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PhysicalMeasurementProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "measurement_uncertainty_m": {
+          "default": 0.0,
+          "minimum": 0,
+          "title": "Measurement Uncertainty M",
+          "type": "number"
+        },
+        "point_a_id": {
+          "minLength": 1,
+          "title": "Point A Id",
+          "type": "string"
+        },
+        "point_b_id": {
+          "minLength": 1,
+          "title": "Point B Id",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/CalibrationEvidenceRole"
+        }
+      },
+      "required": [
+        "landmark_id",
+        "point_a_id",
+        "point_b_id",
+        "known_distance_m",
+        "role"
+      ],
+      "title": "KnownDistanceLandmark",
+      "type": "object"
+    },
+    "KnownDistanceLandmarkManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "image_coordinate_space": {
+          "const": "registered_source_image_pixels",
+          "default": "registered_source_image_pixels",
+          "title": "Image Coordinate Space",
+          "type": "string"
+        },
+        "landmarks": {
+          "items": {
+            "$ref": "#/$defs/KnownDistanceLandmark"
+          },
+          "minItems": 1,
+          "title": "Landmarks",
+          "type": "array"
+        },
+        "observations": {
+          "items": {
+            "$ref": "#/$defs/CalibrationLandmarkObservation"
+          },
+          "minItems": 4,
+          "title": "Observations",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "0.2.0",
+          "default": "0.2.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "landmarks",
+        "observations"
+      ],
+      "title": "KnownDistanceLandmarkManifest",
+      "type": "object"
+    },
+    "PhysicalMeasurementProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "measurement_date": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Measurement Date",
+          "type": "string"
+        },
+        "measurement_definition": {
+          "minLength": 1,
+          "title": "Measurement Definition",
+          "type": "string"
+        },
+        "measurement_tool": {
+          "minLength": 1,
+          "title": "Measurement Tool",
+          "type": "string"
+        },
+        "point_a_description": {
+          "minLength": 1,
+          "title": "Point A Description",
+          "type": "string"
+        },
+        "point_b_description": {
+          "minLength": 1,
+          "title": "Point B Description",
+          "type": "string"
+        },
+        "units": {
+          "const": "meters",
+          "default": "meters",
+          "title": "Units",
+          "type": "string"
+        }
+      },
+      "required": [
+        "measurement_tool",
+        "measurement_date",
+        "measurement_definition",
+        "point_a_description",
+        "point_b_description"
+      ],
+      "title": "PhysicalMeasurementProvenance",
+      "type": "object"
+    },
+    "WorldCalibrationEvidenceTier": {
+      "enum": [
+        "none",
+        "scale_only",
+        "gravity_only",
+        "metric_and_gravity",
+        "full_canonical"
+      ],
+      "title": "WorldCalibrationEvidenceTier",
+      "type": "string"
+    },
+    "WorldCalibrationTrust": {
+      "enum": [
+        "surveyed",
+        "metric_fiducial",
+        "device_sensor",
+        "manual_measured_landmark",
+        "geometry_plane",
+        "semantic_prior"
+      ],
+      "title": "WorldCalibrationTrust",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "apriltag": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AprilTagCalibrationRecord"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "camera_reconstruction_path": {
+      "title": "Camera Reconstruction Path",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/CalibrationEvidenceRecord"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "evidence_tier": {
+      "$ref": "#/$defs/WorldCalibrationEvidenceTier"
+    },
+    "external_metric": {
+      "items": {
+        "$ref": "#/$defs/ExternalMetricEvidenceRecord"
+      },
+      "title": "External Metric",
+      "type": "array"
+    },
+    "floor_planes": {
+      "items": {
+        "$ref": "#/$defs/FloorPlaneEvidenceRecord"
+      },
+      "title": "Floor Planes",
+      "type": "array"
+    },
+    "forward": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CanonicalForwardEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "gravity": {
+      "items": {
+        "$ref": "#/$defs/GravityEvidenceRecord"
+      },
+      "title": "Gravity",
+      "type": "array"
+    },
+    "known_distance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/KnownDistanceLandmarkManifest"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "landmark_world_derivation_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Landmark World Derivation Path"
+    },
+    "landmark_world_derivation_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Landmark World Derivation Sha256"
+    },
+    "origin": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CanonicalOriginEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "run_id": {
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "default": "0.2.0",
+      "enum": [
+        "0.1.0",
+        "0.2.0"
+      ],
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_scene_ir_path": {
+      "title": "Source Scene Ir Path",
+      "type": "string"
+    },
+    "source_scene_ir_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Scene Ir Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "frame_sequence_digest",
+    "camera_reconstruction_path",
+    "camera_reconstruction_sha256",
+    "source_scene_ir_path",
+    "source_scene_ir_sha256",
+    "evidence",
+    "evidence_tier"
+  ],
+  "title": "WorldCalibrationManifest",
+  "type": "object"
+}

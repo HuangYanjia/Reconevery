@@ -214,3 +214,20 @@ The selection adapter keeps Phase 5A anchors in `reference_world`, writes dedica
 selected candidate, fit, assignment, evaluation, identity, and bundle records, and
 publishes each record as a StageResult output. The consistency adapter re-hashes the
 exact files and rejects reference-world evidence inside transformed candidate links.
+
+## Phase 6A adapters
+
+`calibration_evidence` validates and normalizes local evidence without placing
+machine paths in canonical artifacts. `world_calibration` invokes the isolated
+worker in `local_worker`, `docker`, or `fake_worker` mode and validates the exact
+request, evidence split, source hashes, artifact, diagnostics, and nine previews.
+
+`canonical_scene_wrapper` composes accepted transforms without rewriting source
+files and records exact prismatic local-to-meter mappings. `phase6a_consistency_validation`
+performs 33 checks covering evidence
+identity, split isolation, proper/invertible Sim(3), truthful coordinate metadata,
+source immutability, world-space articulated pose parity, unchanged local joints,
+fiducial derivation, typed known-distance roles, exact Scene IR wrapper identity,
+and the no-collision/no-physics boundary.
+
+The core adapters import no NumPy, SciPy, OpenCV, AprilTag, Open3D, or trimesh.

@@ -1,0 +1,158 @@
+{
+  "$defs": {
+    "WorldCalibrationStatus": {
+      "enum": [
+        "accepted_full_canonical",
+        "accepted_metric_only",
+        "accepted_gravity_only",
+        "rejected_inconsistent_metric_evidence",
+        "rejected_inconsistent_gravity_evidence",
+        "rejected_heldout_validation",
+        "insufficient_forward_evidence",
+        "insufficient_origin_evidence",
+        "insufficient_evidence"
+      ],
+      "title": "WorldCalibrationStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "fiducial_world_derivation_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fiducial World Derivation Path"
+    },
+    "fiducial_world_derivation_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fiducial World Derivation Sha256"
+    },
+    "fitting_evidence_count": {
+      "minimum": 0,
+      "title": "Fitting Evidence Count",
+      "type": "integer"
+    },
+    "forward_evidence_count": {
+      "minimum": 0,
+      "title": "Forward Evidence Count",
+      "type": "integer"
+    },
+    "gravity_evidence_count": {
+      "minimum": 0,
+      "title": "Gravity Evidence Count",
+      "type": "integer"
+    },
+    "heldout_evidence_count": {
+      "minimum": 0,
+      "title": "Heldout Evidence Count",
+      "type": "integer"
+    },
+    "landmark_world_derivation_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Landmark World Derivation Path"
+    },
+    "landmark_world_derivation_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Landmark World Derivation Sha256"
+    },
+    "metric_evidence_count": {
+      "minimum": 0,
+      "title": "Metric Evidence Count",
+      "type": "integer"
+    },
+    "origin_evidence_count": {
+      "minimum": 0,
+      "title": "Origin Evidence Count",
+      "type": "integer"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "runtime_environment": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Runtime Environment",
+      "type": "object"
+    },
+    "schema_version": {
+      "default": "0.2.0",
+      "enum": [
+        "0.1.0",
+        "0.2.0"
+      ],
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/WorldCalibrationStatus"
+    },
+    "total_runtime_seconds": {
+      "minimum": 0,
+      "title": "Total Runtime Seconds",
+      "type": "number"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "status",
+    "metric_evidence_count",
+    "gravity_evidence_count",
+    "forward_evidence_count",
+    "origin_evidence_count",
+    "fitting_evidence_count",
+    "heldout_evidence_count",
+    "total_runtime_seconds"
+  ],
+  "title": "WorldCalibrationDiagnostics",
+  "type": "object"
+}

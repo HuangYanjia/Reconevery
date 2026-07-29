@@ -1,11 +1,12 @@
 # Recon2Sim
 
-Recon2Sim Phase 5B is a typed observation pipeline with real video/image ingest, frame QA,
+Recon2Sim is a typed observation pipeline with real video/image ingest, frame QA,
 out-of-process COLMAP sparse camera recovery, prompt-driven SAM 3.1 tracking, and isolated
 official GenRecon global visual reconstruction. It lifts 2D tracks to partial visible surfaces
 and audits a bounded global camera-mesh Sim(3), derives measured object geometry with dense MVS,
-and evaluates independent rigid visual-completion candidates against held-out observations. Heavy
-runtimes remain outside the lightweight core. Articulated completion, physical reconstruction,
+and evaluates independent rigid visual-completion candidates against held-out observations. It
+also supports multi-state articulated visual hypotheses and explicit metric/canonical world
+calibration. Heavy runtimes remain outside the lightweight core. Physical reconstruction,
 collision generation, and simulator export are not implemented.
 
 ## Quickstart
@@ -309,3 +310,34 @@ uv run recon2sim validation verify-phase5c runs/phase5c_fake
 Outputs remain in arbitrary, unoriented COLMAP coordinates. Preview URDFs contain
 visuals only. Collision, dynamics, metric scale, gravity alignment, and production
 simulator export are not implemented.
+
+## Phase 6A: canonical metric world
+
+`calibration_evidence -> world_calibration -> canonical_scene_wrapper` estimates one
+positive-scale proper Sim(3) from explicit AprilTag, known-distance, external metric,
+gravity, forward, and origin evidence. Fitting and held-out evidence are disjoint.
+Only `accepted_full_canonical` creates metric `+X`-forward, `+Y`-left, `+Z`-up
+Scene IR metadata.
+
+Articulated roots receive the accepted world Sim(3); local link geometry, axes,
+pivots, and q remain unchanged. The canonical wrapper records the effective
+object-local prismatic-to-meter scale and exact Scene IR/calibration/wrapper
+hashes. Reference-world assets require the wrapper, while candidate/link-local
+assets use the already-composed object root and never receive it twice.
+
+Official AprilTag is pinned to commit
+`0e16a12dd380fd607e4afd54712ee9b1ffb9ec8f` under BSD-2-Clause. NumPy,
+SciPy, OpenCV, and the detector remain in `workers/world_calibration`.
+
+```bash
+uv run recon2sim run \
+  --input examples/tabletop \
+  --config configs/phase6a_e2e_fake.yaml \
+  --run-dir runs/phase6a_e2e_fake
+uv run recon2sim validation verify-phase6a runs/phase6a_e2e_fake
+```
+
+Fake acceptance validates contracts only. Real full-canonical acceptance requires a
+physically measured metric source plus held-out gravity, forward, and origin
+evidence. Source cameras and geometry remain immutable; collisions, dynamics, and
+simulation readiness remain unimplemented.

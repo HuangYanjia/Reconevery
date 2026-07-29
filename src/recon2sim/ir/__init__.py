@@ -30,6 +30,7 @@ from recon2sim.ir.models import (
     TransformDirection,
     ValidationIssue,
     ValidationReport,
+    WorldCalibrationSceneReference,
     WorldFrame,
 )
 
@@ -65,5 +66,6 @@ __all__ = [
     "TransformDirection",
     "ValidationIssue",
     "ValidationReport",
+    "WorldCalibrationSceneReference",
     "WorldFrame",
 ]

@@ -192,6 +192,49 @@ class ProvenanceRecord(StrictModel):
         return [_relative_path(value) for value in values]
 
 
+class WorldCalibrationSceneReference(StrictModel):
+    source_scene_ir_path: str
+    source_scene_ir_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    world_calibration_artifact_path: str
+    world_calibration_artifact_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    canonical_scene_wrapper_path: str
+    canonical_scene_wrapper_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    fiducial_world_derivation_path: str | None = None
+    fiducial_world_derivation_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    landmark_world_derivation_path: str | None = None
+    landmark_world_derivation_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    geometry_requires_world_wrapper: bool
+
+    @field_validator(
+        "source_scene_ir_path",
+        "world_calibration_artifact_path",
+        "canonical_scene_wrapper_path",
+        "fiducial_world_derivation_path",
+        "landmark_world_derivation_path",
+    )
+    @classmethod
+    def relative_world_calibration_paths(cls, value: str | None) -> str | None:
+        return _relative_path(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def derivation_reference_pair(self) -> Self:
+        if (self.fiducial_world_derivation_path is None) != (
+            self.fiducial_world_derivation_sha256 is None
+        ):
+            raise ValueError("fiducial derivation path and SHA-256 must be paired")
+        if (self.landmark_world_derivation_path is None) != (
+            self.landmark_world_derivation_sha256 is None
+        ):
+            raise ValueError("landmark derivation path and SHA-256 must be paired")
+        return self
+
+
 class SceneMetadata(StrictModel):
     scene_id: Identifier
     name: Annotated[str, Field(min_length=1)]
@@ -199,6 +242,7 @@ class SceneMetadata(StrictModel):
     coordinate_convention: CoordinateConvention = Field(default_factory=CoordinateConvention)
     source: GeometrySourceType
     provenance: list[ProvenanceRecord] = Field(default_factory=list)
+    world_calibration: WorldCalibrationSceneReference | None = None
 
 
 class CameraIntrinsics(StrictModel):
@@ -332,6 +376,10 @@ class GeometryAsset(StrictModel):
     )
     asset_to_candidate_base_transform: Transform | None = None
     content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    source_space_geometry: bool = False
+    geometry_requires_world_wrapper: bool = False
+    world_wrapper_path: str | None = None
+    world_wrapper_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     provenance: ProvenanceRecord
 
     @model_validator(mode="after")
@@ -341,19 +389,33 @@ class GeometryAsset(StrictModel):
                 raise ValueError(
                     "candidate-base transform requires an explicit articulated asset space"
                 )
-            return self
-        if self.content_sha256 is None:
-            raise ValueError("articulated assets require an exact content SHA-256")
-        if self.articulated_asset_space == "reference_world":
-            if self.asset_to_candidate_base_transform is not None:
+        else:
+            if self.content_sha256 is None:
+                raise ValueError("articulated assets require an exact content SHA-256")
+            if self.articulated_asset_space == "reference_world":
+                if self.asset_to_candidate_base_transform is not None:
+                    raise ValueError(
+                        "reference-world evidence cannot declare a candidate-base transform"
+                    )
+            elif self.asset_to_candidate_base_transform is None:
                 raise ValueError(
-                    "reference-world evidence cannot declare a candidate-base transform"
+                    "candidate and link-local assets require a candidate-base transform"
                 )
-        elif self.asset_to_candidate_base_transform is None:
-            raise ValueError("candidate and link-local assets require a candidate-base transform")
+        if self.geometry_requires_world_wrapper:
+            if not self.source_space_geometry:
+                raise ValueError("only source-space geometry can require a world wrapper")
+            if self.world_wrapper_path is None or self.world_wrapper_sha256 is None:
+                raise ValueError("world-wrapped geometry requires the exact wrapper path and hash")
+        elif self.world_wrapper_path is not None or self.world_wrapper_sha256 is not None:
+            raise ValueError("wrapper references require geometry_requires_world_wrapper=true")
         return self
 
-    @field_validator("uri", "alignment_transform_path", "license_record_path")
+    @field_validator(
+        "uri",
+        "alignment_transform_path",
+        "license_record_path",
+        "world_wrapper_path",
+    )
     @classmethod
     def relative_geometry_path(cls, value: str | None) -> str | None:
         return _relative_path(value) if value is not None else None
@@ -595,6 +657,8 @@ class SceneIR(StrictModel):
         "0.1.4",
         "0.1.5",
         "0.1.6",
+        "0.1.7",
+        "0.1.8",
     ] = "0.1.1"
     metadata: SceneMetadata
     cameras: list[Camera] = Field(default_factory=list)

@@ -1,0 +1,11 @@
+evidence_id: floor_0001
+floor_mask_paths:
+  - observations/masks/floor/frame_000000.png
+point_count: 5000
+spatial_extent_colmap: 3.0
+plane_normal_colmap: [0.0, 0.0, 1.0]
+plane_offset_colmap: 0.0
+sign_policy: explicit_up_side
+fitting_median_residual_colmap: 0.002
+heldout_median_residual_colmap: 0.003
+heldout_normal_error_degrees: 0.5

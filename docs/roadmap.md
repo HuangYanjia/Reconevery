@@ -118,10 +118,19 @@ identities, and requires complete per-link render coverage.
 Phase 5C.3 adds the reference-world measured-asset boundary, dedicated selected
 files, exact Scene IR path/hash pairs, and transform-aware visual-only URDF previews.
 
+## Phase 6A canonical metric world
+
+Phase 6A implements evidence-grounded metric scale, gravity, forward, origin,
+proper Sim(3) validation, immutable canonical wrappers, and camera/rigid/articulated
+propagation. AprilTag, known-distance, external metric, IMU/up landmarks, and dense
+floor evidence have typed contracts. Full canonical status requires disjoint
+held-out acceptance; metric-only and rejected results remain truthful partial
+outputs.
+
 ## Later phases
 
 - A separately reviewed deformable-object phase.
-- Phase 6: SceneSmith or equivalent scene compiler adapter.
+- A separately reviewed SceneSmith or equivalent scene compiler adapter.
 - A later simulation phase: collision generation, physics repair, and explicit simulator exports.
 
 Each phase must preserve the canonical Scene IR boundary and add real-adapter tests without making

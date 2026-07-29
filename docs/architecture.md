@@ -212,3 +212,26 @@ Original measured anchors are immutable `reference_world` evidence on the object
 while articulated links contain only candidate-base or link-local visuals. Scene IR
 and the typed kinematic bundle reference dedicated selected records by exact file
 hash, preventing nested-record identity ambiguity and measured double transforms.
+
+## Phase 6A canonical wrapper
+
+Phase 6A adds:
+
+```text
+calibration_evidence
+  -> world_calibration
+  -> canonical_scene_wrapper
+  -> phase6a_consistency_validation
+```
+
+The evidence stage materializes only declared camera, scene, image, mask, depth,
+landmark, and sensor inputs. The numerical worker sees only its attempt root.
+Candidate fitting and selection use fitting evidence; held-out evidence is
+acceptance-only.
+
+The canonical scene is a derived wrapper. Source COLMAP cameras, dense geometry,
+measured assets, completion assets, and articulation artifacts retain their bytes.
+Articulated object roots receive the world composition; link-local geometry and
+joint-local axes, pivots, and q remain unchanged. A typed per-joint scale maps
+object-local prismatic q to meters exactly once. Partial or rejected calibration
+leaves the source coordinate convention unchanged.

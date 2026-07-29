@@ -42,6 +42,7 @@ from recon2sim.artifacts import (
     GlobalSceneDiagnostics,
     GlobalSceneReconstructionArtifact,
     IngestManifest,
+    KnownDistanceLandmarkManifest,
     MeasuredGeneratedComparisonArtifact,
     MeasuredObjectDiagnostics,
     MeasuredObjectGeometryArtifact,
@@ -56,12 +57,16 @@ from recon2sim.artifacts import (
     Phase5AConsistencyReport,
     Phase5BConsistencyReport,
     Phase5CConsistencyReport,
+    Phase6AConsistencyReport,
     Sam3WorkerManifest,
     SegmentationDiagnostics,
     SegmentationPromptManifest,
     SegmentationTrackingArtifact,
     TransformChainAudit,
+    WorldCalibrationArtifact,
+    WorldCalibrationManifest,
 )
+from recon2sim.calibration import rotate_vector, transform_point
 from recon2sim.config import load_config
 from recon2sim.genrecon import read_colmap_text_points, render_global_previews
 from recon2sim.ir import SceneIR
@@ -116,6 +121,10 @@ articulation_app = typer.Typer(
     help="Inspect articulated visual hypotheses and held-out-state validation.",
     no_args_is_help=True,
 )
+calibration_app = typer.Typer(
+    help="Inspect and export evidence-grounded metric world calibration.",
+    no_args_is_help=True,
+)
 app.add_typer(adapters_app, name="adapters")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(camera_app, name="camera")
@@ -127,6 +136,7 @@ app.add_typer(alignment_app, name="alignment")
 app.add_typer(dense_app, name="dense")
 app.add_typer(completion_app, name="completion")
 app.add_typer(articulation_app, name="articulation")
+app.add_typer(calibration_app, name="calibration")
 
 
 @app.command()
@@ -2274,3 +2284,403 @@ def verify_phase5c(
     typer.echo(
         f"Phase 5C articulated-reconstruction consistency passed ({len(report.checks)} checks)"
     )
+
+
+def _world_calibration(run_dir: Path) -> WorldCalibrationArtifact:
+    return _artifact_model(
+        run_dir,
+        "calibration/world_calibration.json",
+        WorldCalibrationArtifact,
+    )
+
+
+def _calibration_manifest(run_dir: Path) -> WorldCalibrationManifest:
+    return _artifact_model(
+        run_dir,
+        "calibration/evidence_manifest.json",
+        WorldCalibrationManifest,
+    )
+
+
+@calibration_app.command("inspect")
+def inspect_calibration(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    typer.echo(json.dumps(_world_calibration(run_dir).model_dump(mode="json"), indent=2))
+
+
+@calibration_app.command("inspect-evidence")
+def inspect_calibration_evidence(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    typer.echo(json.dumps(_calibration_manifest(run_dir).model_dump(mode="json"), indent=2))
+
+
+@calibration_app.command("inspect-tag")
+def inspect_calibration_tag(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    tag_id: Annotated[int, typer.Argument(min=0)],
+) -> None:
+    record = _calibration_manifest(run_dir).apriltag
+    if record is None or record.tag_id != tag_id:
+        raise typer.BadParameter(f"calibration has no AprilTag {tag_id}")
+    typer.echo(json.dumps(record.model_dump(mode="json"), indent=2))
+
+
+@calibration_app.command("inspect-landmark")
+def inspect_calibration_landmark(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    landmark_id: Annotated[str, typer.Argument()],
+) -> None:
+    record = _calibration_manifest(run_dir).known_distance
+    if record is None:
+        raise typer.BadParameter("calibration has no known-distance landmarks")
+    landmark = next(
+        (item for item in record.landmarks if item.landmark_id == landmark_id),
+        None,
+    )
+    if landmark is None:
+        raise typer.BadParameter(f"calibration has no landmark {landmark_id!r}")
+    typer.echo(json.dumps(landmark.model_dump(mode="json"), indent=2))
+
+
+@calibration_app.command("render-previews")
+def render_calibration_previews(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    names = (
+        "metric_evidence",
+        "tag_detections",
+        "landmark_reprojection",
+        "floor_plane",
+        "gravity_evidence",
+        "canonical_axes",
+        "camera_trajectory_before_after",
+        "scene_bounds_before_after",
+        "heldout_validation",
+    )
+    missing = [
+        name for name in names if not (run_dir / "calibration/previews" / f"{name}.png").is_file()
+    ]
+    if missing:
+        raise typer.BadParameter(f"calibration previews are missing: {missing}")
+    typer.echo(f"validated {len(names)} deterministic calibration previews")
+
+
+@calibration_app.command("export-transform")
+def export_calibration_transform(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    artifact = _world_calibration(run_dir)
+    if artifact.accepted_transform is None:
+        raise typer.BadParameter(f"calibration status {artifact.status.value!r} has no transform")
+    atomic_write_json(output, artifact.accepted_transform)
+    typer.echo(f"exported accepted world transform to {output}")
+
+
+@calibration_app.command("export-canonical-camera-trajectory")
+def export_canonical_camera_trajectory(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    artifact = _world_calibration(run_dir)
+    if not artifact.full_canonical_world_available:
+        raise typer.BadParameter("full canonical calibration has not been accepted")
+    scene = _artifact_model(
+        run_dir,
+        "scene_ir/phase6a_canonical_scene.json",
+        SceneIR,
+    )
+    atomic_write_json(
+        output,
+        {
+            "schema_version": "0.1.0",
+            "coordinate_convention": scene.metadata.coordinate_convention.model_dump(mode="json"),
+            "cameras": [item.model_dump(mode="json") for item in scene.cameras],
+        },
+    )
+    typer.echo(f"exported canonical camera trajectory to {output}")
+
+
+def _export_calibrated_ascii_ply(
+    source: Path,
+    output: Path,
+    matrix: tuple[float, ...],
+    rotation: tuple[float, ...],
+) -> None:
+    lines = source.read_text(encoding="ascii").splitlines()
+    if not lines or lines[0] != "ply" or "format ascii 1.0" not in lines[:4]:
+        raise typer.BadParameter("canonical mesh export currently supports ASCII PLY")
+    header_end = lines.index("end_header")
+    vertex_line = next(
+        (line for line in lines[:header_end] if line.startswith("element vertex ")),
+        None,
+    )
+    if vertex_line is None:
+        raise typer.BadParameter("PLY has no vertex count")
+    vertex_count = int(vertex_line.split()[2])
+    properties = [
+        line.split()[-1]
+        for line in lines[:header_end]
+        if line.startswith("property ") and not line.startswith("property list ")
+    ]
+    x_index, y_index, z_index = (
+        properties.index("x"),
+        properties.index("y"),
+        properties.index("z"),
+    )
+    normal_indices = (
+        (properties.index("nx"), properties.index("ny"), properties.index("nz"))
+        if {"nx", "ny", "nz"} <= set(properties)
+        else None
+    )
+    output_lines = lines[: header_end + 1]
+    for line in lines[header_end + 1 : header_end + 1 + vertex_count]:
+        values = line.split()
+        point = transform_point(
+            matrix,
+            (float(values[x_index]), float(values[y_index]), float(values[z_index])),
+        )
+        for index, value in zip((x_index, y_index, z_index), point, strict=True):
+            values[index] = f"{value:.12g}"
+        if normal_indices is not None:
+            normal = rotate_vector(
+                rotation,
+                tuple(float(values[index]) for index in normal_indices),
+            )
+            for index, value in zip(normal_indices, normal, strict=True):
+                values[index] = f"{value:.12g}"
+        output_lines.append(" ".join(values))
+    output_lines.extend(lines[header_end + 1 + vertex_count :])
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text("\n".join(output_lines) + "\n", encoding="ascii")
+
+
+@calibration_app.command("export-canonical-mesh")
+def export_canonical_mesh(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    asset_id: Annotated[str, typer.Option("--asset-id")],
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    artifact = _world_calibration(run_dir)
+    transform = artifact.accepted_transform
+    if not artifact.full_canonical_world_available or transform is None:
+        raise typer.BadParameter("full canonical calibration has not been accepted")
+    source_scene = _artifact_model(
+        run_dir,
+        _calibration_manifest(run_dir).source_scene_ir_path,
+        SceneIR,
+    )
+    asset = next((item for item in source_scene.geometry_assets if item.asset_id == asset_id), None)
+    if asset is None:
+        raise typer.BadParameter(f"source scene has no geometry asset {asset_id!r}")
+    source = run_dir / asset.uri
+    if not source.is_file():
+        raise typer.BadParameter(f"source geometry is not materialized: {asset.uri}")
+    _export_calibrated_ascii_ply(
+        source,
+        output,
+        transform.matrix_canonical_from_colmap,
+        transform.rotation_canonical_from_colmap,
+    )
+    typer.echo(f"exported canonical metric geometry to {output}")
+
+
+@calibration_app.command("create-apriltag-manifest")
+def create_apriltag_manifest(
+    output: Annotated[Path, typer.Option("--output")],
+    tag_family: Annotated[str, typer.Option("--tag-family")] = "tagStandard41h12",
+    tag_id: Annotated[int, typer.Option("--tag-id", min=0)] = 0,
+    tag_size_m: Annotated[float, typer.Option("--tag-size-m", min=1e-9)] = 0.1,
+) -> None:
+    payload: dict[str, object] = {
+        "schema_version": "0.2.0",
+        "run_id": "replace_with_run_id",
+        "frame_sequence_digest": "0" * 64,
+        "camera_reconstruction_path": "calibration/source/camera_reconstruction.json",
+        "camera_reconstruction_sha256": "0" * 64,
+        "source_scene_ir_path": "calibration/source/scene_ir.json",
+        "source_scene_ir_sha256": "0" * 64,
+        "evidence": [
+            {
+                "evidence_id": "apriltag_fitting",
+                "evidence_type": "apriltag",
+                "trust": "metric_fiducial",
+                "role": "fitting",
+                "source_files": [
+                    {
+                        "relative_path": "calibration/source/tag_frame_fitting.png",
+                        "sha256": "0" * 64,
+                        "media_type": "image/png",
+                    }
+                ],
+                "supports_metric_scale": True,
+                "measurement_uncertainty": 0.001,
+            }
+        ],
+        "apriltag": {
+            "official_repository": "https://github.com/AprilRobotics/apriltag",
+            "official_commit": "0e16a12dd380fd607e4afd54712ee9b1ffb9ec8f",
+            "code_license": "BSD-2-Clause",
+            "tag_family": tag_family,
+            "tag_id": tag_id,
+            "detection_edge_size_m": tag_size_m,
+            "detector_source_path": "apriltag_pose.h::estimate_tag_pose",
+            "image_sources": [
+                {
+                    "frame_id": "replace_with_registered_frame_id",
+                    "image_path": "calibration/source/tag_frame_fitting.png",
+                    "image_sha256": "0" * 64,
+                    "width": 1920,
+                    "height": 1080,
+                    "intrinsics_fx_fy_cx_cy": [1000.0, 1000.0, 960.0, 540.0],
+                    "image_coordinate_space": "registered_undistorted",
+                    "split": "fitting",
+                }
+            ],
+            "detections": [],
+        },
+        "known_distance": None,
+        "external_metric": [],
+        "gravity": [],
+        "floor_planes": [],
+        "forward": None,
+        "origin": None,
+        "evidence_tier": "scale_only",
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    typer.echo(f"created AprilTag calibration manifest template at {output}")
+
+
+@calibration_app.command("create-landmark-template")
+def create_landmark_template(
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    payload = {
+        "schema_version": "0.2.0",
+        "landmarks": [
+            {
+                "landmark_id": "known_distance_0001",
+                "point_a_id": "point_a",
+                "point_b_id": "point_b",
+                "known_distance_m": 1.0,
+                "measurement_uncertainty_m": 0.001,
+                "role": "fitting",
+            }
+        ],
+        "observations": [
+            {
+                "frame_id": "frame_000000",
+                "point_id": "point_a",
+                "pixel_xy": [0.0, 0.0],
+                "role": "fitting",
+            },
+            {
+                "frame_id": "frame_000001",
+                "point_id": "point_a",
+                "pixel_xy": [0.0, 0.0],
+                "role": "fitting",
+            },
+            {
+                "frame_id": "frame_000002",
+                "point_id": "point_a",
+                "pixel_xy": [0.0, 0.0],
+                "role": "heldout",
+            },
+            {
+                "frame_id": "frame_000000",
+                "point_id": "point_b",
+                "pixel_xy": [0.0, 0.0],
+                "role": "fitting",
+            },
+            {
+                "frame_id": "frame_000001",
+                "point_id": "point_b",
+                "pixel_xy": [0.0, 0.0],
+                "role": "fitting",
+            },
+            {
+                "frame_id": "frame_000002",
+                "point_id": "point_b",
+                "pixel_xy": [0.0, 0.0],
+                "role": "heldout",
+            },
+        ],
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    typer.echo(f"created known-distance landmark template at {output}")
+
+
+@calibration_app.command("validate-landmark-manifest")
+def validate_landmark_manifest(
+    manifest: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=True, dir_okay=False),
+    ],
+) -> None:
+    payload = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+    record = KnownDistanceLandmarkManifest.model_validate(payload)
+    typer.echo(
+        f"valid known-distance manifest: {len(record.landmarks)} distance anchors, "
+        f"{len(record.observations)} observations"
+    )
+
+
+@validation_app.command("inspect-phase6a")
+def inspect_phase6a(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase6a_world_calibration.json",
+        Phase6AConsistencyReport,
+    )
+    typer.echo(json.dumps(report.model_dump(mode="json"), indent=2))
+
+
+@validation_app.command("verify-phase6a")
+def verify_phase6a(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase6a_world_calibration.json",
+        Phase6AConsistencyReport,
+    )
+    if not report.passed:
+        failed = [item.check_id for item in report.checks if not item.passed]
+        raise typer.BadParameter(f"Phase 6A consistency verification failed: {failed}")
+    typer.echo(f"Phase 6A world-calibration consistency passed ({len(report.checks)} checks)")

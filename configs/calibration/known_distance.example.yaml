@@ -1,0 +1,22 @@
+schema_version: "0.2.0"
+landmarks:
+  - landmark_id: cabinet_width
+    point_a_id: cabinet_left
+    point_b_id: cabinet_right
+    known_distance_m: 0.612
+    measurement_uncertainty_m: 0.002
+    measurement_provenance:
+      measurement_tool: steel tape measure
+      measurement_date: "2026-01-01"
+      measurement_definition: fixed cabinet exterior width between named endpoints
+      point_a_description: fixed cabinet front-left endpoint
+      point_b_description: fixed cabinet front-right endpoint
+      units: meters
+    role: fitting
+observations:
+  - {frame_id: frame_000000, point_id: cabinet_left, pixel_xy: [412.5, 603.0], role: fitting, annotation_method: manual_registered_source_pixel, annotation_confidence: 0.95}
+  - {frame_id: frame_000001, point_id: cabinet_left, pixel_xy: [421.0, 600.0], role: fitting, annotation_method: manual_registered_source_pixel, annotation_confidence: 0.95}
+  - {frame_id: frame_000002, point_id: cabinet_left, pixel_xy: [430.0, 598.0], role: heldout, annotation_method: manual_registered_source_pixel, annotation_confidence: 0.95}
+  - {frame_id: frame_000000, point_id: cabinet_right, pixel_xy: [972.1, 608.4], role: fitting, annotation_method: manual_registered_source_pixel, annotation_confidence: 0.95}
+  - {frame_id: frame_000001, point_id: cabinet_right, pixel_xy: [959.0, 605.0], role: fitting, annotation_method: manual_registered_source_pixel, annotation_confidence: 0.95}
+  - {frame_id: frame_000002, point_id: cabinet_right, pixel_xy: [944.0, 601.0], role: heldout, annotation_method: manual_registered_source_pixel, annotation_confidence: 0.95}

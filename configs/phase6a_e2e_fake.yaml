@@ -1,0 +1,31 @@
+seed: 42
+stages:
+  calibration_evidence:
+    adapter:
+      name: calibration_evidence
+      config:
+        fake_mode: perfect_full_canonical
+    depends_on: []
+  world_calibration:
+    adapter:
+      name: world_calibration
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_module: world_calibration_worker
+        worker_script: tests/fixtures/fake_world_calibration_worker.py
+        docker_image: reconevery/world-calibration:phase6a
+        fake_mode: perfect_full_canonical
+        minimum_heldout_tag_detections: 3
+    depends_on: [calibration_evidence]
+  canonical_scene_wrapper:
+    adapter:
+      name: canonical_scene_wrapper
+      config: {}
+    depends_on: [world_calibration]
+  phase6a_consistency_validation:
+    adapter:
+      name: phase6a_consistency_validation
+      config: {}
+    depends_on: [canonical_scene_wrapper]

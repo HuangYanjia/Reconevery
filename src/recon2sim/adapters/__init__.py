@@ -26,6 +26,11 @@ from recon2sim.adapters.base import (
     StageContext,
     StageResult,
 )
+from recon2sim.adapters.calibration_evidence import CalibrationEvidenceAdapter
+from recon2sim.adapters.canonical_scene import (
+    CanonicalSceneAdapter,
+    Phase6AConsistencyValidationAdapter,
+)
 from recon2sim.adapters.colmap import ColmapCameraRecoveryAdapter
 from recon2sim.adapters.command import CommandAdapter, DockerCommandAdapter
 from recon2sim.adapters.completion_candidates import MeasuredOnlyCandidateAdapter
@@ -69,6 +74,7 @@ from recon2sim.adapters.particulate import ParticulateAdapter
 from recon2sim.adapters.sam3 import Sam3SegmentationTrackingAdapter
 from recon2sim.adapters.sam3d_objects import Sam3DObjectsCandidateAdapter
 from recon2sim.adapters.trellis2_objects import Trellis2ObjectCandidateAdapter
+from recon2sim.adapters.world_calibration import WorldCalibrationAdapter
 
 REGISTRY: dict[str, type[Adapter]] = {
     "mock_ingest": MockIngestAdapter,
@@ -114,6 +120,10 @@ REGISTRY: dict[str, type[Adapter]] = {
     "articulation_evaluation": ArticulationEvaluationAdapter,
     "articulation_selection": ArticulationSelectionAdapter,
     "phase5c_consistency_validation": Phase5CConsistencyValidationAdapter,
+    "calibration_evidence": CalibrationEvidenceAdapter,
+    "world_calibration": WorldCalibrationAdapter,
+    "canonical_scene_wrapper": CanonicalSceneAdapter,
+    "phase6a_consistency_validation": Phase6AConsistencyValidationAdapter,
 }
 
 __all__ = [
@@ -128,6 +138,8 @@ __all__ = [
     "ArtifactRecord",
     "CommandAdapter",
     "CameraMeshAlignmentAdapter",
+    "CalibrationEvidenceAdapter",
+    "CanonicalSceneAdapter",
     "ColmapCameraRecoveryAdapter",
     "CompletionCandidateEvaluationAdapter",
     "CompletionCandidateRegistrationAdapter",
@@ -153,10 +165,12 @@ __all__ = [
     "Phase5AConsistencyValidationAdapter",
     "Phase5BConsistencyValidationAdapter",
     "Phase5CConsistencyValidationAdapter",
+    "Phase6AConsistencyValidationAdapter",
     "PartNetRetrievalAdapter",
     "Sam3SegmentationTrackingAdapter",
     "Sam3DObjectsCandidateAdapter",
     "StageContext",
     "StageResult",
     "Trellis2ObjectCandidateAdapter",
+    "WorldCalibrationAdapter",
 ]

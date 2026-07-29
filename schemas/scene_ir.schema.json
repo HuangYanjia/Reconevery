@@ -716,6 +716,11 @@
           "default": null,
           "title": "Geometry Alignment Status"
         },
+        "geometry_requires_world_wrapper": {
+          "default": false,
+          "title": "Geometry Requires World Wrapper",
+          "type": "boolean"
+        },
         "geometry_status": {
           "anyOf": [
             {
@@ -826,6 +831,11 @@
           "default": null,
           "title": "Source Asset Id"
         },
+        "source_space_geometry": {
+          "default": false,
+          "title": "Source Space Geometry",
+          "type": "boolean"
+        },
         "uri": {
           "title": "Uri",
           "type": "string"
@@ -845,6 +855,31 @@
           ],
           "default": null,
           "title": "Usage Policy"
+        },
+        "world_wrapper_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "World Wrapper Path"
+        },
+        "world_wrapper_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "World Wrapper Sha256"
         }
       },
       "required": [
@@ -1518,6 +1553,17 @@
         },
         "source": {
           "$ref": "#/$defs/GeometrySourceType"
+        },
+        "world_calibration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldCalibrationSceneReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -1726,6 +1772,103 @@
       "title": "ValidationReport",
       "type": "object"
     },
+    "WorldCalibrationSceneReference": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_scene_wrapper_path": {
+          "title": "Canonical Scene Wrapper Path",
+          "type": "string"
+        },
+        "canonical_scene_wrapper_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Canonical Scene Wrapper Sha256",
+          "type": "string"
+        },
+        "fiducial_world_derivation_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fiducial World Derivation Path"
+        },
+        "fiducial_world_derivation_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fiducial World Derivation Sha256"
+        },
+        "geometry_requires_world_wrapper": {
+          "title": "Geometry Requires World Wrapper",
+          "type": "boolean"
+        },
+        "landmark_world_derivation_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Landmark World Derivation Path"
+        },
+        "landmark_world_derivation_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Landmark World Derivation Sha256"
+        },
+        "source_scene_ir_path": {
+          "title": "Source Scene Ir Path",
+          "type": "string"
+        },
+        "source_scene_ir_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Scene Ir Sha256",
+          "type": "string"
+        },
+        "world_calibration_artifact_path": {
+          "title": "World Calibration Artifact Path",
+          "type": "string"
+        },
+        "world_calibration_artifact_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "World Calibration Artifact Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_scene_ir_path",
+        "source_scene_ir_sha256",
+        "world_calibration_artifact_path",
+        "world_calibration_artifact_sha256",
+        "canonical_scene_wrapper_path",
+        "canonical_scene_wrapper_sha256",
+        "geometry_requires_world_wrapper"
+      ],
+      "title": "WorldCalibrationSceneReference",
+      "type": "object"
+    },
     "WorldFrame": {
       "enum": [
         "canonical_x_forward_y_left_z_up",
@@ -1798,7 +1941,9 @@
         "0.1.3",
         "0.1.4",
         "0.1.5",
-        "0.1.6"
+        "0.1.6",
+        "0.1.7",
+        "0.1.8"
       ],
       "title": "Schema Version",
       "type": "string"
