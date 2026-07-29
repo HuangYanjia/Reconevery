@@ -1,0 +1,32 @@
+seed: 42
+stages:
+  calibration_evidence:
+    adapter:
+      name: calibration_evidence
+      config:
+        manifest_path: calibration_manifest.yaml
+        reference_run: runs/phase5c_real
+        camera_reconstruction_path: camera/reconstruction.json
+        source_scene_ir_path: scene_ir/phase5c_scene.json
+    depends_on: []
+  world_calibration:
+    adapter:
+      name: world_calibration
+      env: [PATH, HOME, TMPDIR, LD_LIBRARY_PATH]
+      config:
+        execution_mode: local_worker
+        worker_python: .venv-world-calibration/bin/python
+        worker_module: world_calibration_worker
+        docker_image: reconevery/world-calibration:phase6a
+        fake_mode: success
+    depends_on: [calibration_evidence]
+  canonical_scene_wrapper:
+    adapter:
+      name: canonical_scene_wrapper
+      config: {}
+    depends_on: [world_calibration]
+  phase6a_consistency_validation:
+    adapter:
+      name: phase6a_consistency_validation
+      config: {}
+    depends_on: [canonical_scene_wrapper]

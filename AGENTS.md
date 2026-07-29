@@ -148,3 +148,12 @@ Original Phase 5A articulated anchors are `reference_world` evidence and remain 
 the object evidence list; never attach them below a fitted candidate/link transform
 without transforming the geometry bytes. Selected candidate, fitted model, link
 assignment, and evaluation records must be dedicated files with exact content hashes.
+
+Phase 6A calibration requires explicit metric, gravity, forward, and origin evidence.
+Calibration candidate selection uses fitting evidence only; held-out evidence is
+acceptance-only. The core must not import NumPy, SciPy, OpenCV, AprilTag, Open3D, or
+trimesh. Only `accepted_full_canonical` may claim meters and canonical
+`+X`-forward/`+Y`-left/`+Z`-up together. Source cameras and geometry remain immutable;
+reference-world measured assets receive one wrapper transform. Scale prismatic
+quantities exactly once and never scale revolute angles. Phase 6A must not add
+collisions, physical properties, simulator export, or simulation-ready claims.

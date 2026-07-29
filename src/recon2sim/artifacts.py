@@ -5236,3 +5236,652 @@ class Phase5CConsistencyReport(StrictModel):
         if self.passed != all(check.passed for check in self.checks):
             raise ValueError("Phase 5C pass status must match its checks")
         return self
+
+
+class WorldCalibrationEvidenceTier(StrEnum):
+    NONE = "none"
+    SCALE_ONLY = "scale_only"
+    GRAVITY_ONLY = "gravity_only"
+    METRIC_AND_GRAVITY = "metric_and_gravity"
+    FULL_CANONICAL = "full_canonical"
+
+
+class WorldCalibrationTrust(StrEnum):
+    SURVEYED = "surveyed"
+    METRIC_FIDUCIAL = "metric_fiducial"
+    DEVICE_SENSOR = "device_sensor"
+    MANUAL_MEASURED_LANDMARK = "manual_measured_landmark"
+    GEOMETRY_PLANE = "geometry_plane"
+    SEMANTIC_PRIOR = "semantic_prior"
+
+
+class WorldCalibrationStatus(StrEnum):
+    ACCEPTED_FULL_CANONICAL = "accepted_full_canonical"
+    ACCEPTED_METRIC_ONLY = "accepted_metric_only"
+    ACCEPTED_GRAVITY_ONLY = "accepted_gravity_only"
+    REJECTED_INCONSISTENT_METRIC_EVIDENCE = "rejected_inconsistent_metric_evidence"
+    REJECTED_INCONSISTENT_GRAVITY_EVIDENCE = "rejected_inconsistent_gravity_evidence"
+    REJECTED_HELDOUT_VALIDATION = "rejected_heldout_validation"
+    INSUFFICIENT_FORWARD_EVIDENCE = "insufficient_forward_evidence"
+    INSUFFICIENT_ORIGIN_EVIDENCE = "insufficient_origin_evidence"
+    INSUFFICIENT_EVIDENCE = "insufficient_evidence"
+
+
+class CalibrationEvidenceType(StrEnum):
+    APRILTAG = "apriltag"
+    KNOWN_DISTANCE = "known_distance"
+    EXTERNAL_METRIC = "external_metric"
+    IMU_GRAVITY = "imu_gravity"
+    FIDUCIAL_ORIENTATION = "fiducial_orientation"
+    USER_UP_LANDMARKS = "user_up_landmarks"
+    FLOOR_PLANE = "floor_plane"
+    MANHATTAN_DIAGNOSTIC = "manhattan_diagnostic"
+    FORWARD_LANDMARKS = "forward_landmarks"
+    REFERENCE_CAMERA_FORWARD = "reference_camera_forward"
+    ORIGIN_LANDMARK = "origin_landmark"
+    FIDUCIAL_ORIGIN = "fiducial_origin"
+
+
+class CalibrationFileReference(StrictModel):
+    relative_path: str
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    media_type: str = Field(min_length=1)
+
+    @field_validator("relative_path")
+    @classmethod
+    def relative_calibration_path(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class CalibrationEvidenceRecord(StrictModel):
+    evidence_id: str = Field(min_length=1)
+    evidence_type: CalibrationEvidenceType
+    trust: WorldCalibrationTrust
+    source_files: list[CalibrationFileReference] = Field(default_factory=list)
+    supports_metric_scale: bool = False
+    supports_gravity: bool = False
+    supports_forward: bool = False
+    supports_origin: bool = False
+    measurement_uncertainty: float | None = Field(default=None, ge=0)
+    configuration: dict[str, object] = Field(default_factory=dict)
+
+
+class AprilTagImageSourceRecord(StrictModel):
+    frame_id: str = Field(min_length=1)
+    image_path: str
+    image_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+    intrinsics_fx_fy_cx_cy: tuple[float, float, float, float]
+    image_coordinate_space: Literal["registered_undistorted"] = "registered_undistorted"
+    split: Literal["fitting", "heldout"]
+
+    @field_validator("image_path")
+    @classmethod
+    def relative_tag_source_image(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+    @field_validator("intrinsics_fx_fy_cx_cy")
+    @classmethod
+    def positive_tag_intrinsics(
+        cls,
+        value: tuple[float, float, float, float],
+    ) -> tuple[float, float, float, float]:
+        if not all(math.isfinite(component) for component in value):
+            raise ValueError("AprilTag intrinsics must be finite")
+        if value[0] <= 0 or value[1] <= 0:
+            raise ValueError("AprilTag focal lengths must be positive")
+        return value
+
+
+class AprilTagDetectionRecord(StrictModel):
+    frame_id: str = Field(min_length=1)
+    image_path: str
+    image_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    tag_id: int = Field(ge=0)
+    corners_xy: tuple[
+        tuple[float, float],
+        tuple[float, float],
+        tuple[float, float],
+        tuple[float, float],
+    ]
+    decision_margin: float
+    hamming: int = Field(ge=0)
+    camera_center_tag_m: tuple[float, float, float] | None = None
+    rotation_tag_from_camera: tuple[float, ...] | None = Field(
+        default=None, min_length=9, max_length=9
+    )
+    pose_error: float | None = Field(default=None, ge=0)
+    split: Literal["fitting", "heldout"]
+
+    @field_validator("image_path")
+    @classmethod
+    def relative_tag_image(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class AprilTagCalibrationRecord(StrictModel):
+    official_repository: Literal["https://github.com/AprilRobotics/apriltag"] = (
+        "https://github.com/AprilRobotics/apriltag"
+    )
+    official_commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    code_license: Literal["BSD-2-Clause"] = "BSD-2-Clause"
+    tag_family: str = Field(min_length=1)
+    tag_id: int = Field(ge=0)
+    detection_edge_size_m: float = Field(gt=0)
+    detector_source_path: str = Field(min_length=1)
+    image_sources: list[AprilTagImageSourceRecord] = Field(default_factory=list)
+    detections: list[AprilTagDetectionRecord] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def tag_records_are_unique_and_consistent(self) -> Self:
+        source_ids = [item.frame_id for item in self.image_sources]
+        detection_ids = [item.frame_id for item in self.detections]
+        if len(source_ids) != len(set(source_ids)):
+            raise ValueError("AprilTag image-source frame IDs must be unique")
+        if len(detection_ids) != len(set(detection_ids)):
+            raise ValueError("AprilTag detection frame IDs must be unique")
+        if any(item.tag_id != self.tag_id for item in self.detections):
+            raise ValueError("AprilTag detections must match the configured tag ID")
+        if not self.image_sources and not self.detections:
+            raise ValueError("AprilTag calibration requires image sources or detections")
+        return self
+
+
+class CalibrationLandmarkObservation(StrictModel):
+    frame_id: str = Field(min_length=1)
+    point_id: str = Field(min_length=1)
+    pixel_xy: tuple[float, float]
+
+
+class KnownDistanceLandmark(StrictModel):
+    landmark_id: str = Field(min_length=1)
+    point_a_id: str = Field(min_length=1)
+    point_b_id: str = Field(min_length=1)
+    known_distance_m: float = Field(gt=0)
+    measurement_uncertainty_m: float = Field(default=0.0, ge=0)
+
+    @model_validator(mode="after")
+    def distinct_endpoints(self) -> Self:
+        if self.point_a_id == self.point_b_id:
+            raise ValueError("known-distance endpoints must be distinct")
+        return self
+
+
+class KnownDistanceLandmarkManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    landmarks: Annotated[list[KnownDistanceLandmark], Field(min_length=1)]
+    observations: Annotated[list[CalibrationLandmarkObservation], Field(min_length=4)]
+
+    @model_validator(mode="after")
+    def observed_endpoints(self) -> Self:
+        known = {item.point_id for item in self.observations}
+        counts: dict[str, set[str]] = {}
+        for item in self.observations:
+            counts.setdefault(item.point_id, set()).add(item.frame_id)
+        required = {
+            point_id for item in self.landmarks for point_id in (item.point_a_id, item.point_b_id)
+        }
+        missing = required - known
+        if missing:
+            raise ValueError(f"known-distance points lack observations: {sorted(missing)}")
+        sparse = sorted(point_id for point_id in required if len(counts.get(point_id, set())) < 2)
+        if sparse:
+            raise ValueError(
+                f"calibration points require observations in at least two frames: {sparse}"
+            )
+        return self
+
+
+class TriangulatedCalibrationLandmark(StrictModel):
+    point_id: str = Field(min_length=1)
+    point_colmap: tuple[float, float, float]
+    fitting_frame_ids: list[str]
+    heldout_frame_ids: list[str]
+    fitting_reprojection_error_px: float = Field(ge=0)
+    heldout_reprojection_error_px: float | None = Field(default=None, ge=0)
+    covariance_diagonal: tuple[float, float, float] | None = None
+
+
+class ExternalMetricEvidenceRecord(StrictModel):
+    evidence_id: str = Field(min_length=1)
+    source_device: str = Field(min_length=1)
+    coordinate_convention: str = Field(min_length=1)
+    timestamp_mapping: dict[str, float]
+    frame_mapping: dict[str, str]
+    units: Literal["meters"]
+    source_files: Annotated[list[CalibrationFileReference], Field(min_length=1)]
+    accuracy_estimate_m: float = Field(gt=0)
+
+
+class GravityEvidenceRecord(StrictModel):
+    evidence_id: str = Field(min_length=1)
+    source: CalibrationEvidenceType
+    trust: WorldCalibrationTrust
+    up_vector_colmap: tuple[float, float, float]
+    sign_evidence: str = Field(min_length=1)
+    fitting_residual_degrees: float = Field(ge=0)
+    heldout_residual_degrees: float | None = Field(default=None, ge=0)
+    angular_uncertainty_degrees: float = Field(ge=0)
+    supporting_ids: list[str]
+
+    @field_validator("up_vector_colmap")
+    @classmethod
+    def normalized_up(cls, value: tuple[float, float, float]) -> tuple[float, float, float]:
+        norm = math.sqrt(sum(component * component for component in value))
+        if not math.isfinite(norm) or abs(norm - 1.0) > 1e-6:
+            raise ValueError("gravity up vector must be finite and normalized")
+        return value
+
+
+class FloorPlaneEvidenceRecord(StrictModel):
+    evidence_id: str = Field(min_length=1)
+    floor_mask_paths: Annotated[list[str], Field(min_length=1)]
+    point_count: int = Field(gt=0)
+    spatial_extent_colmap: float = Field(gt=0)
+    plane_normal_colmap: tuple[float, float, float]
+    plane_offset_colmap: float
+    sign_policy: str = Field(min_length=1)
+    fitting_median_residual_colmap: float = Field(ge=0)
+    heldout_median_residual_colmap: float = Field(ge=0)
+    heldout_normal_error_degrees: float = Field(ge=0)
+
+    @field_validator("floor_mask_paths")
+    @classmethod
+    def relative_floor_masks(cls, values: list[str]) -> list[str]:
+        return [_relative_artifact_path(value) for value in values]
+
+    @field_validator("plane_normal_colmap")
+    @classmethod
+    def normalized_floor_normal(
+        cls,
+        value: tuple[float, float, float],
+    ) -> tuple[float, float, float]:
+        norm = math.sqrt(sum(component * component for component in value))
+        if not math.isfinite(norm) or abs(norm - 1.0) > 1e-6:
+            raise ValueError("floor-plane normal must be finite and normalized")
+        return value
+
+
+class CanonicalForwardEvidence(StrictModel):
+    source: CalibrationEvidenceType
+    policy: str = Field(min_length=1)
+    forward_vector_colmap: tuple[float, float, float]
+    uncertainty_degrees: float = Field(ge=0)
+    supporting_ids: list[str]
+
+
+class CanonicalOriginEvidence(StrictModel):
+    source: CalibrationEvidenceType
+    policy: str = Field(min_length=1)
+    origin_colmap: tuple[float, float, float]
+    supporting_ids: list[str]
+
+
+class WorldCalibrationDatasetSplit(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    fitting_evidence_ids: list[str]
+    heldout_evidence_ids: list[str]
+    fitting_frame_ids: list[str]
+    heldout_frame_ids: list[str]
+    split_policy: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def disjoint_calibration_evidence(self) -> Self:
+        if set(self.fitting_evidence_ids) & set(self.heldout_evidence_ids):
+            raise ValueError("calibration fitting and held-out evidence IDs must be disjoint")
+        if set(self.fitting_frame_ids) & set(self.heldout_frame_ids):
+            raise ValueError("calibration fitting and held-out frame IDs must be disjoint")
+        return self
+
+
+class WorldCalibrationManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    run_id: str = Field(min_length=1)
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_path: str
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    source_scene_ir_path: str
+    source_scene_ir_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    evidence: list[CalibrationEvidenceRecord]
+    apriltag: AprilTagCalibrationRecord | None = None
+    known_distance: KnownDistanceLandmarkManifest | None = None
+    external_metric: list[ExternalMetricEvidenceRecord] = Field(default_factory=list)
+    gravity: list[GravityEvidenceRecord] = Field(default_factory=list)
+    floor_planes: list[FloorPlaneEvidenceRecord] = Field(default_factory=list)
+    forward: CanonicalForwardEvidence | None = None
+    origin: CanonicalOriginEvidence | None = None
+    evidence_tier: WorldCalibrationEvidenceTier
+
+    @field_validator("camera_reconstruction_path", "source_scene_ir_path")
+    @classmethod
+    def relative_calibration_sources(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+    @model_validator(mode="after")
+    def evidence_tier_matches_sources(self) -> Self:
+        declared_sources = {
+            source.relative_path: source.sha256
+            for record in self.evidence
+            for source in record.source_files
+        }
+        if self.apriltag is not None:
+            for image in self.apriltag.image_sources:
+                if declared_sources.get(image.image_path) != image.image_sha256:
+                    raise ValueError(
+                        "every AprilTag image source must have an exact matching "
+                        "calibration evidence file reference"
+                    )
+        metric = (
+            self.apriltag is not None
+            or self.known_distance is not None
+            or bool(self.external_metric)
+            or any(item.supports_metric_scale for item in self.evidence)
+        )
+        gravity = bool(self.floor_planes) or any(
+            item.source is not CalibrationEvidenceType.MANHATTAN_DIAGNOSTIC for item in self.gravity
+        )
+        if metric and gravity and self.forward is not None and self.origin is not None:
+            expected = WorldCalibrationEvidenceTier.FULL_CANONICAL
+        elif metric and gravity:
+            expected = WorldCalibrationEvidenceTier.METRIC_AND_GRAVITY
+        elif metric:
+            expected = WorldCalibrationEvidenceTier.SCALE_ONLY
+        elif gravity:
+            expected = WorldCalibrationEvidenceTier.GRAVITY_ONLY
+        else:
+            expected = WorldCalibrationEvidenceTier.NONE
+        if self.evidence_tier is not expected:
+            raise ValueError(
+                f"calibration evidence tier {self.evidence_tier.value!r} does not "
+                f"match available evidence ({expected.value!r})"
+            )
+        return self
+
+
+class WorldCalibrationRequest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    manifest_path: str
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_path: str
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    source_scene_ir_path: str
+    source_scene_ir_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    dataset_split: WorldCalibrationDatasetSplit
+    solver_configuration: dict[str, object]
+    acceptance_gates: dict[str, float | int]
+    output_directory: str
+    seed: int
+    fake_mode: str | None = None
+
+    @field_validator(
+        "manifest_path",
+        "camera_reconstruction_path",
+        "source_scene_ir_path",
+        "output_directory",
+    )
+    @classmethod
+    def relative_calibration_request_paths(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class WorldCalibrationMetrics(StrictModel):
+    fitting_metric_relative_error: float | None = Field(default=None, ge=0)
+    heldout_metric_relative_error: float | None = Field(default=None, ge=0)
+    heldout_tag_detection_count: int = Field(default=0, ge=0)
+    heldout_tag_translation_error_m: float | None = Field(default=None, ge=0)
+    heldout_tag_rotation_error_degrees: float | None = Field(default=None, ge=0)
+    gravity_fitting_error_degrees: float | None = Field(default=None, ge=0)
+    gravity_heldout_error_degrees: float | None = Field(default=None, ge=0)
+    forward_uncertainty_degrees: float | None = Field(default=None, ge=0)
+    sim3_roundtrip_error: float = Field(ge=0)
+    known_distance_residuals: dict[str, float] = Field(default_factory=dict)
+
+
+class WorldCalibrationTransform(StrictModel):
+    scale_m_per_colmap: float = Field(gt=0)
+    rotation_canonical_from_colmap: Annotated[tuple[float, ...], Field(min_length=9, max_length=9)]
+    translation_canonical_m: tuple[float, float, float]
+    matrix_canonical_from_colmap: Annotated[tuple[float, ...], Field(min_length=16, max_length=16)]
+    matrix_colmap_from_canonical: Annotated[tuple[float, ...], Field(min_length=16, max_length=16)]
+    rotation_determinant: float
+    orthonormal_error: float = Field(ge=0)
+    inverse_roundtrip_error: float = Field(ge=0)
+    covariance_diagonal: tuple[float, ...] | None = None
+
+    @model_validator(mode="after")
+    def proper_finite_sim3(self) -> Self:
+        values = (
+            self.scale_m_per_colmap,
+            *self.rotation_canonical_from_colmap,
+            *self.translation_canonical_m,
+            *self.matrix_canonical_from_colmap,
+            *self.matrix_colmap_from_canonical,
+            self.rotation_determinant,
+            self.orthonormal_error,
+            self.inverse_roundtrip_error,
+        )
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("world calibration transform must be finite")
+        if abs(self.rotation_determinant - 1.0) > 1e-6:
+            raise ValueError("world calibration rotation must be proper")
+        if self.orthonormal_error > 1e-6:
+            raise ValueError("world calibration rotation must be orthonormal")
+        rotation = self.rotation_canonical_from_colmap
+        actual_determinant = (
+            rotation[0] * (rotation[4] * rotation[8] - rotation[5] * rotation[7])
+            - rotation[1] * (rotation[3] * rotation[8] - rotation[5] * rotation[6])
+            + rotation[2] * (rotation[3] * rotation[7] - rotation[4] * rotation[6])
+        )
+        if abs(actual_determinant - 1.0) > 1e-6:
+            raise ValueError("world calibration rotation values are not proper")
+        rows = (rotation[0:3], rotation[3:6], rotation[6:9])
+        actual_orthonormal_error = max(
+            abs(
+                sum(rows[row][index] * rows[column][index] for index in range(3))
+                - (1.0 if row == column else 0.0)
+            )
+            for row in range(3)
+            for column in range(3)
+        )
+        if actual_orthonormal_error > 1e-6:
+            raise ValueError("world calibration rotation values are not orthonormal")
+        matrix = self.matrix_canonical_from_colmap
+        expected_matrix = (
+            self.scale_m_per_colmap * rotation[0],
+            self.scale_m_per_colmap * rotation[1],
+            self.scale_m_per_colmap * rotation[2],
+            self.translation_canonical_m[0],
+            self.scale_m_per_colmap * rotation[3],
+            self.scale_m_per_colmap * rotation[4],
+            self.scale_m_per_colmap * rotation[5],
+            self.translation_canonical_m[1],
+            self.scale_m_per_colmap * rotation[6],
+            self.scale_m_per_colmap * rotation[7],
+            self.scale_m_per_colmap * rotation[8],
+            self.translation_canonical_m[2],
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        )
+        if (
+            max(
+                abs(actual - expected)
+                for actual, expected in zip(matrix, expected_matrix, strict=True)
+            )
+            > 1e-8
+        ):
+            raise ValueError("world calibration matrix disagrees with scale/rotation/translation")
+        inverse = self.matrix_colmap_from_canonical
+        product = tuple(
+            sum(matrix[row * 4 + inner] * inverse[inner * 4 + column] for inner in range(4))
+            for row in range(4)
+            for column in range(4)
+        )
+        identity = (
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        )
+        actual_roundtrip_error = max(
+            abs(actual - expected) for actual, expected in zip(product, identity, strict=True)
+        )
+        if actual_roundtrip_error > 1e-8:
+            raise ValueError("world calibration matrix inverse fails round-trip validation")
+        if abs(actual_roundtrip_error - self.inverse_roundtrip_error) > 1e-8:
+            raise ValueError("reported Sim(3) round-trip error is inconsistent")
+        return self
+
+
+class WorldCalibrationCandidate(StrictModel):
+    candidate_id: str = Field(min_length=1)
+    evidence_tier: WorldCalibrationEvidenceTier
+    selected_by_fitting_only: Literal[True] = True
+    transform: WorldCalibrationTransform | None = None
+    fitting_objective: float = Field(ge=0)
+    evidence_ids: list[str]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class WorldCalibrationArtifact(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    status: WorldCalibrationStatus
+    evidence_tier: WorldCalibrationEvidenceTier
+    manifest_path: str
+    manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    dataset_split: WorldCalibrationDatasetSplit
+    candidates: list[WorldCalibrationCandidate]
+    selected_candidate_id: str | None = None
+    accepted_transform: WorldCalibrationTransform | None = None
+    metrics: WorldCalibrationMetrics
+    metric_scale_known: bool
+    gravity_alignment_known: bool
+    canonical_forward_known: bool
+    canonical_origin_known: bool
+    full_canonical_world_available: bool
+    source_cameras_unchanged: Literal[True] = True
+    source_geometry_unchanged: Literal[True] = True
+    warnings: list[str] = Field(default_factory=list)
+
+    @field_validator("manifest_path")
+    @classmethod
+    def relative_world_manifest(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+    @model_validator(mode="after")
+    def truthful_world_status(self) -> Self:
+        flags = (
+            self.metric_scale_known,
+            self.gravity_alignment_known,
+            self.canonical_forward_known,
+            self.canonical_origin_known,
+        )
+        if self.full_canonical_world_available != all(flags):
+            raise ValueError("full canonical availability must match all calibration components")
+        if self.status is WorldCalibrationStatus.ACCEPTED_FULL_CANONICAL:
+            if not self.full_canonical_world_available or self.accepted_transform is None:
+                raise ValueError("accepted full canonical status requires an accepted transform")
+        elif self.full_canonical_world_available:
+            raise ValueError("only accepted_full_canonical may claim a full canonical world")
+        if self.accepted_transform is None and self.selected_candidate_id is not None:
+            raise ValueError("selected calibration candidate requires an accepted transform")
+        return self
+
+
+class WorldCalibrationDiagnostics(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    status: WorldCalibrationStatus
+    metric_evidence_count: int = Field(ge=0)
+    gravity_evidence_count: int = Field(ge=0)
+    forward_evidence_count: int = Field(ge=0)
+    origin_evidence_count: int = Field(ge=0)
+    fitting_evidence_count: int = Field(ge=0)
+    heldout_evidence_count: int = Field(ge=0)
+    total_runtime_seconds: float = Field(ge=0)
+    peak_host_memory_bytes: int | None = Field(default=None, ge=0)
+    runtime_environment: dict[str, str] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CanonicalAssetMapping(StrictModel):
+    asset_id: str = Field(min_length=1)
+    source_path: str
+    source_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    transform_policy: Literal[
+        "wrapper_sim3",
+        "rotation_only",
+        "scale_once",
+        "angular_unchanged",
+    ]
+
+    @field_validator("source_path")
+    @classmethod
+    def relative_canonical_asset(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class CanonicalSceneWrapper(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    source_scene_ir_path: str
+    source_scene_ir_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    calibration_artifact_path: str
+    calibration_artifact_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    accepted_transform: WorldCalibrationTransform | None = None
+    calibration_status: WorldCalibrationStatus
+    asset_mappings: list[CanonicalAssetMapping]
+    camera_transform_policy: Literal["compose_world_wrapper"] = "compose_world_wrapper"
+    prismatic_quantity_policy: Literal["scale_once"] = "scale_once"
+    revolute_quantity_policy: Literal["radians_unchanged"] = "radians_unchanged"
+    source_artifacts_immutable: Literal[True] = True
+
+    @field_validator("source_scene_ir_path", "calibration_artifact_path")
+    @classmethod
+    def relative_wrapper_paths(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class Phase6AConsistencyReport(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    passed: bool
+    checks: list[EndToEndConsistencyCheck]
+    metric_scale_known: bool
+    gravity_alignment_known: bool
+    canonical_forward_known: bool
+    canonical_origin_known: bool
+    full_canonical_world_available: bool
+    camera_poses_rewritten: Literal[False] = False
+    source_geometry_rewritten: Literal[False] = False
+    collision_generation_implemented: Literal[False] = False
+    physics_identification_implemented: Literal[False] = False
+    sim_ready_scene_implemented: Literal[False] = False
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def phase6a_summary_matches_checks(self) -> Self:
+        if self.passed != all(check.passed for check in self.checks):
+            raise ValueError("Phase 6A pass status must match its checks")
+        if self.full_canonical_world_available != all(
+            (
+                self.metric_scale_known,
+                self.gravity_alignment_known,
+                self.canonical_forward_known,
+                self.canonical_origin_known,
+            )
+        ):
+            raise ValueError("Phase 6A full-canonical summary is inconsistent")
+        return self

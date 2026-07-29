@@ -1,0 +1,156 @@
+{
+  "$defs": {
+    "WorldCalibrationDatasetSplit": {
+      "additionalProperties": false,
+      "properties": {
+        "fitting_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fitting Evidence Ids",
+          "type": "array"
+        },
+        "fitting_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fitting Frame Ids",
+          "type": "array"
+        },
+        "heldout_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heldout Evidence Ids",
+          "type": "array"
+        },
+        "heldout_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heldout Frame Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "0.1.0",
+          "default": "0.1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "split_policy": {
+          "minLength": 1,
+          "title": "Split Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fitting_evidence_ids",
+        "heldout_evidence_ids",
+        "fitting_frame_ids",
+        "heldout_frame_ids",
+        "split_policy"
+      ],
+      "title": "WorldCalibrationDatasetSplit",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "acceptance_gates": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "integer"
+          }
+        ]
+      },
+      "title": "Acceptance Gates",
+      "type": "object"
+    },
+    "camera_reconstruction_path": {
+      "title": "Camera Reconstruction Path",
+      "type": "string"
+    },
+    "camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Camera Reconstruction Sha256",
+      "type": "string"
+    },
+    "dataset_split": {
+      "$ref": "#/$defs/WorldCalibrationDatasetSplit"
+    },
+    "fake_mode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fake Mode"
+    },
+    "frame_sequence_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Frame Sequence Digest",
+      "type": "string"
+    },
+    "manifest_path": {
+      "title": "Manifest Path",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "output_directory": {
+      "title": "Output Directory",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "solver_configuration": {
+      "additionalProperties": true,
+      "title": "Solver Configuration",
+      "type": "object"
+    },
+    "source_scene_ir_path": {
+      "title": "Source Scene Ir Path",
+      "type": "string"
+    },
+    "source_scene_ir_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Scene Ir Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "manifest_path",
+    "manifest_sha256",
+    "frame_sequence_digest",
+    "camera_reconstruction_path",
+    "camera_reconstruction_sha256",
+    "source_scene_ir_path",
+    "source_scene_ir_sha256",
+    "dataset_split",
+    "solver_configuration",
+    "acceptance_gates",
+    "output_directory",
+    "seed"
+  ],
+  "title": "WorldCalibrationRequest",
+  "type": "object"
+}

@@ -1,0 +1,14 @@
+schema_version: "0.1.0"
+landmarks:
+  - landmark_id: cabinet_width
+    point_a_id: cabinet_left
+    point_b_id: cabinet_right
+    known_distance_m: 0.612
+    measurement_uncertainty_m: 0.002
+observations:
+  - {frame_id: frame_000000, point_id: cabinet_left, pixel_xy: [412.5, 603.0]}
+  - {frame_id: frame_000001, point_id: cabinet_left, pixel_xy: [421.0, 600.0]}
+  - {frame_id: frame_000002, point_id: cabinet_left, pixel_xy: [430.0, 598.0]}
+  - {frame_id: frame_000000, point_id: cabinet_right, pixel_xy: [972.1, 608.4]}
+  - {frame_id: frame_000001, point_id: cabinet_right, pixel_xy: [959.0, 605.0]}
+  - {frame_id: frame_000002, point_id: cabinet_right, pixel_xy: [944.0, 601.0]}

@@ -143,3 +143,19 @@ explicit transform used during fitting, rendering, preview export, and selection
 Scene IR references dedicated selected-candidate, fitted-model, link-assignment,
 evaluation, identity-manifest, and kinematic-bundle files. Every declared SHA-256 is
 the hash of the bytes at its declared path, never a digest of a nested parent record.
+
+# Phase 6A canonical coordinates
+
+`scene_ir/phase6a_canonical_scene.json` is canonical only after
+`accepted_full_canonical`. Its coordinate convention is right handed,
+`canonical_x_forward_y_left_z_up`, meters, and `metric_scale_known`.
+
+The accompanying `calibration/canonical_scene_wrapper.json` stores the exact source
+Scene IR/calibration hashes and per-asset wrapper policies. Geometry URIs and source
+bytes are retained. A rejected or partial calibration produces a derived Scene IR
+with the original arbitrary/unoriented convention and no accepted canonical claim.
+
+Articulated base transforms compose with the world Sim(3). Prismatic positions and
+verified linear ranges scale once. Revolute positions and ranges remain radians.
+Reference-world measured assets receive only the wrapper and are never baked or
+double transformed.

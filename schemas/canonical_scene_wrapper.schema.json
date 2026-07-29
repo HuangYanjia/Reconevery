@@ -1,0 +1,233 @@
+{
+  "$defs": {
+    "CanonicalAssetMapping": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "minLength": 1,
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "source_path": {
+          "title": "Source Path",
+          "type": "string"
+        },
+        "source_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Sha256",
+          "type": "string"
+        },
+        "transform_policy": {
+          "enum": [
+            "wrapper_sim3",
+            "rotation_only",
+            "scale_once",
+            "angular_unchanged"
+          ],
+          "title": "Transform Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "source_path",
+        "source_sha256",
+        "transform_policy"
+      ],
+      "title": "CanonicalAssetMapping",
+      "type": "object"
+    },
+    "WorldCalibrationStatus": {
+      "enum": [
+        "accepted_full_canonical",
+        "accepted_metric_only",
+        "accepted_gravity_only",
+        "rejected_inconsistent_metric_evidence",
+        "rejected_inconsistent_gravity_evidence",
+        "rejected_heldout_validation",
+        "insufficient_forward_evidence",
+        "insufficient_origin_evidence",
+        "insufficient_evidence"
+      ],
+      "title": "WorldCalibrationStatus",
+      "type": "string"
+    },
+    "WorldCalibrationTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "covariance_diagonal": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Covariance Diagonal"
+        },
+        "inverse_roundtrip_error": {
+          "minimum": 0,
+          "title": "Inverse Roundtrip Error",
+          "type": "number"
+        },
+        "matrix_canonical_from_colmap": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 16,
+          "minItems": 16,
+          "title": "Matrix Canonical From Colmap",
+          "type": "array"
+        },
+        "matrix_colmap_from_canonical": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 16,
+          "minItems": 16,
+          "title": "Matrix Colmap From Canonical",
+          "type": "array"
+        },
+        "orthonormal_error": {
+          "minimum": 0,
+          "title": "Orthonormal Error",
+          "type": "number"
+        },
+        "rotation_canonical_from_colmap": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 9,
+          "minItems": 9,
+          "title": "Rotation Canonical From Colmap",
+          "type": "array"
+        },
+        "rotation_determinant": {
+          "title": "Rotation Determinant",
+          "type": "number"
+        },
+        "scale_m_per_colmap": {
+          "exclusiveMinimum": 0,
+          "title": "Scale M Per Colmap",
+          "type": "number"
+        },
+        "translation_canonical_m": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Translation Canonical M",
+          "type": "array"
+        }
+      },
+      "required": [
+        "scale_m_per_colmap",
+        "rotation_canonical_from_colmap",
+        "translation_canonical_m",
+        "matrix_canonical_from_colmap",
+        "matrix_colmap_from_canonical",
+        "rotation_determinant",
+        "orthonormal_error",
+        "inverse_roundtrip_error"
+      ],
+      "title": "WorldCalibrationTransform",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "accepted_transform": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorldCalibrationTransform"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "asset_mappings": {
+      "items": {
+        "$ref": "#/$defs/CanonicalAssetMapping"
+      },
+      "title": "Asset Mappings",
+      "type": "array"
+    },
+    "calibration_artifact_path": {
+      "title": "Calibration Artifact Path",
+      "type": "string"
+    },
+    "calibration_artifact_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Calibration Artifact Sha256",
+      "type": "string"
+    },
+    "calibration_status": {
+      "$ref": "#/$defs/WorldCalibrationStatus"
+    },
+    "camera_transform_policy": {
+      "const": "compose_world_wrapper",
+      "default": "compose_world_wrapper",
+      "title": "Camera Transform Policy",
+      "type": "string"
+    },
+    "prismatic_quantity_policy": {
+      "const": "scale_once",
+      "default": "scale_once",
+      "title": "Prismatic Quantity Policy",
+      "type": "string"
+    },
+    "revolute_quantity_policy": {
+      "const": "radians_unchanged",
+      "default": "radians_unchanged",
+      "title": "Revolute Quantity Policy",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_artifacts_immutable": {
+      "const": true,
+      "default": true,
+      "title": "Source Artifacts Immutable",
+      "type": "boolean"
+    },
+    "source_scene_ir_path": {
+      "title": "Source Scene Ir Path",
+      "type": "string"
+    },
+    "source_scene_ir_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Scene Ir Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source_scene_ir_path",
+    "source_scene_ir_sha256",
+    "calibration_artifact_path",
+    "calibration_artifact_sha256",
+    "calibration_status",
+    "asset_mappings"
+  ],
+  "title": "CanonicalSceneWrapper",
+  "type": "object"
+}

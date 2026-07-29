@@ -1,0 +1,42 @@
+schema_version: "0.1.0"
+run_id: calibration_apriltag_example
+frame_sequence_digest: "0000000000000000000000000000000000000000000000000000000000000000"
+camera_reconstruction_path: calibration/source/camera_reconstruction.json
+camera_reconstruction_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+source_scene_ir_path: calibration/source/scene_ir.json
+source_scene_ir_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+evidence:
+  - evidence_id: apriltag_fitting
+    evidence_type: apriltag
+    trust: metric_fiducial
+    source_files:
+      - relative_path: calibration/source/tag_frame_fitting.png
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+        media_type: image/png
+    supports_metric_scale: true
+    measurement_uncertainty: 0.001
+apriltag:
+  official_repository: https://github.com/AprilRobotics/apriltag
+  official_commit: 0e16a12dd380fd607e4afd54712ee9b1ffb9ec8f
+  code_license: BSD-2-Clause
+  tag_family: tagStandard41h12
+  tag_id: 0
+  detection_edge_size_m: 0.100
+  detector_source_path: apriltag_pose.h::estimate_tag_pose
+  image_sources:
+    - frame_id: replace_with_registered_frame_id
+      image_path: calibration/source/tag_frame_fitting.png
+      image_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      width: 1920
+      height: 1080
+      intrinsics_fx_fy_cx_cy: [1000.0, 1000.0, 960.0, 540.0]
+      image_coordinate_space: registered_undistorted
+      split: fitting
+  detections: []
+known_distance: null
+external_metric: []
+gravity: []
+floor_planes: []
+forward: null
+origin: null
+evidence_tier: scale_only

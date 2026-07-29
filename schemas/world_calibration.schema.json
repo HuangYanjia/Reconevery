@@ -1,0 +1,469 @@
+{
+  "$defs": {
+    "WorldCalibrationCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "evidence_tier": {
+          "$ref": "#/$defs/WorldCalibrationEvidenceTier"
+        },
+        "fitting_objective": {
+          "minimum": 0,
+          "title": "Fitting Objective",
+          "type": "number"
+        },
+        "selected_by_fitting_only": {
+          "const": true,
+          "default": true,
+          "title": "Selected By Fitting Only",
+          "type": "boolean"
+        },
+        "transform": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldCalibrationTransform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "evidence_tier",
+        "fitting_objective",
+        "evidence_ids"
+      ],
+      "title": "WorldCalibrationCandidate",
+      "type": "object"
+    },
+    "WorldCalibrationDatasetSplit": {
+      "additionalProperties": false,
+      "properties": {
+        "fitting_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fitting Evidence Ids",
+          "type": "array"
+        },
+        "fitting_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fitting Frame Ids",
+          "type": "array"
+        },
+        "heldout_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heldout Evidence Ids",
+          "type": "array"
+        },
+        "heldout_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heldout Frame Ids",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "0.1.0",
+          "default": "0.1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "split_policy": {
+          "minLength": 1,
+          "title": "Split Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fitting_evidence_ids",
+        "heldout_evidence_ids",
+        "fitting_frame_ids",
+        "heldout_frame_ids",
+        "split_policy"
+      ],
+      "title": "WorldCalibrationDatasetSplit",
+      "type": "object"
+    },
+    "WorldCalibrationEvidenceTier": {
+      "enum": [
+        "none",
+        "scale_only",
+        "gravity_only",
+        "metric_and_gravity",
+        "full_canonical"
+      ],
+      "title": "WorldCalibrationEvidenceTier",
+      "type": "string"
+    },
+    "WorldCalibrationMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "fitting_metric_relative_error": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Metric Relative Error"
+        },
+        "forward_uncertainty_degrees": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Forward Uncertainty Degrees"
+        },
+        "gravity_fitting_error_degrees": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gravity Fitting Error Degrees"
+        },
+        "gravity_heldout_error_degrees": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gravity Heldout Error Degrees"
+        },
+        "heldout_metric_relative_error": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Metric Relative Error"
+        },
+        "heldout_tag_detection_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Heldout Tag Detection Count",
+          "type": "integer"
+        },
+        "heldout_tag_rotation_error_degrees": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Tag Rotation Error Degrees"
+        },
+        "heldout_tag_translation_error_m": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Tag Translation Error M"
+        },
+        "known_distance_residuals": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Known Distance Residuals",
+          "type": "object"
+        },
+        "sim3_roundtrip_error": {
+          "minimum": 0,
+          "title": "Sim3 Roundtrip Error",
+          "type": "number"
+        }
+      },
+      "required": [
+        "sim3_roundtrip_error"
+      ],
+      "title": "WorldCalibrationMetrics",
+      "type": "object"
+    },
+    "WorldCalibrationStatus": {
+      "enum": [
+        "accepted_full_canonical",
+        "accepted_metric_only",
+        "accepted_gravity_only",
+        "rejected_inconsistent_metric_evidence",
+        "rejected_inconsistent_gravity_evidence",
+        "rejected_heldout_validation",
+        "insufficient_forward_evidence",
+        "insufficient_origin_evidence",
+        "insufficient_evidence"
+      ],
+      "title": "WorldCalibrationStatus",
+      "type": "string"
+    },
+    "WorldCalibrationTransform": {
+      "additionalProperties": false,
+      "properties": {
+        "covariance_diagonal": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Covariance Diagonal"
+        },
+        "inverse_roundtrip_error": {
+          "minimum": 0,
+          "title": "Inverse Roundtrip Error",
+          "type": "number"
+        },
+        "matrix_canonical_from_colmap": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 16,
+          "minItems": 16,
+          "title": "Matrix Canonical From Colmap",
+          "type": "array"
+        },
+        "matrix_colmap_from_canonical": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 16,
+          "minItems": 16,
+          "title": "Matrix Colmap From Canonical",
+          "type": "array"
+        },
+        "orthonormal_error": {
+          "minimum": 0,
+          "title": "Orthonormal Error",
+          "type": "number"
+        },
+        "rotation_canonical_from_colmap": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 9,
+          "minItems": 9,
+          "title": "Rotation Canonical From Colmap",
+          "type": "array"
+        },
+        "rotation_determinant": {
+          "title": "Rotation Determinant",
+          "type": "number"
+        },
+        "scale_m_per_colmap": {
+          "exclusiveMinimum": 0,
+          "title": "Scale M Per Colmap",
+          "type": "number"
+        },
+        "translation_canonical_m": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Translation Canonical M",
+          "type": "array"
+        }
+      },
+      "required": [
+        "scale_m_per_colmap",
+        "rotation_canonical_from_colmap",
+        "translation_canonical_m",
+        "matrix_canonical_from_colmap",
+        "matrix_colmap_from_canonical",
+        "rotation_determinant",
+        "orthonormal_error",
+        "inverse_roundtrip_error"
+      ],
+      "title": "WorldCalibrationTransform",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "accepted_transform": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorldCalibrationTransform"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/WorldCalibrationCandidate"
+      },
+      "title": "Candidates",
+      "type": "array"
+    },
+    "canonical_forward_known": {
+      "title": "Canonical Forward Known",
+      "type": "boolean"
+    },
+    "canonical_origin_known": {
+      "title": "Canonical Origin Known",
+      "type": "boolean"
+    },
+    "dataset_split": {
+      "$ref": "#/$defs/WorldCalibrationDatasetSplit"
+    },
+    "evidence_tier": {
+      "$ref": "#/$defs/WorldCalibrationEvidenceTier"
+    },
+    "full_canonical_world_available": {
+      "title": "Full Canonical World Available",
+      "type": "boolean"
+    },
+    "gravity_alignment_known": {
+      "title": "Gravity Alignment Known",
+      "type": "boolean"
+    },
+    "manifest_path": {
+      "title": "Manifest Path",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "metric_scale_known": {
+      "title": "Metric Scale Known",
+      "type": "boolean"
+    },
+    "metrics": {
+      "$ref": "#/$defs/WorldCalibrationMetrics"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_candidate_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Selected Candidate Id"
+    },
+    "source_cameras_unchanged": {
+      "const": true,
+      "default": true,
+      "title": "Source Cameras Unchanged",
+      "type": "boolean"
+    },
+    "source_geometry_unchanged": {
+      "const": true,
+      "default": true,
+      "title": "Source Geometry Unchanged",
+      "type": "boolean"
+    },
+    "status": {
+      "$ref": "#/$defs/WorldCalibrationStatus"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "status",
+    "evidence_tier",
+    "manifest_path",
+    "manifest_sha256",
+    "dataset_split",
+    "candidates",
+    "metrics",
+    "metric_scale_known",
+    "gravity_alignment_known",
+    "canonical_forward_known",
+    "canonical_origin_known",
+    "full_canonical_world_available"
+  ],
+  "title": "WorldCalibrationArtifact",
+  "type": "object"
+}

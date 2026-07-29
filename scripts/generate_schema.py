@@ -33,6 +33,7 @@ from recon2sim.artifacts import (
     CandidateRegistrationManifest,
     CandidateRegistrationRequest,
     CandidateSelectionArtifact,
+    CanonicalSceneWrapper,
     CompletionCropManifest,
     CompletionDiagnostics,
     CompletionEligibilityArtifact,
@@ -73,11 +74,16 @@ from recon2sim.artifacts import (
     Phase5AConsistencyReport,
     Phase5BConsistencyReport,
     Phase5CConsistencyReport,
+    Phase6AConsistencyReport,
     Sam3InferenceRequest,
     SegmentationPromptManifest,
     SegmentationTrackingArtifact,
     SparseDepthObservationManifest,
     TransformChainAudit,
+    WorldCalibrationArtifact,
+    WorldCalibrationDiagnostics,
+    WorldCalibrationManifest,
+    WorldCalibrationRequest,
 )
 from recon2sim.ir import SceneIR
 from recon2sim.storage import atomic_write_json
@@ -170,5 +176,11 @@ for filename, model in {
     "articulation_diagnostics.schema.json": ArticulationDiagnostics,
     "articulation_previews.schema.json": ArticulationPreviewManifest,
     "phase5c_articulated_reconstruction.schema.json": Phase5CConsistencyReport,
+    "world_calibration_manifest.schema.json": WorldCalibrationManifest,
+    "world_calibration_request.schema.json": WorldCalibrationRequest,
+    "world_calibration.schema.json": WorldCalibrationArtifact,
+    "world_calibration_diagnostics.schema.json": WorldCalibrationDiagnostics,
+    "canonical_scene_wrapper.schema.json": CanonicalSceneWrapper,
+    "phase6a_world_calibration.schema.json": Phase6AConsistencyReport,
 }.items():
     atomic_write_json(Path("schemas") / filename, model.model_json_schema())
