@@ -1,0 +1,49 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "accepted_connection_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Accepted Connection Ids",
+      "type": "array"
+    },
+    "coherent": {
+      "title": "Coherent",
+      "type": "boolean"
+    },
+    "lineage_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Lineage Ids",
+      "type": "array"
+    },
+    "primary_lineage_id": {
+      "minLength": 1,
+      "title": "Primary Lineage Id",
+      "type": "string"
+    },
+    "rejected_assets": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Rejected Assets",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "primary_lineage_id",
+    "lineage_ids",
+    "accepted_connection_ids",
+    "coherent"
+  ],
+  "title": "SceneAssemblyLineageReport",
+  "type": "object"
+}

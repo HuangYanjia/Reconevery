@@ -341,3 +341,29 @@ Fake acceptance validates contracts only. Real full-canonical acceptance require
 physically measured metric source plus held-out gravity, forward, and origin
 evidence. Source cameras and geometry remain immutable; collisions, dynamics, and
 simulation readiness remain unimplemented.
+
+## Phase 6B: layered scene assembly
+
+Phase 6B assembles one coherent reconstruction lineage without editing source
+geometry. It retains measured anchors, layers only observation-validated rigid or
+articulated visuals, and records unresolved objects instead of selecting a failing
+candidate. Full Phase 6A calibration is used when available; partial or rejected
+calibration retains truthful metric-unoriented, gravity-only, or source-arbitrary
+semantics.
+
+Two canonical JSON bundles are emitted: a research visual bundle and a stricter
+deployment-eligible bundle. Research-only or unreviewed assets never enter the
+deployment bundle. Preview GLBs are diagnostics; the compiler input manifest is
+simulator-neutral and contains no collisions or physical properties.
+
+```bash
+uv run recon2sim run \
+  --input examples/tabletop \
+  --config configs/phase6b_e2e_fake.yaml \
+  --run-dir runs/phase6b_e2e_fake
+uv run recon2sim assembly inspect runs/phase6b_e2e_fake
+uv run recon2sim validation verify-phase6b runs/phase6b_e2e_fake
+```
+
+Phase 6B does not carve global meshes, fill holes, run SceneSmith, export a
+simulator scene, or claim simulation readiness.

@@ -235,6 +235,39 @@ class WorldCalibrationSceneReference(StrictModel):
         return self
 
 
+class SceneAssemblySceneReference(StrictModel):
+    assembly_plan_path: str
+    assembly_plan_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    research_bundle_path: str
+    research_bundle_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    deployment_bundle_path: str
+    deployment_bundle_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    compiler_manifest_path: str
+    compiler_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    lineage_id: Identifier
+    world_mode: Literal[
+        "source_arbitrary",
+        "canonical_metric",
+        "metric_unoriented",
+        "gravity_aligned_arbitrary_scale",
+    ]
+    calibration_status: str | None = None
+    visual_only: Literal[True] = True
+    collision_ready: Literal[False] = False
+    physical_validation: Literal["not_implemented"] = "not_implemented"
+    sim_ready: Literal[False] = False
+
+    @field_validator(
+        "assembly_plan_path",
+        "research_bundle_path",
+        "deployment_bundle_path",
+        "compiler_manifest_path",
+    )
+    @classmethod
+    def relative_assembly_paths(cls, value: str) -> str:
+        return _relative_path(value)
+
+
 class SceneMetadata(StrictModel):
     scene_id: Identifier
     name: Annotated[str, Field(min_length=1)]
@@ -243,6 +276,7 @@ class SceneMetadata(StrictModel):
     source: GeometrySourceType
     provenance: list[ProvenanceRecord] = Field(default_factory=list)
     world_calibration: WorldCalibrationSceneReference | None = None
+    scene_assembly: SceneAssemblySceneReference | None = None
 
 
 class CameraIntrinsics(StrictModel):
@@ -659,6 +693,7 @@ class SceneIR(StrictModel):
         "0.1.6",
         "0.1.7",
         "0.1.8",
+        "0.1.9",
     ] = "0.1.1"
     metadata: SceneMetadata
     cameras: list[Camera] = Field(default_factory=list)

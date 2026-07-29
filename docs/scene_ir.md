@@ -172,3 +172,20 @@ meter metadata alone. Consumers must verify and apply the referenced wrapper to
 source-space geometry. The exact O/U/R derivation remains auditable through the
 Scene IR calibration record instead of being reduced to unbound up, forward,
 and origin values.
+
+# Phase 6B layered scene
+
+`scene_ir/phase6b_layered_scene.json` retains the source Scene IR and adds exact
+path/hash references for the assembly plan, research bundle, deployment-eligible
+bundle, and compiler input manifest. Its world metadata is copied from the resolved
+assembly world mode; partial calibration never becomes canonical by implication.
+
+Reference-world measured assets receive the assembly world wrapper directly.
+Candidate-base and link-local visuals remain under their object hierarchy, so the
+wrapper is applied at the root exactly once. Measured anchors remain authoritative
+evidence even when a validated visual completion is present.
+
+The Scene IR is visual-only. It records unresolved objects, candidate evaluations,
+and license exclusions while keeping `collision_ready=false`,
+`physical_validation=not_implemented`, and `sim_ready=false`. Diagnostic preview
+GLBs are not canonical geometry or future collision inputs.

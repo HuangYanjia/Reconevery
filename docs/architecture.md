@@ -235,3 +235,29 @@ Articulated object roots receive the world composition; link-local geometry and
 joint-local axes, pivots, and q remain unchanged. A typed per-joint scale maps
 object-local prismatic q to meters exactly once. Partial or rejected calibration
 leaves the source coordinate convention unchanged.
+
+## Phase 6B layered assembly
+
+Phase 6B adds a calibration-optional, non-destructive branch:
+
+```text
+scene_assembly_inputs
+  -> scene_assembly_plan
+  -> layered_scene_bundle
+  -> assembly_previews
+  -> phase6b_consistency_validation
+```
+
+`scene_assembly_inputs` promotes only typed Scene IR, calibration, geometry,
+selection, evaluation, license, camera, and lineage records. The plan rejects
+unconnected lineages and resolves one of four world modes: canonical metric,
+metric unoriented, gravity-aligned arbitrary scale, or source arbitrary. It
+constructs explicit asset-native, object, source-world, and assembly-world
+transforms.
+
+The bundle stage retains source geometry and measured anchors under
+`layered_no_carve_v1`. It emits separate research and deployment-eligible JSON
+bundles, a simulator-neutral compiler input manifest, overlap diagnostics, and a
+derived Scene IR. Heavy geometry loading and diagnostic GLB rendering remain in
+`workers/scene_assembly`; preview changes do not invalidate the deterministic
+assembly plan.

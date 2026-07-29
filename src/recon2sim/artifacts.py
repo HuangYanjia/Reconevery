@@ -14,10 +14,12 @@ from recon2sim.ir import (
     CameraPose,
     ConfidenceRecord,
     CoordinateConvention,
+    GeometrySourceType,
     PhysicsProperties,
     ProvenanceRecord,
     ScaleStatus,
     StrictModel,
+    WorldFrame,
 )
 
 
@@ -6372,4 +6374,503 @@ class Phase6AConsistencyReport(StrictModel):
             )
         ):
             raise ValueError("Phase 6A full-canonical summary is inconsistent")
+        return self
+
+
+class SceneAssemblyWorldMode(StrEnum):
+    SOURCE_ARBITRARY = "source_arbitrary"
+    CANONICAL_METRIC = "canonical_metric"
+    METRIC_UNORIENTED = "metric_unoriented"
+    GRAVITY_ALIGNED_ARBITRARY_SCALE = "gravity_aligned_arbitrary_scale"
+
+
+class SceneAssemblyCalibrationPolicy(StrEnum):
+    USE_FULL_CANONICAL_IF_AVAILABLE = "use_full_canonical_if_available"
+    REQUIRE_FULL_CANONICAL = "require_full_canonical"
+    PRESERVE_SOURCE_WORLD = "preserve_source_world"
+
+
+class SceneAssemblyAssetRole(StrEnum):
+    MEASURED_ANCHOR = "measured_anchor"
+    VISUAL_COMPLETION = "visual_completion"
+    GLOBAL_CONTEXT = "global_context"
+    ARTICULATED_VISUAL = "articulated_visual"
+    DIAGNOSTIC = "diagnostic"
+
+
+class SceneAssemblyAssetSpace(StrEnum):
+    REFERENCE_WORLD = "reference_world"
+    CANDIDATE_BASE = "candidate_base"
+    LINK_LOCAL = "link_local"
+    GLOBAL_CONTEXT = "global_context"
+
+
+class ObjectAssemblyDecisionStatus(StrEnum):
+    SELECTED_DEPLOYMENT_CANDIDATE = "selected_deployment_candidate"
+    SELECTED_RESEARCH_CANDIDATE = "selected_research_candidate"
+    MEASURED_ONLY = "measured_only"
+    GLOBAL_CONTEXT_ONLY = "global_context_only"
+    DEFERRED_NO_VALID_CANDIDATE = "deferred_no_valid_candidate"
+    DEFERRED_LICENSE_BLOCKED = "deferred_license_blocked"
+    DEFERRED_ARTICULATED_UNRESOLVED = "deferred_articulated_unresolved"
+    IGNORED = "ignored"
+
+
+class SceneAssemblyBundleKind(StrEnum):
+    RESEARCH = "research"
+    DEPLOYMENT_ELIGIBLE = "deployment_eligible"
+
+
+def _matrix4(value: tuple[float, ...]) -> tuple[float, ...]:
+    if len(value) != 16 or any(not math.isfinite(component) for component in value):
+        raise ValueError("assembly transforms must contain 16 finite values")
+    if any(
+        abs(value[index] - expected) > 1e-9
+        for index, expected in zip(
+            (12, 13, 14, 15),
+            (0.0, 0.0, 0.0, 1.0),
+            strict=True,
+        )
+    ):
+        raise ValueError("assembly transforms must be affine homogeneous matrices")
+    return value
+
+
+class SceneAssemblyArtifactReference(StrictModel):
+    path: str
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+    @field_validator("path")
+    @classmethod
+    def relative_reference_path(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class SceneAssemblyLicenseRecord(StrictModel):
+    license_id: str = Field(min_length=1)
+    license_name: str = Field(min_length=1)
+    research_evaluation_allowed: bool
+    production_selectable: bool
+    commercial_review_status: Literal[
+        "approved",
+        "not_reviewed",
+        "research_only",
+        "blocked",
+    ]
+    restrictions: list[str] = Field(default_factory=list)
+    source_record: SceneAssemblyArtifactReference | None = None
+
+    @model_validator(mode="after")
+    def production_requires_approval(self) -> Self:
+        if self.production_selectable and self.commercial_review_status != "approved":
+            raise ValueError("production-selectable assembly assets require license approval")
+        return self
+
+
+class SceneAssemblyLineageRecord(StrictModel):
+    lineage_id: str = Field(min_length=1)
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction: SceneAssemblyArtifactReference
+    source_scene_ir: SceneAssemblyArtifactReference
+    world_frame: WorldFrame
+    connected_to_lineage_id: str | None = None
+    accepted_alignment: SceneAssemblyArtifactReference | None = None
+    transform_connected_from_lineage: tuple[float, ...] | None = None
+
+    @field_validator("transform_connected_from_lineage")
+    @classmethod
+    def finite_lineage_transform(
+        cls,
+        value: tuple[float, ...] | None,
+    ) -> tuple[float, ...] | None:
+        return _matrix4(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def connection_is_complete(self) -> Self:
+        values = (
+            self.connected_to_lineage_id,
+            self.accepted_alignment,
+            self.transform_connected_from_lineage,
+        )
+        if any(value is not None for value in values) and any(value is None for value in values):
+            raise ValueError("lineage connections require ID, accepted artifact, and transform")
+        if self.connected_to_lineage_id == self.lineage_id:
+            raise ValueError("a lineage cannot connect to itself")
+        return self
+
+
+class SceneAssemblyAssetRecord(StrictModel):
+    asset_id: str = Field(min_length=1)
+    object_id: str | None = None
+    lineage_id: str = Field(min_length=1)
+    role: SceneAssemblyAssetRole
+    source: GeometrySourceType
+    asset_path: str
+    asset_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    format: Literal["obj", "glb", "ply"]
+    asset_native_space: SceneAssemblyAssetSpace
+    asset_to_object: Annotated[tuple[float, ...], Field(min_length=16, max_length=16)]
+    object_to_source_world: Annotated[
+        tuple[float, ...],
+        Field(min_length=16, max_length=16),
+    ]
+    bounds_native: tuple[float, float, float, float, float, float] | None = None
+    selected_upstream: bool = False
+    observation_validation_passed: bool = False
+    candidate_id: str | None = None
+    candidate_evaluation: SceneAssemblyArtifactReference | None = None
+    representation_id: str | None = None
+    articulation_id: str | None = None
+    link_id: str | None = None
+    kinematic_bundle: SceneAssemblyArtifactReference | None = None
+    license: SceneAssemblyLicenseRecord
+    source_asset_immutable: Literal[True] = True
+    visual_only: Literal[True] = True
+    collision_ready: Literal[False] = False
+    physical_validation: Literal["not_implemented"] = "not_implemented"
+    sim_ready: Literal[False] = False
+
+    @field_validator("asset_path")
+    @classmethod
+    def relative_assembly_asset(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+    @field_validator("asset_to_object", "object_to_source_world")
+    @classmethod
+    def finite_asset_transform(cls, value: tuple[float, ...]) -> tuple[float, ...]:
+        return _matrix4(value)
+
+    @model_validator(mode="after")
+    def candidate_identity_is_explicit(self) -> Self:
+        candidate_role = self.role in {
+            SceneAssemblyAssetRole.VISUAL_COMPLETION,
+            SceneAssemblyAssetRole.ARTICULATED_VISUAL,
+        }
+        if candidate_role:
+            if (
+                self.object_id is None
+                or self.candidate_id is None
+                or self.candidate_evaluation is None
+                or self.representation_id is None
+            ):
+                raise ValueError(
+                    "candidate layers require explicit object/evaluation representation"
+                )
+            if self.asset_native_space is SceneAssemblyAssetSpace.REFERENCE_WORLD:
+                raise ValueError("candidate visual assets cannot declare reference-world space")
+        if self.role is SceneAssemblyAssetRole.MEASURED_ANCHOR:
+            if self.asset_native_space is not SceneAssemblyAssetSpace.REFERENCE_WORLD:
+                raise ValueError("measured anchors must declare reference-world space")
+            if self.object_id is None:
+                raise ValueError("measured anchors require an object ID")
+        if self.asset_native_space is SceneAssemblyAssetSpace.LINK_LOCAL and (
+            self.articulation_id is None or self.link_id is None
+        ):
+            raise ValueError("link-local assets require articulation and link identities")
+        return self
+
+
+class SceneAssemblyObjectInput(StrictModel):
+    object_id: str = Field(min_length=1)
+    lineage_id: str = Field(min_length=1)
+    asset_type: AssetType
+    measured_anchor_asset_ids: list[str] = Field(default_factory=list)
+    global_context_asset_ids: list[str] = Field(default_factory=list)
+    candidate_asset_ids: list[str] = Field(default_factory=list)
+    preferred_research_candidate_id: str | None = None
+    preferred_deployment_candidate_id: str | None = None
+    upstream_status: str = Field(min_length=1)
+    measured_motion: SceneAssemblyArtifactReference | None = None
+    kinematic_bundle: SceneAssemblyArtifactReference | None = None
+    ignored: bool = False
+
+
+class SceneAssemblyInputManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    assembly_id: str = Field(min_length=1)
+    calibration_policy: SceneAssemblyCalibrationPolicy = (
+        SceneAssemblyCalibrationPolicy.USE_FULL_CANONICAL_IF_AVAILABLE
+    )
+    primary_lineage_id: str = Field(min_length=1)
+    lineages: Annotated[list[SceneAssemblyLineageRecord], Field(min_length=1)]
+    source_scene_ir: SceneAssemblyArtifactReference
+    calibration_status: WorldCalibrationStatus | None = None
+    calibration_artifact: SceneAssemblyArtifactReference | None = None
+    canonical_wrapper: SceneAssemblyArtifactReference | None = None
+    source_world_to_assembly_world: tuple[float, ...] | None = None
+    assets: list[SceneAssemblyAssetRecord]
+    objects: list[SceneAssemblyObjectInput]
+    global_scene_policy: Literal["layered_no_carve_v1"] = "layered_no_carve_v1"
+    source_artifacts_immutable: Literal[True] = True
+
+    @field_validator("source_world_to_assembly_world")
+    @classmethod
+    def finite_world_transform(
+        cls,
+        value: tuple[float, ...] | None,
+    ) -> tuple[float, ...] | None:
+        return _matrix4(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def unique_and_referenced_inputs(self) -> Self:
+        lineage_ids = [item.lineage_id for item in self.lineages]
+        if len(lineage_ids) != len(set(lineage_ids)):
+            raise ValueError("assembly lineage IDs must be unique")
+        if self.primary_lineage_id not in set(lineage_ids):
+            raise ValueError("primary assembly lineage is not declared")
+        asset_ids = [item.asset_id for item in self.assets]
+        if len(asset_ids) != len(set(asset_ids)):
+            raise ValueError("assembly asset IDs must be unique")
+        object_ids = [item.object_id for item in self.objects]
+        if len(object_ids) != len(set(object_ids)):
+            raise ValueError("assembly object IDs must be unique")
+        known_assets = set(asset_ids)
+        known_lineages = set(lineage_ids)
+        for asset in self.assets:
+            if asset.lineage_id not in known_lineages:
+                raise ValueError(f"asset {asset.asset_id!r} has an unknown lineage")
+        for item in self.objects:
+            if item.lineage_id not in known_lineages:
+                raise ValueError(f"object {item.object_id!r} has an unknown lineage")
+            referenced = (
+                item.measured_anchor_asset_ids
+                + item.global_context_asset_ids
+                + item.candidate_asset_ids
+            )
+            missing = set(referenced) - known_assets
+            if missing:
+                raise ValueError(
+                    f"object {item.object_id!r} references unknown assets: {sorted(missing)}"
+                )
+        calibration_refs = (self.calibration_artifact, self.canonical_wrapper)
+        if self.calibration_status is None and any(item is not None for item in calibration_refs):
+            raise ValueError("calibration references require an explicit calibration status")
+        return self
+
+
+class SceneAssemblyWorldRecord(StrictModel):
+    world_mode: SceneAssemblyWorldMode
+    calibration_policy: SceneAssemblyCalibrationPolicy
+    calibration_status: WorldCalibrationStatus | None
+    source_world_to_assembly_world: Annotated[
+        tuple[float, ...],
+        Field(min_length=16, max_length=16),
+    ]
+    linear_units: Literal["meters", "arbitrary_units"]
+    alignment_status: Literal["canonical", "gravity_aligned", "unoriented"]
+    full_canonical_world_used: bool
+    metric_scale_known: bool
+    gravity_alignment_known: bool
+    world_wrapper_required: bool
+
+    @field_validator("source_world_to_assembly_world")
+    @classmethod
+    def finite_world_record_transform(cls, value: tuple[float, ...]) -> tuple[float, ...]:
+        return _matrix4(value)
+
+    @model_validator(mode="after")
+    def truthful_world_mode(self) -> Self:
+        if self.world_mode is SceneAssemblyWorldMode.CANONICAL_METRIC:
+            if not (
+                self.full_canonical_world_used
+                and self.metric_scale_known
+                and self.gravity_alignment_known
+                and self.linear_units == "meters"
+                and self.alignment_status == "canonical"
+            ):
+                raise ValueError("canonical metric assembly has inconsistent world flags")
+        elif self.world_mode is SceneAssemblyWorldMode.METRIC_UNORIENTED:
+            if not self.metric_scale_known or self.gravity_alignment_known:
+                raise ValueError("metric-unoriented mode cannot claim gravity alignment")
+        elif self.world_mode is SceneAssemblyWorldMode.GRAVITY_ALIGNED_ARBITRARY_SCALE:
+            if self.metric_scale_known or not self.gravity_alignment_known:
+                raise ValueError("gravity-only mode must retain arbitrary scale")
+        elif self.metric_scale_known or self.gravity_alignment_known:
+            raise ValueError("source-arbitrary mode cannot claim metric or gravity evidence")
+        return self
+
+
+class PlannedAssemblyAsset(StrictModel):
+    asset: SceneAssemblyAssetRecord
+    asset_to_assembly_world: Annotated[
+        tuple[float, ...],
+        Field(min_length=16, max_length=16),
+    ]
+    included_in_research: bool
+    included_in_deployment: bool
+    exclusion_reasons: list[str] = Field(default_factory=list)
+
+    @field_validator("asset_to_assembly_world")
+    @classmethod
+    def finite_planned_transform(cls, value: tuple[float, ...]) -> tuple[float, ...]:
+        return _matrix4(value)
+
+
+class ObjectAssemblyDecision(StrictModel):
+    object_id: str = Field(min_length=1)
+    status: ObjectAssemblyDecisionStatus
+    measured_anchor_asset_ids: list[str]
+    selected_candidate_id: str | None = None
+    selected_visual_asset_ids: list[str] = Field(default_factory=list)
+    articulated_kinematic_bundle: SceneAssemblyArtifactReference | None = None
+    measured_motion: SceneAssemblyArtifactReference | None = None
+    rationale: Annotated[list[str], Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def selected_decision_has_assets(self) -> Self:
+        selected = self.status in {
+            ObjectAssemblyDecisionStatus.SELECTED_DEPLOYMENT_CANDIDATE,
+            ObjectAssemblyDecisionStatus.SELECTED_RESEARCH_CANDIDATE,
+        }
+        if selected != bool(self.selected_candidate_id and self.selected_visual_asset_ids):
+            raise ValueError("selected object decisions require candidate and visual asset IDs")
+        return self
+
+
+class SceneAssemblyLayer(StrictModel):
+    layer_id: str = Field(min_length=1)
+    role: SceneAssemblyAssetRole
+    asset_ids: list[str]
+    included_in_research: bool
+    included_in_deployment: bool
+
+
+class SceneAssemblyLineageReport(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    primary_lineage_id: str = Field(min_length=1)
+    lineage_ids: list[str]
+    accepted_connection_ids: list[str]
+    coherent: bool
+    rejected_assets: dict[str, str] = Field(default_factory=dict)
+
+
+class SceneAssemblyPlan(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    input_manifest: SceneAssemblyArtifactReference
+    world: SceneAssemblyWorldRecord
+    lineage_report: SceneAssemblyArtifactReference
+    decisions: list[ObjectAssemblyDecision]
+    assets: list[PlannedAssemblyAsset]
+    layers: list[SceneAssemblyLayer]
+    global_scene_policy: Literal["layered_no_carve_v1"] = "layered_no_carve_v1"
+    deterministic_plan_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    source_geometry_immutable: Literal[True] = True
+    destructive_object_removal: Literal[False] = False
+    background_hole_filling: Literal[False] = False
+
+
+class SceneAssemblyLicenseSummary(StrictModel):
+    included_license_ids: list[str]
+    excluded_asset_reasons: dict[str, str]
+    research_only_asset_ids: list[str]
+    production_asset_ids: list[str]
+
+
+class SceneAssemblyBundle(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    bundle_id: str = Field(min_length=1)
+    bundle_kind: SceneAssemblyBundleKind
+    assembly_plan: SceneAssemblyArtifactReference
+    world: SceneAssemblyWorldRecord
+    lineage_id: str = Field(min_length=1)
+    asset_ids: list[str]
+    object_decisions: list[ObjectAssemblyDecision]
+    layers: list[SceneAssemblyLayer]
+    license_summary: SceneAssemblyLicenseSummary
+    unresolved_object_ids: list[str]
+    visual_only: Literal[True] = True
+    collision_ready: Literal[False] = False
+    physical_validation: Literal["not_implemented"] = "not_implemented"
+    sim_ready: Literal[False] = False
+
+    @model_validator(mode="after")
+    def selected_assets_belong_to_bundle(self) -> Self:
+        asset_ids = set(self.asset_ids)
+        for decision in self.object_decisions:
+            missing = set(decision.selected_visual_asset_ids) - asset_ids
+            if missing:
+                raise ValueError(
+                    f"object {decision.object_id} selects assets absent from bundle: "
+                    f"{sorted(missing)}"
+                )
+        return self
+
+
+class SceneAssemblyOverlapDiagnostic(StrictModel):
+    object_id: str = Field(min_length=1)
+    candidate_asset_id: str | None = None
+    measured_anchor_asset_ids: list[str]
+    candidate_bounds_assembly: tuple[float, float, float, float, float, float] | None = None
+    measured_bounds_assembly: tuple[float, float, float, float, float, float] | None = None
+    global_context_intersection_ratio: float | None = Field(default=None, ge=0, le=1)
+    candidate_measured_overlap_ratio: float | None = Field(default=None, ge=0, le=1)
+    potential_duplicate_geometry_ratio: float | None = Field(default=None, ge=0, le=1)
+    measured_candidate_distance: float | None = Field(default=None, ge=0)
+    units: Literal["meters", "object_relative", "scene_relative"]
+    warning: str | None = None
+
+
+class SceneAssemblyOverlapReport(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    diagnostics: list[SceneAssemblyOverlapDiagnostic]
+    source_geometry_modified: Literal[False] = False
+
+
+class SceneAssemblyCompilerManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    world: SceneAssemblyWorldRecord
+    research_bundle: SceneAssemblyArtifactReference
+    deployment_bundle: SceneAssemblyArtifactReference
+    assets: list[PlannedAssemblyAsset]
+    object_instances: list[ObjectAssemblyDecision]
+    articulated_hierarchies: dict[str, SceneAssemblyArtifactReference]
+    unresolved_objects: list[str]
+    missing_collision_assets: list[str]
+    missing_physical_properties: list[str]
+    simulator_neutral: Literal[True] = True
+    simulator_export_executed: Literal[False] = False
+    sim_ready: Literal[False] = False
+
+
+class SceneAssemblyPreviewManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    preview_paths: dict[str, str]
+    preview_asset_paths: dict[str, str]
+    material_count_before: int = Field(ge=0)
+    material_count_after: int = Field(ge=0)
+    texture_count_before: int = Field(ge=0)
+    texture_count_after: int = Field(ge=0)
+    representation_warnings: list[str] = Field(default_factory=list)
+    diagnostic_only: Literal[True] = True
+    source_geometry_modified: Literal[False] = False
+
+    @field_validator("preview_paths", "preview_asset_paths")
+    @classmethod
+    def safe_preview_paths(cls, values: dict[str, str]) -> dict[str, str]:
+        return {key: _relative_artifact_path(value) for key, value in values.items()}
+
+
+class Phase6BConsistencyReport(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    passed: bool
+    checks: list[EndToEndConsistencyCheck]
+    visual_scene_assembled: bool
+    full_canonical_world_used: bool
+    metric_scale_known: bool
+    gravity_alignment_known: bool
+    object_replacement_destructive: Literal[False] = False
+    collision_generation_implemented: Literal[False] = False
+    physics_identification_implemented: Literal[False] = False
+    simulator_export_implemented: Literal[False] = False
+    sim_ready_scene_implemented: Literal[False] = False
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def phase6b_summary_matches_checks(self) -> Self:
+        if self.passed != all(check.passed for check in self.checks):
+            raise ValueError("Phase 6B pass status must match its checks")
+        if self.full_canonical_world_used and not (
+            self.metric_scale_known and self.gravity_alignment_known
+        ):
+            raise ValueError("full canonical assembly requires metric and gravity evidence")
         return self

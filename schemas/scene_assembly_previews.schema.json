@@ -1,0 +1,74 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "diagnostic_only": {
+      "const": true,
+      "default": true,
+      "title": "Diagnostic Only",
+      "type": "boolean"
+    },
+    "material_count_after": {
+      "minimum": 0,
+      "title": "Material Count After",
+      "type": "integer"
+    },
+    "material_count_before": {
+      "minimum": 0,
+      "title": "Material Count Before",
+      "type": "integer"
+    },
+    "preview_asset_paths": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Preview Asset Paths",
+      "type": "object"
+    },
+    "preview_paths": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Preview Paths",
+      "type": "object"
+    },
+    "representation_warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Representation Warnings",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_geometry_modified": {
+      "const": false,
+      "default": false,
+      "title": "Source Geometry Modified",
+      "type": "boolean"
+    },
+    "texture_count_after": {
+      "minimum": 0,
+      "title": "Texture Count After",
+      "type": "integer"
+    },
+    "texture_count_before": {
+      "minimum": 0,
+      "title": "Texture Count Before",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "preview_paths",
+    "preview_asset_paths",
+    "material_count_before",
+    "material_count_after",
+    "texture_count_before",
+    "texture_count_after"
+  ],
+  "title": "SceneAssemblyPreviewManifest",
+  "type": "object"
+}

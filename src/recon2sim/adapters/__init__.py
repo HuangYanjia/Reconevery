@@ -17,6 +17,8 @@ from recon2sim.adapters.articulation_selection import (
 from recon2sim.adapters.articulation_state_alignment import (
     ArticulationStateAlignmentAdapter,
 )
+from recon2sim.adapters.assembly_inputs import AssemblyInputsAdapter
+from recon2sim.adapters.assembly_preview import AssemblyPreviewAdapter
 from recon2sim.adapters.base import (
     Adapter,
     ArtifactRecord,
@@ -73,6 +75,11 @@ from recon2sim.adapters.object_lifting import (
 from recon2sim.adapters.particulate import ParticulateAdapter
 from recon2sim.adapters.sam3 import Sam3SegmentationTrackingAdapter
 from recon2sim.adapters.sam3d_objects import Sam3DObjectsCandidateAdapter
+from recon2sim.adapters.scene_assembly import (
+    LayeredSceneBundleAdapter,
+    Phase6BConsistencyValidationAdapter,
+    SceneAssemblyPlanAdapter,
+)
 from recon2sim.adapters.trellis2_objects import Trellis2ObjectCandidateAdapter
 from recon2sim.adapters.world_calibration import WorldCalibrationAdapter
 
@@ -124,6 +131,11 @@ REGISTRY: dict[str, type[Adapter]] = {
     "world_calibration": WorldCalibrationAdapter,
     "canonical_scene_wrapper": CanonicalSceneAdapter,
     "phase6a_consistency_validation": Phase6AConsistencyValidationAdapter,
+    "scene_assembly_inputs": AssemblyInputsAdapter,
+    "scene_assembly_plan": SceneAssemblyPlanAdapter,
+    "layered_scene_bundle": LayeredSceneBundleAdapter,
+    "assembly_previews": AssemblyPreviewAdapter,
+    "phase6b_consistency_validation": Phase6BConsistencyValidationAdapter,
 }
 
 __all__ = [
@@ -135,6 +147,8 @@ __all__ = [
     "ArticulationMotionAdapter",
     "ArticulationSelectionAdapter",
     "ArticulationStateAlignmentAdapter",
+    "AssemblyInputsAdapter",
+    "AssemblyPreviewAdapter",
     "ArtifactRecord",
     "CommandAdapter",
     "CameraMeshAlignmentAdapter",
@@ -158,6 +172,7 @@ __all__ = [
     "MeasuredObjectGeometryAdapter",
     "MeasuredGeneratedComparisonAdapter",
     "MeasuredOnlyCandidateAdapter",
+    "LayeredSceneBundleAdapter",
     "REGISTRY",
     "Phase3EndToEndConsistencyAdapter",
     "Phase4ConsistencyValidationAdapter",
@@ -166,8 +181,10 @@ __all__ = [
     "Phase5BConsistencyValidationAdapter",
     "Phase5CConsistencyValidationAdapter",
     "Phase6AConsistencyValidationAdapter",
+    "Phase6BConsistencyValidationAdapter",
     "PartNetRetrievalAdapter",
     "Sam3SegmentationTrackingAdapter",
+    "SceneAssemblyPlanAdapter",
     "Sam3DObjectsCandidateAdapter",
     "StageContext",
     "StageResult",

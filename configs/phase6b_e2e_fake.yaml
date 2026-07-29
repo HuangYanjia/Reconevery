@@ -1,0 +1,37 @@
+seed: 42
+stages:
+  scene_assembly_inputs:
+    adapter:
+      name: scene_assembly_inputs
+      config:
+        fake_mode: deployment_bundle_excluding_research_asset
+    depends_on: []
+  scene_assembly_plan:
+    adapter:
+      name: scene_assembly_plan
+      config: {}
+    depends_on: [scene_assembly_inputs]
+  layered_scene_bundle:
+    adapter:
+      name: layered_scene_bundle
+      config: {}
+    depends_on: [scene_assembly_plan]
+  assembly_previews:
+    adapter:
+      name: assembly_previews
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_module: scene_assembly_worker
+        worker_script: tests/fixtures/fake_scene_assembly_worker.py
+        docker_image: reconevery/scene-assembly:phase6b
+        fake_mode: success
+        image_width: 640
+        image_height: 360
+    depends_on: [layered_scene_bundle]
+  phase6b_consistency_validation:
+    adapter:
+      name: phase6b_consistency_validation
+      config: {}
+    depends_on: [assembly_previews]

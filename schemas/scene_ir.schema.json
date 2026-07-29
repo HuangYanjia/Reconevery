@@ -1522,6 +1522,113 @@
       "title": "ScaleStatus",
       "type": "string"
     },
+    "SceneAssemblySceneReference": {
+      "additionalProperties": false,
+      "properties": {
+        "assembly_plan_path": {
+          "title": "Assembly Plan Path",
+          "type": "string"
+        },
+        "assembly_plan_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Assembly Plan Sha256",
+          "type": "string"
+        },
+        "calibration_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calibration Status"
+        },
+        "collision_ready": {
+          "const": false,
+          "default": false,
+          "title": "Collision Ready",
+          "type": "boolean"
+        },
+        "compiler_manifest_path": {
+          "title": "Compiler Manifest Path",
+          "type": "string"
+        },
+        "compiler_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Compiler Manifest Sha256",
+          "type": "string"
+        },
+        "deployment_bundle_path": {
+          "title": "Deployment Bundle Path",
+          "type": "string"
+        },
+        "deployment_bundle_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Deployment Bundle Sha256",
+          "type": "string"
+        },
+        "lineage_id": {
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "title": "Lineage Id",
+          "type": "string"
+        },
+        "physical_validation": {
+          "const": "not_implemented",
+          "default": "not_implemented",
+          "title": "Physical Validation",
+          "type": "string"
+        },
+        "research_bundle_path": {
+          "title": "Research Bundle Path",
+          "type": "string"
+        },
+        "research_bundle_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Research Bundle Sha256",
+          "type": "string"
+        },
+        "sim_ready": {
+          "const": false,
+          "default": false,
+          "title": "Sim Ready",
+          "type": "boolean"
+        },
+        "visual_only": {
+          "const": true,
+          "default": true,
+          "title": "Visual Only",
+          "type": "boolean"
+        },
+        "world_mode": {
+          "enum": [
+            "source_arbitrary",
+            "canonical_metric",
+            "metric_unoriented",
+            "gravity_aligned_arbitrary_scale"
+          ],
+          "title": "World Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assembly_plan_path",
+        "assembly_plan_sha256",
+        "research_bundle_path",
+        "research_bundle_sha256",
+        "deployment_bundle_path",
+        "deployment_bundle_sha256",
+        "compiler_manifest_path",
+        "compiler_manifest_sha256",
+        "lineage_id",
+        "world_mode"
+      ],
+      "title": "SceneAssemblySceneReference",
+      "type": "object"
+    },
     "SceneMetadata": {
       "additionalProperties": false,
       "properties": {
@@ -1544,6 +1651,17 @@
           },
           "title": "Provenance",
           "type": "array"
+        },
+        "scene_assembly": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySceneReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "scene_id": {
           "minLength": 1,
@@ -1943,7 +2061,8 @@
         "0.1.5",
         "0.1.6",
         "0.1.7",
-        "0.1.8"
+        "0.1.8",
+        "0.1.9"
       ],
       "title": "Schema Version",
       "type": "string"

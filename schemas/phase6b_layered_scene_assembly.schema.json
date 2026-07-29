@@ -1,0 +1,113 @@
+{
+  "$defs": {
+    "EndToEndConsistencyCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check_id": {
+          "minLength": 1,
+          "title": "Check Id",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "check_id",
+        "passed",
+        "message"
+      ],
+      "title": "EndToEndConsistencyCheck",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/EndToEndConsistencyCheck"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "collision_generation_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Collision Generation Implemented",
+      "type": "boolean"
+    },
+    "full_canonical_world_used": {
+      "title": "Full Canonical World Used",
+      "type": "boolean"
+    },
+    "gravity_alignment_known": {
+      "title": "Gravity Alignment Known",
+      "type": "boolean"
+    },
+    "metric_scale_known": {
+      "title": "Metric Scale Known",
+      "type": "boolean"
+    },
+    "object_replacement_destructive": {
+      "const": false,
+      "default": false,
+      "title": "Object Replacement Destructive",
+      "type": "boolean"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "physics_identification_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Physics Identification Implemented",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sim_ready_scene_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Sim Ready Scene Implemented",
+      "type": "boolean"
+    },
+    "simulator_export_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Simulator Export Implemented",
+      "type": "boolean"
+    },
+    "visual_scene_assembled": {
+      "title": "Visual Scene Assembled",
+      "type": "boolean"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "passed",
+    "checks",
+    "visual_scene_assembled",
+    "full_canonical_world_used",
+    "metric_scale_known",
+    "gravity_alignment_known"
+  ],
+  "title": "Phase6BConsistencyReport",
+  "type": "object"
+}

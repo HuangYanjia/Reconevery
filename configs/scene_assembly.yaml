@@ -1,0 +1,9 @@
+execution_mode: local_worker
+worker_python: workers/scene_assembly/.venv/bin/python
+worker_module: scene_assembly_worker
+docker_image: reconevery/scene-assembly:phase6b
+fake_mode: success
+image_width: 960
+image_height: 640
+background_rgb: [245, 246, 248]
+articulated_snapshot_policy: reference_state

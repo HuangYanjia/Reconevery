@@ -158,3 +158,13 @@ reference-world measured assets receive one wrapper transform. Compose articulat
 roots only; leave local joints unchanged and record the exact local-prismatic-to-meter
 scale in the wrapper. Never scale revolute angles. Phase 6A must not add
 collisions, physical properties, simulator export, or simulation-ready claims.
+
+Phase 6B assembly accepts only typed promoted artifacts from one coherent scene
+lineage, unless an accepted typed transform explicitly connects another lineage.
+Full, partial, rejected, and absent Phase 6A calibration must map to distinct world
+modes without false metric or canonical claims. Keep global context immutable under
+`layered_no_carve_v1`; retain measured anchors even when a validated visual
+candidate is layered. Research-only and unreviewed assets must be absent from the
+deployment-eligible bundle. Never insert rejected candidates, double-apply world or
+articulated transforms, generate collision/physics data, run SceneSmith, or mark a
+Phase 6B bundle simulation-ready.

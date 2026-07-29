@@ -1,0 +1,10 @@
+execution_mode: fake_worker
+worker_python: python
+worker_module: scene_assembly_worker
+worker_script: tests/fixtures/fake_scene_assembly_worker.py
+docker_image: reconevery/scene-assembly:phase6b
+fake_mode: success
+image_width: 640
+image_height: 360
+background_rgb: [245, 246, 248]
+articulated_snapshot_policy: reference_state

@@ -1,0 +1,211 @@
+{
+  "$defs": {
+    "SceneAssemblyOverlapDiagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Asset Id"
+        },
+        "candidate_bounds_assembly": {
+          "anyOf": [
+            {
+              "maxItems": 6,
+              "minItems": 6,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Bounds Assembly"
+        },
+        "candidate_measured_overlap_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Measured Overlap Ratio"
+        },
+        "global_context_intersection_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Global Context Intersection Ratio"
+        },
+        "measured_anchor_asset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Measured Anchor Asset Ids",
+          "type": "array"
+        },
+        "measured_bounds_assembly": {
+          "anyOf": [
+            {
+              "maxItems": 6,
+              "minItems": 6,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Bounds Assembly"
+        },
+        "measured_candidate_distance": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measured Candidate Distance"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "potential_duplicate_geometry_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Potential Duplicate Geometry Ratio"
+        },
+        "units": {
+          "enum": [
+            "meters",
+            "object_relative",
+            "scene_relative"
+          ],
+          "title": "Units",
+          "type": "string"
+        },
+        "warning": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warning"
+        }
+      },
+      "required": [
+        "object_id",
+        "measured_anchor_asset_ids",
+        "units"
+      ],
+      "title": "SceneAssemblyOverlapDiagnostic",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "diagnostics": {
+      "items": {
+        "$ref": "#/$defs/SceneAssemblyOverlapDiagnostic"
+      },
+      "title": "Diagnostics",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_geometry_modified": {
+      "const": false,
+      "default": false,
+      "title": "Source Geometry Modified",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "diagnostics"
+  ],
+  "title": "SceneAssemblyOverlapReport",
+  "type": "object"
+}

@@ -1,0 +1,36 @@
+seed: 42
+stages:
+  scene_assembly_inputs:
+    adapter:
+      name: scene_assembly_inputs
+      config:
+        manifest_path: local/assembly_input.yaml
+    depends_on: []
+  scene_assembly_plan:
+    adapter:
+      name: scene_assembly_plan
+      config: {}
+    depends_on: [scene_assembly_inputs]
+  layered_scene_bundle:
+    adapter:
+      name: layered_scene_bundle
+      config: {}
+    depends_on: [scene_assembly_plan]
+  assembly_previews:
+    adapter:
+      name: assembly_previews
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: local_worker
+        worker_python: workers/scene_assembly/.venv/bin/python
+        worker_module: scene_assembly_worker
+        docker_image: reconevery/scene-assembly:phase6b
+        fake_mode: success
+        image_width: 960
+        image_height: 640
+    depends_on: [layered_scene_bundle]
+  phase6b_consistency_validation:
+    adapter:
+      name: phase6b_consistency_validation
+      config: {}
+    depends_on: [assembly_previews]
