@@ -1,0 +1,108 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "checkpoint_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Checkpoint Hashes",
+      "type": "object"
+    },
+    "checkpoint_repository": {
+      "const": "rayli/Particulate",
+      "title": "Checkpoint Repository",
+      "type": "string"
+    },
+    "checkpoint_revision": {
+      "const": "096167e661feb92a443535d15916323ec8a01613",
+      "title": "Checkpoint Revision",
+      "type": "string"
+    },
+    "official_code_commit": {
+      "const": "dee37a75c449f324d9989993461ee09eaccc1686",
+      "title": "Official Code Commit",
+      "type": "string"
+    },
+    "official_repository": {
+      "const": "https://github.com/RuiningLi/particulate",
+      "title": "Official Repository",
+      "type": "string"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "request_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Request Sha256",
+      "type": "string"
+    },
+    "runtime_model_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Runtime Model Hashes",
+      "type": "object"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "worker_version": {
+      "minLength": 1,
+      "title": "Worker Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "worker_version",
+    "request_sha256",
+    "official_repository",
+    "official_code_commit",
+    "checkpoint_repository",
+    "checkpoint_revision",
+    "checkpoint_hashes",
+    "runtime_model_hashes",
+    "runtime_seconds"
+  ],
+  "title": "ParticulateWorkerManifest",
+  "type": "object"
+}

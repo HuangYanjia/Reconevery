@@ -18,12 +18,142 @@
           "title": "Articulation Id",
           "type": "string"
         },
+        "collision_ready": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Collision Ready"
+        },
+        "evaluation_artifact_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evaluation Artifact Path"
+        },
+        "evaluation_artifact_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evaluation Artifact Sha256"
+        },
+        "evidence_level": {
+          "anyOf": [
+            {
+              "enum": [
+                "single_state_prior_only",
+                "two_state_motion_supported",
+                "multi_state_heldout_available",
+                "multi_state_heldout_validated"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Level"
+        },
+        "fitting_artifact_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Artifact Path"
+        },
+        "fitting_artifact_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Artifact Sha256"
+        },
         "joints": {
           "items": {
             "$ref": "#/$defs/Joint"
           },
           "title": "Joints",
           "type": "array"
+        },
+        "kinematic_bundle_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kinematic Bundle Path"
+        },
+        "kinematic_bundle_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kinematic Bundle Sha256"
+        },
+        "link_assignment_artifact_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link Assignment Artifact Path"
+        },
+        "link_assignment_artifact_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link Assignment Artifact Sha256"
         },
         "links": {
           "items": {
@@ -32,6 +162,105 @@
           "minItems": 1,
           "title": "Links",
           "type": "array"
+        },
+        "physical_validation": {
+          "anyOf": [
+            {
+              "const": "not_implemented",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Physical Validation"
+        },
+        "selected_candidate_artifact_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Candidate Artifact Path"
+        },
+        "selected_candidate_artifact_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Candidate Artifact Sha256"
+        },
+        "selected_candidate_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Candidate Id"
+        },
+        "selected_identity_manifest_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Identity Manifest Path"
+        },
+        "selected_identity_manifest_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Identity Manifest Sha256"
+        },
+        "sim_ready": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sim Ready"
+        },
+        "validation_artifact_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validation Artifact Path"
         }
       },
       "required": [
@@ -354,6 +583,23 @@
           "default": null,
           "title": "Alignment Transform Path"
         },
+        "articulated_asset_space": {
+          "anyOf": [
+            {
+              "enum": [
+                "reference_world",
+                "candidate_base",
+                "link_local"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Articulated Asset Space"
+        },
         "asset_id": {
           "minLength": 1,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
@@ -365,7 +611,8 @@
             {
               "enum": [
                 "measured_anchor",
-                "visual_completion_candidate"
+                "visual_completion_candidate",
+                "articulated_visual_link"
               ],
               "type": "string"
             },
@@ -375,6 +622,17 @@
           ],
           "default": null,
           "title": "Asset Role"
+        },
+        "asset_to_candidate_base_transform": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transform"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "asset_type": {
           "$ref": "#/$defs/AssetType"
@@ -396,7 +654,8 @@
             {
               "enum": [
                 "not_completed",
-                "selected_by_observation_validation"
+                "selected_by_observation_validation",
+                "selected_by_multi_state_validation"
               ],
               "type": "string"
             },
@@ -406,6 +665,19 @@
           ],
           "default": null,
           "title": "Completion Status"
+        },
+        "content_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
         },
         "coordinate_convention": {
           "anyOf": [
@@ -450,7 +722,8 @@
               "enum": [
                 "partial_observation_supported",
                 "partial_measured",
-                "complete_visual_candidate"
+                "complete_visual_candidate",
+                "articulated_visual_candidate"
               ],
               "type": "string"
             },
@@ -643,6 +916,23 @@
           "title": "Joint Type",
           "type": "string"
         },
+        "limit_source": {
+          "anyOf": [
+            {
+              "enum": [
+                "observed_range",
+                "candidate_prior",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit Source"
+        },
         "limits": {
           "anyOf": [
             {
@@ -664,6 +954,60 @@
           ],
           "default": null,
           "title": "Limits"
+        },
+        "observed_position_range": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Position Range"
+        },
+        "observed_state_positions": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Observed State Positions",
+          "type": "object"
+        },
+        "origin_xyz": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Origin Xyz"
         },
         "parent_link_id": {
           "minLength": 1,
@@ -839,7 +1183,8 @@
             {
               "enum": [
                 "not_completed",
-                "selected_by_observation_validation"
+                "selected_by_observation_validation",
+                "selected_by_multi_state_validation"
               ],
               "type": "string"
             },
@@ -868,7 +1213,8 @@
               "enum": [
                 "partial_observation_supported",
                 "partial_measured",
-                "complete_visual_candidate"
+                "complete_visual_candidate",
+                "articulated_visual_candidate"
               ],
               "type": "string"
             },
@@ -1451,7 +1797,8 @@
         "0.1.2",
         "0.1.3",
         "0.1.4",
-        "0.1.5"
+        "0.1.5",
+        "0.1.6"
       ],
       "title": "Schema Version",
       "type": "string"

@@ -1,0 +1,150 @@
+{
+  "$defs": {
+    "ArticulationEvidenceLevel": {
+      "enum": [
+        "single_state_prior_only",
+        "two_state_motion_supported",
+        "multi_state_heldout_available",
+        "multi_state_heldout_validated"
+      ],
+      "title": "ArticulationEvidenceLevel",
+      "type": "string"
+    },
+    "EndToEndConsistencyCheck": {
+      "additionalProperties": false,
+      "properties": {
+        "check_id": {
+          "minLength": 1,
+          "title": "Check Id",
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "check_id",
+        "passed",
+        "message"
+      ],
+      "title": "EndToEndConsistencyCheck",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "accepted_alignment_state_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Accepted Alignment State Ids",
+      "type": "array"
+    },
+    "canonical_gravity_alignment_known": {
+      "const": false,
+      "default": false,
+      "title": "Canonical Gravity Alignment Known",
+      "type": "boolean"
+    },
+    "capture_evidence_tier": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
+    "capture_state_count": {
+      "minimum": 1,
+      "title": "Capture State Count",
+      "type": "integer"
+    },
+    "checks": {
+      "items": {
+        "$ref": "#/$defs/EndToEndConsistencyCheck"
+      },
+      "title": "Checks",
+      "type": "array"
+    },
+    "collision_generation_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Collision Generation Implemented",
+      "type": "boolean"
+    },
+    "dynamics_identification_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Dynamics Identification Implemented",
+      "type": "boolean"
+    },
+    "effective_motion_evidence_level": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
+    "heldout_state_validation_used": {
+      "title": "Heldout State Validation Used",
+      "type": "boolean"
+    },
+    "measured_joint_motion_available": {
+      "title": "Measured Joint Motion Available",
+      "type": "boolean"
+    },
+    "metric_scale_known": {
+      "const": false,
+      "default": false,
+      "title": "Metric Scale Known",
+      "type": "boolean"
+    },
+    "multi_state_evidence_available": {
+      "title": "Multi State Evidence Available",
+      "type": "boolean"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "physical_joint_validation_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Physical Joint Validation Implemented",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_candidate_validation_level": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
+    "sim_ready_scene_implemented": {
+      "const": false,
+      "default": false,
+      "title": "Sim Ready Scene Implemented",
+      "type": "boolean"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "passed",
+    "checks",
+    "multi_state_evidence_available",
+    "measured_joint_motion_available",
+    "heldout_state_validation_used",
+    "capture_state_count",
+    "capture_evidence_tier",
+    "accepted_alignment_state_ids",
+    "effective_motion_evidence_level",
+    "selected_candidate_validation_level"
+  ],
+  "title": "Phase5CConsistencyReport",
+  "type": "object"
+}

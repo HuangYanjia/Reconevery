@@ -1,0 +1,65 @@
+{
+  "$defs": {
+    "SelectedArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "title": "SelectedArtifactReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "articulated_object_id": {
+      "minLength": 1,
+      "title": "Articulated Object Id",
+      "type": "string"
+    },
+    "candidate_id": {
+      "minLength": 1,
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "fitted_kinematic_model": {
+      "$ref": "#/$defs/SelectedArtifactReference"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_candidate": {
+      "$ref": "#/$defs/SelectedArtifactReference"
+    },
+    "selected_evaluation": {
+      "$ref": "#/$defs/SelectedArtifactReference"
+    },
+    "selected_link_assignment": {
+      "$ref": "#/$defs/SelectedArtifactReference"
+    }
+  },
+  "required": [
+    "articulated_object_id",
+    "candidate_id",
+    "selected_candidate",
+    "fitted_kinematic_model",
+    "selected_link_assignment",
+    "selected_evaluation"
+  ],
+  "title": "ArticulatedSelectedIdentityManifest",
+  "type": "object"
+}

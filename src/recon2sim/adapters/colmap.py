@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -340,7 +341,7 @@ class ColmapCameraRecoveryAdapter:
         )
         self._write_workspace_manifest(context, workspace_manifest)
 
-        command_steps = self._commands(config, context)
+        command_steps = self._commands(config, context, tool_version=tool_version)
         for name, command in command_steps:
             try:
                 result = run_process(
@@ -422,8 +423,18 @@ class ColmapCameraRecoveryAdapter:
         self,
         config: ColmapAdapterConfig,
         context: StageContext,
+        *,
+        tool_version: str | None,
     ) -> list[tuple[str, list[str]]]:
         gpu = "1" if config.use_gpu else "0"
+        version_match = re.search(r"\bCOLMAP\s+(\d+)", tool_version or "", re.IGNORECASE)
+        modern_gpu_options = version_match is not None and int(version_match.group(1)) >= 4
+        extraction_gpu_option = (
+            "--FeatureExtraction.use_gpu" if modern_gpu_options else "--SiftExtraction.use_gpu"
+        )
+        matching_gpu_option = (
+            "--FeatureMatching.use_gpu" if modern_gpu_options else "--SiftMatching.use_gpu"
+        )
         feature = [
             "feature_extractor",
             "--database_path",
@@ -434,14 +445,14 @@ class ColmapCameraRecoveryAdapter:
             config.camera_model,
             "--ImageReader.single_camera",
             "1" if config.single_camera else "0",
-            "--SiftExtraction.use_gpu",
+            extraction_gpu_option,
             gpu,
         ]
         matcher = [
             f"{config.matcher}_matcher",
             "--database_path",
             "camera/colmap/database.db",
-            "--SiftMatching.use_gpu",
+            matching_gpu_option,
             gpu,
         ]
         if config.matcher == "sequential":

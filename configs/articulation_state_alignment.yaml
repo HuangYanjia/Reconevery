@@ -1,0 +1,24 @@
+seed: 42
+stages:
+  articulation_capture:
+    adapter:
+      name: articulation_capture
+      config:
+        capture_manifest: configs/articulation_capture.example.yaml
+        part_prompt_manifest: configs/articulation_parts/cabinet_drawer.yaml
+    depends_on: []
+  articulation_state_alignment:
+    adapter:
+      name: articulation_state_alignment
+      env: [PATH, HOME, TMPDIR]
+      timeout_s: 1800
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/articulation-env/bin/python
+        worker_module: articulation_alignment_worker
+        docker_image: reconevery/articulation-alignment:phase5c
+        minimum_static_correspondences: 200
+        maximum_static_median_residual_scene_diagonal: 0.02
+        maximum_static_p90_residual_scene_diagonal: 0.05
+        minimum_heldout_static_depth_inlier_fraction: 0.60
+    depends_on: [articulation_capture]

@@ -125,3 +125,26 @@ evidence disjoint, and keep torch, NumPy, SAM 3D Objects, TRELLIS.2, and CUDA ou
 the core package. Model code/revision/hash and license policy are mandatory. A
 research-only candidate must not become production-selected. Do not add articulated
 completion, collision, physics, metric/gravity claims, or simulator export.
+
+Phase 5C articulation requires explicit object/part prompts and independent
+static-state runs. State alignment uses static base/environment geometry only.
+Stable part IDs are separate from semantic prompts and map explicitly to state-local
+SAM track IDs; never assume canonical SAM IDs match across independent runs.
+Generation, kinematic fitting, and held-out states are filesystem-isolated; a
+held-out state may fit only its scalar joint position after graph, link assignment,
+base transform, axis, and pivot are frozen. The fitted kinematic model, not the raw
+candidate, is the selected source of truth. Single-state evidence is prior-only and
+two-state evidence is only partially validated. ArtVIP and PartNet indices are local
+and immutable. Particulate and PartField remain isolated; the current PartField
+checkpoint is research-only. Never add collision, inertial, dynamics, metric,
+gravity, or simulation-ready claims.
+
+Orient each fitted joint axis toward measured motion exactly once. `axis_sign` is
+provenance only and must not multiply `q_scale`. Articulated visuals must declare
+candidate-base or link-local space with an exact candidate-base transform.
+Passing held-out views require all mapped links, target masks, valid depth, and
+per-frame camera/depth/mask/render hashes.
+Original Phase 5A articulated anchors are `reference_world` evidence and remain on
+the object evidence list; never attach them below a fitted candidate/link transform
+without transforming the geometry bytes. Selected candidate, fitted model, link
+assignment, and evaluation records must be dedicated files with exact content hashes.

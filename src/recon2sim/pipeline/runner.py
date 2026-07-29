@@ -16,7 +16,7 @@ from pydantic import TypeAdapter
 from recon2sim.adapters import REGISTRY, ArtifactRecord, InputSpec, OutputSpec
 from recon2sim.adapters.base import Adapter, StageContext
 from recon2sim.config import PipelineConfig
-from recon2sim.images import validate_png
+from recon2sim.images import validate_binary_mask_png, validate_png
 from recon2sim.reporting.logging import configure_run_logger
 from recon2sim.storage import atomic_write_json, atomic_write_yaml
 
@@ -772,6 +772,8 @@ class PipelineRunner:
                 TypeAdapter(dict[str, Any]).validate_json(text)
         elif spec.validation == "png":
             validate_png(path)
+        elif spec.validation == "binary_png":
+            validate_binary_mask_png(path)
         elif spec.validation == "obj":
             text = path.read_text(encoding="utf-8")
             if not any(line.startswith("v ") for line in text.splitlines()):

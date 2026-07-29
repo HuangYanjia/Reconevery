@@ -1,0 +1,914 @@
+{
+  "$defs": {
+    "ArticulatedAssetSpace": {
+      "enum": [
+        "reference_world",
+        "candidate_base",
+        "link_local"
+      ],
+      "title": "ArticulatedAssetSpace",
+      "type": "string"
+    },
+    "ArticulatedCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "articulated_object_id": {
+          "minLength": 1,
+          "title": "Articulated Object Id",
+          "type": "string"
+        },
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "joints": {
+          "items": {
+            "$ref": "#/$defs/ArticulatedJoint"
+          },
+          "title": "Joints",
+          "type": "array"
+        },
+        "license_record": {
+          "$ref": "#/$defs/ArticulatedLicenseRecord"
+        },
+        "links": {
+          "items": {
+            "$ref": "#/$defs/ArticulatedLink"
+          },
+          "minItems": 1,
+          "title": "Links",
+          "type": "array"
+        },
+        "native_coordinate_convention": {
+          "minLength": 1,
+          "title": "Native Coordinate Convention",
+          "type": "string"
+        },
+        "native_output_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Native Output Hashes",
+          "type": "object"
+        },
+        "native_output_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Native Output Paths",
+          "type": "array"
+        },
+        "native_units": {
+          "minLength": 1,
+          "title": "Native Units",
+          "type": "string"
+        },
+        "production_selectable": {
+          "title": "Production Selectable",
+          "type": "boolean"
+        },
+        "provenance": {
+          "$ref": "#/$defs/ProvenanceRecord"
+        },
+        "source_asset_id": {
+          "minLength": 1,
+          "title": "Source Asset Id",
+          "type": "string"
+        },
+        "source_family": {
+          "$ref": "#/$defs/ArticulatedSourceFamily"
+        },
+        "states": {
+          "items": {
+            "$ref": "#/$defs/ArticulatedState"
+          },
+          "title": "States",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        },
+        "working_frame_hypotheses_evaluated": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Working Frame Hypotheses Evaluated",
+          "type": "array"
+        },
+        "working_frame_hypothesis": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Frame Hypothesis"
+        },
+        "working_frame_selection_evidence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Frame Selection Evidence"
+        },
+        "working_transform_particulate_to_source": {
+          "anyOf": [
+            {
+              "maxItems": 16,
+              "minItems": 16,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Transform Particulate To Source"
+        },
+        "working_transform_source_to_particulate": {
+          "anyOf": [
+            {
+              "maxItems": 16,
+              "minItems": 16,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Transform Source To Particulate"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "articulated_object_id",
+        "source_family",
+        "source_asset_id",
+        "links",
+        "joints",
+        "states",
+        "native_coordinate_convention",
+        "native_units",
+        "license_record",
+        "production_selectable",
+        "provenance"
+      ],
+      "title": "ArticulatedCandidate",
+      "type": "object"
+    },
+    "ArticulatedJoint": {
+      "additionalProperties": false,
+      "properties": {
+        "axis": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Axis",
+          "type": "array"
+        },
+        "candidate_limit_lower": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Limit Lower"
+        },
+        "candidate_limit_upper": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Limit Upper"
+        },
+        "child_link_id": {
+          "minLength": 1,
+          "title": "Child Link Id",
+          "type": "string"
+        },
+        "joint_id": {
+          "minLength": 1,
+          "title": "Joint Id",
+          "type": "string"
+        },
+        "joint_type": {
+          "$ref": "#/$defs/ArticulatedJointType"
+        },
+        "limit_source": {
+          "enum": [
+            "candidate_prior",
+            "observed_range",
+            "unknown"
+          ],
+          "title": "Limit Source",
+          "type": "string"
+        },
+        "parent_link_id": {
+          "minLength": 1,
+          "title": "Parent Link Id",
+          "type": "string"
+        },
+        "pivot": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pivot"
+        }
+      },
+      "required": [
+        "joint_id",
+        "parent_link_id",
+        "child_link_id",
+        "joint_type",
+        "axis",
+        "limit_source"
+      ],
+      "title": "ArticulatedJoint",
+      "type": "object"
+    },
+    "ArticulatedJointType": {
+      "enum": [
+        "fixed",
+        "prismatic",
+        "revolute",
+        "continuous_candidate",
+        "unknown"
+      ],
+      "title": "ArticulatedJointType",
+      "type": "string"
+    },
+    "ArticulatedLicenseRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_license": {
+          "minLength": 1,
+          "title": "Asset License",
+          "type": "string"
+        },
+        "checkpoint_license": {
+          "minLength": 1,
+          "title": "Checkpoint License",
+          "type": "string"
+        },
+        "code_license": {
+          "minLength": 1,
+          "title": "Code License",
+          "type": "string"
+        },
+        "commercial_review_status": {
+          "enum": [
+            "not_reviewed",
+            "research_only",
+            "approved_by_project_policy"
+          ],
+          "title": "Commercial Review Status",
+          "type": "string"
+        },
+        "dependency_licenses": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Dependency Licenses",
+          "type": "object"
+        },
+        "production_selectable": {
+          "title": "Production Selectable",
+          "type": "boolean"
+        },
+        "research_evaluation_allowed": {
+          "title": "Research Evaluation Allowed",
+          "type": "boolean"
+        },
+        "source_family": {
+          "$ref": "#/$defs/ArticulatedSourceFamily"
+        },
+        "training_data_notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Training Data Notes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_family",
+        "code_license",
+        "checkpoint_license",
+        "asset_license",
+        "commercial_review_status",
+        "research_evaluation_allowed",
+        "production_selectable"
+      ],
+      "title": "ArticulatedLicenseRecord",
+      "type": "object"
+    },
+    "ArticulatedLink": {
+      "additionalProperties": false,
+      "properties": {
+        "link_id": {
+          "minLength": 1,
+          "title": "Link Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "native_bounds_max": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Native Bounds Max",
+          "type": "array"
+        },
+        "native_bounds_min": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Native Bounds Min",
+          "type": "array"
+        },
+        "visual_asset_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Visual Asset Hashes",
+          "type": "object"
+        },
+        "visual_asset_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Visual Asset Paths",
+          "type": "array"
+        },
+        "visual_asset_spaces": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ArticulatedAssetSpace"
+          },
+          "title": "Visual Asset Spaces",
+          "type": "object"
+        },
+        "visual_asset_transforms_candidate_base": {
+          "additionalProperties": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 16,
+            "minItems": 16,
+            "type": "array"
+          },
+          "title": "Visual Asset Transforms Candidate Base",
+          "type": "object"
+        }
+      },
+      "required": [
+        "link_id",
+        "name",
+        "visual_asset_paths",
+        "visual_asset_hashes",
+        "visual_asset_spaces",
+        "visual_asset_transforms_candidate_base",
+        "native_bounds_min",
+        "native_bounds_max"
+      ],
+      "title": "ArticulatedLink",
+      "type": "object"
+    },
+    "ArticulatedSourceFamily": {
+      "enum": [
+        "measured_motion_analytic",
+        "artvip",
+        "partnet_mobility",
+        "particulate"
+      ],
+      "title": "ArticulatedSourceFamily",
+      "type": "string"
+    },
+    "ArticulatedState": {
+      "additionalProperties": false,
+      "properties": {
+        "joint_positions": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Joint Positions",
+          "type": "object"
+        },
+        "link_transforms": {
+          "additionalProperties": {
+            "maxItems": 16,
+            "minItems": 16,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Link Transforms",
+          "type": "object"
+        },
+        "state_id": {
+          "minLength": 1,
+          "title": "State Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state_id",
+        "joint_positions",
+        "link_transforms"
+      ],
+      "title": "ArticulatedState",
+      "type": "object"
+    },
+    "ConfidenceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "minLength": 1,
+          "title": "Method",
+          "type": "string"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "score",
+        "method"
+      ],
+      "title": "ConfidenceRecord",
+      "type": "object"
+    },
+    "GeometrySourceType": {
+      "enum": [
+        "measured",
+        "radiance_field",
+        "generated",
+        "retrieved",
+        "fused",
+        "mock"
+      ],
+      "title": "GeometrySourceType",
+      "type": "string"
+    },
+    "ParticulateWorkerManifest": {
+      "additionalProperties": false,
+      "properties": {
+        "checkpoint_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Checkpoint Hashes",
+          "type": "object"
+        },
+        "checkpoint_repository": {
+          "const": "rayli/Particulate",
+          "title": "Checkpoint Repository",
+          "type": "string"
+        },
+        "checkpoint_revision": {
+          "const": "096167e661feb92a443535d15916323ec8a01613",
+          "title": "Checkpoint Revision",
+          "type": "string"
+        },
+        "official_code_commit": {
+          "const": "dee37a75c449f324d9989993461ee09eaccc1686",
+          "title": "Official Code Commit",
+          "type": "string"
+        },
+        "official_repository": {
+          "const": "https://github.com/RuiningLi/particulate",
+          "title": "Official Repository",
+          "type": "string"
+        },
+        "peak_gpu_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Peak Gpu Memory Bytes"
+        },
+        "peak_host_memory_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Peak Host Memory Bytes"
+        },
+        "request_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Request Sha256",
+          "type": "string"
+        },
+        "runtime_model_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Runtime Model Hashes",
+          "type": "object"
+        },
+        "runtime_seconds": {
+          "minimum": 0,
+          "title": "Runtime Seconds",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "0.1.0",
+          "default": "0.1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        },
+        "worker_version": {
+          "minLength": 1,
+          "title": "Worker Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "worker_version",
+        "request_sha256",
+        "official_repository",
+        "official_code_commit",
+        "checkpoint_repository",
+        "checkpoint_revision",
+        "checkpoint_hashes",
+        "runtime_model_hashes",
+        "runtime_seconds"
+      ],
+      "title": "ParticulateWorkerManifest",
+      "type": "object"
+    },
+    "ProvenanceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_name": {
+          "minLength": 1,
+          "title": "Adapter Name",
+          "type": "string"
+        },
+        "adapter_version": {
+          "minLength": 1,
+          "title": "Adapter Version",
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/ConfidenceRecord"
+        },
+        "configuration": {
+          "additionalProperties": true,
+          "title": "Configuration",
+          "type": "object"
+        },
+        "input_artifact_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Artifact Paths",
+          "type": "array"
+        },
+        "output_artifact_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Artifact Paths",
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/$defs/GeometrySourceType"
+        },
+        "timestamp": {
+          "format": "date-time",
+          "title": "Timestamp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter_name",
+        "adapter_version",
+        "confidence",
+        "source"
+      ],
+      "title": "ProvenanceRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/ArticulatedCandidate"
+      },
+      "title": "Candidates",
+      "type": "array"
+    },
+    "failed_candidate_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Failed Candidate Ids",
+      "type": "array"
+    },
+    "measured_motion_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Measured Motion Sha256",
+      "type": "string"
+    },
+    "retrieval_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Retrieval Manifest Sha256",
+      "type": "string"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "worker_manifests": {
+      "items": {
+        "$ref": "#/$defs/ParticulateWorkerManifest"
+      },
+      "title": "Worker Manifests",
+      "type": "array"
+    }
+  },
+  "required": [
+    "measured_motion_sha256",
+    "retrieval_manifest_sha256",
+    "candidates",
+    "runtime_seconds"
+  ],
+  "title": "ArticulatedCandidateManifest",
+  "type": "object"
+}

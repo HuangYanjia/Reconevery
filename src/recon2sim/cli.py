@@ -6,12 +6,20 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+import yaml
 from pydantic import BaseModel, ValidationError
 
 from recon2sim.adapters import REGISTRY
 from recon2sim.adapters.base import StageContext
 from recon2sim.alignment import export_aligned_ply, render_alignment_previews
 from recon2sim.artifacts import (
+    ArticulatedCandidateManifest,
+    ArticulatedCandidateSelection,
+    ArticulatedEvaluationManifest,
+    ArticulationCaptureManifest,
+    ArticulationFittingManifest,
+    ArticulationPartPromptManifest,
+    ArticulationStateAlignmentArtifact,
     CameraDiagnostics,
     CameraMeshAlignmentArtifact,
     CameraMeshAlignmentDiagnostics,
@@ -47,6 +55,7 @@ from recon2sim.artifacts import (
     Phase4ConsistencyReport,
     Phase5AConsistencyReport,
     Phase5BConsistencyReport,
+    Phase5CConsistencyReport,
     Sam3WorkerManifest,
     SegmentationDiagnostics,
     SegmentationPromptManifest,
@@ -103,6 +112,10 @@ completion_app = typer.Typer(
     help="Inspect rigid visual-completion candidates and held-out selection.",
     no_args_is_help=True,
 )
+articulation_app = typer.Typer(
+    help="Inspect articulated visual hypotheses and held-out-state validation.",
+    no_args_is_help=True,
+)
 app.add_typer(adapters_app, name="adapters")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(camera_app, name="camera")
@@ -113,6 +126,7 @@ app.add_typer(objects_app, name="objects")
 app.add_typer(alignment_app, name="alignment")
 app.add_typer(dense_app, name="dense")
 app.add_typer(completion_app, name="completion")
+app.add_typer(articulation_app, name="articulation")
 
 
 @app.command()
@@ -1681,3 +1695,582 @@ def verify_phase5b(
         failed = [check.check_id for check in report.checks if not check.passed]
         raise typer.BadParameter(f"Phase 5B consistency verification failed: {failed}")
     typer.echo(f"Phase 5B rigid-completion consistency passed ({len(report.checks)} checks)")
+
+
+def _articulation_selection(run_dir: Path) -> ArticulatedCandidateSelection:
+    return _artifact_model(
+        run_dir,
+        "reconstruction/articulation/selection.json",
+        ArticulatedCandidateSelection,
+    )
+
+
+def _articulation_candidates(run_dir: Path) -> ArticulatedCandidateManifest:
+    return _artifact_model(
+        run_dir,
+        "reconstruction/articulation/candidate_manifest.json",
+        ArticulatedCandidateManifest,
+    )
+
+
+@articulation_app.command("capture-template")
+def articulation_capture_template(
+    object_id: Annotated[str, typer.Option("--object-id", help="Stable articulated object ID.")],
+    states: Annotated[
+        str,
+        typer.Option("--states", help="Comma-separated semantic state labels."),
+    ],
+) -> None:
+    labels = [value.strip() for value in states.split(",") if value.strip()]
+    if not labels:
+        raise typer.BadParameter("--states must contain at least one state label")
+    payload = {
+        "schema_version": "0.2.0",
+        "articulated_object_id": object_id,
+        "reference_state_id": f"state_000_{labels[0]}",
+        "states": [
+            {
+                "state_id": f"state_{index:03d}_{label}",
+                "run_dir": f"/absolute/path/to/{label}",
+                "semantic_state_label": label,
+                "part_track_ids": {
+                    "cabinet_body": f"<canonical-track-id-for-cabinet-body-in-{label}>",
+                    "drawer": f"<canonical-track-id-for-drawer-in-{label}>",
+                },
+            }
+            for index, label in enumerate(labels)
+        ],
+    }
+    typer.echo(yaml.safe_dump(payload, sort_keys=False))
+
+
+@articulation_app.command("preflight-capture")
+def preflight_articulation_capture(
+    capture_manifest: Annotated[
+        Path,
+        typer.Option(
+            "--capture-manifest",
+            exists=True,
+            dir_okay=False,
+            help="Multi-state capture YAML.",
+        ),
+    ],
+    part_manifest: Annotated[
+        Path,
+        typer.Option(
+            "--part-manifest",
+            exists=True,
+            dir_okay=False,
+            help="Stable part/prompt YAML.",
+        ),
+    ],
+) -> None:
+    capture_raw = yaml.safe_load(capture_manifest.read_text(encoding="utf-8"))
+    prompt_raw = yaml.safe_load(part_manifest.read_text(encoding="utf-8"))
+    if not isinstance(capture_raw, dict) or not isinstance(prompt_raw, dict):
+        raise typer.BadParameter("capture and part manifests must contain YAML mappings")
+    prompts = ArticulationPartPromptManifest.model_validate(prompt_raw)
+    object_id = str(capture_raw.get("articulated_object_id", ""))
+    prompt_object = next(
+        (item for item in prompts.objects if item.articulated_object_id == object_id),
+        None,
+    )
+    if prompt_object is None:
+        raise typer.BadParameter(f"part manifest has no articulated object {object_id!r}")
+    stable_parts = {
+        prompt_object.base.part_id,
+        *(part.part_id for part in prompt_object.movable_parts if part.include),
+    }
+    raw_states = capture_raw.get("states")
+    if not isinstance(raw_states, list) or not raw_states:
+        raise typer.BadParameter("capture manifest requires non-empty states")
+    errors: list[str] = []
+    rows: list[dict[str, object]] = []
+    state_ids: list[str] = []
+    for raw_state in raw_states:
+        if not isinstance(raw_state, dict):
+            errors.append("capture state is not a mapping")
+            continue
+        state_id = str(raw_state.get("state_id", ""))
+        state_ids.append(state_id)
+        run_dir = Path(str(raw_state.get("run_dir", ""))).expanduser()
+        mapping_raw = raw_state.get("part_track_ids")
+        mapping = (
+            {str(key): str(value) for key, value in mapping_raw.items()}
+            if isinstance(mapping_raw, dict)
+            else {}
+        )
+        state_errors: list[str] = []
+        if not run_dir.is_dir():
+            state_errors.append("run_dir_missing")
+        if set(mapping) != stable_parts:
+            state_errors.append("part_mapping_incomplete")
+        if len(mapping) != len(set(mapping.values())):
+            state_errors.append("duplicate_track_mapping")
+        tracks_by_id: dict[str, dict[str, object]] = {}
+        measured_by_id: dict[str, dict[str, object]] = {}
+        registered: set[str] = set()
+        depth_count = 0
+        if run_dir.is_dir():
+            required_json = {
+                "phase5a": run_dir / "validation/phase5a_measured_geometry.json",
+                "camera": run_dir / "camera/reconstruction.json",
+                "tracks": run_dir / "observations/object_tracks.json",
+                "depth": run_dir / "reconstruction/dense/depth_manifest.json",
+                "measured": (run_dir / "reconstruction/measured_objects/geometry_manifest.json"),
+            }
+            missing = [name for name, path in required_json.items() if not path.is_file()]
+            state_errors.extend(f"{name}_missing" for name in missing)
+            if not missing:
+                payloads = {
+                    name: json.loads(path.read_text(encoding="utf-8"))
+                    for name, path in required_json.items()
+                }
+                if not payloads["phase5a"].get("passed", False):
+                    state_errors.append("phase5a_failed")
+                registered = set(payloads["camera"].get("registered_frame_ids", []))
+                tracks_by_id = {
+                    str(item["object_id"]): item for item in payloads["tracks"].get("tracks", [])
+                }
+                measured_by_id = {
+                    str(item["object_id"]): item
+                    for item in payloads["measured"].get("hypotheses", [])
+                }
+                depth_records = payloads["depth"].get("records", [])
+                depth_count = len(depth_records)
+                for record in depth_records:
+                    path = run_dir / str(record.get("depth_path", ""))
+                    if not path.is_file():
+                        state_errors.append(f"depth_missing:{record.get('frame_id', 'unknown')}")
+        for part_id in sorted(stable_parts):
+            track_id = mapping.get(part_id)
+            if not track_id:
+                continue
+            track = tracks_by_id.get(track_id)
+            hypothesis = measured_by_id.get(track_id)
+            if track is None:
+                state_errors.append(f"track_missing:{part_id}->{track_id}")
+                continue
+            if hypothesis is None or hypothesis.get("point_cloud") is None:
+                state_errors.append(f"measured_geometry_missing:{part_id}->{track_id}")
+                continue
+            point_cloud = hypothesis["point_cloud"]
+            if not isinstance(point_cloud, dict):
+                state_errors.append(f"point_cloud_invalid:{part_id}->{track_id}")
+                continue
+            point_path = run_dir / str(point_cloud.get("relative_path", ""))
+            if not point_path.is_file():
+                state_errors.append(f"point_cloud_missing:{part_id}->{track_id}")
+            observations_raw = track.get("observations", [])
+            observations = observations_raw if isinstance(observations_raw, list) else []
+            masks = [
+                run_dir / str(observation.get("mask_path", "")) for observation in observations
+            ]
+            if not masks or any(not path.is_file() for path in masks):
+                state_errors.append(f"mask_missing:{part_id}->{track_id}")
+            supporting_raw = hypothesis.get("supporting_frame_ids", [])
+            supporting: set[str] = set()
+            if isinstance(supporting_raw, list):
+                supporting.update(str(value) for value in supporting_raw)
+            measured_observations = hypothesis.get("observations", [])
+            if isinstance(measured_observations, list):
+                supporting.update(
+                    str(observation["frame_id"])
+                    for observation in measured_observations
+                    if isinstance(observation, dict)
+                    and observation.get("registered") is True
+                    and int(observation.get("validated_sample_count", 0)) > 0
+                    and observation.get("frame_id")
+                )
+            supporting &= registered
+            if len(supporting) < 2:
+                state_errors.append(f"insufficient_registered_views:{part_id}->{track_id}")
+        errors.extend(f"{state_id}: {message}" for message in state_errors)
+        rows.append(
+            {
+                "state": state_id,
+                "phase5a": "pass" if "phase5a_failed" not in state_errors else "fail",
+                "registered": len(registered),
+                "depth_maps": depth_count,
+                "mapped_parts": len(mapping),
+                "status": "pass" if not state_errors else "fail",
+            }
+        )
+    if len(state_ids) != len(set(state_ids)):
+        errors.append("state IDs are not unique")
+    reference_state = str(capture_raw.get("reference_state_id", ""))
+    if reference_state not in state_ids:
+        errors.append("reference state is missing")
+    if len(state_ids) < 3:
+        errors.append("a disjoint held-out articulation state is not feasible")
+    typer.echo("state\tphase5a\tregistered\tdepth_maps\tmapped_parts\tstatus")
+    for row in rows:
+        typer.echo(
+            f"{row['state']}\t{row['phase5a']}\t{row['registered']}\t"
+            f"{row['depth_maps']}\t{row['mapped_parts']}\t{row['status']}"
+        )
+    if errors:
+        for error in errors:
+            typer.echo(f"ERROR: {error}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(
+        f"capture preflight passed: {len(state_ids)} states, "
+        f"reference={reference_state}, stable_parts={len(stable_parts)}"
+    )
+
+
+@articulation_app.command("inspect")
+def inspect_articulation(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    capture = _artifact_model(
+        run_dir,
+        "reconstruction/articulation/capture_manifest.json",
+        ArticulationCaptureManifest,
+    )
+    alignment = _artifact_model(
+        run_dir,
+        "reconstruction/articulation/state_alignment.json",
+        ArticulationStateAlignmentArtifact,
+    )
+    candidates = _articulation_candidates(run_dir)
+    selection = _articulation_selection(run_dir)
+    typer.echo(
+        json.dumps(
+            {
+                "object_id": capture.articulated_object_id,
+                "capture_evidence_tier": capture.capture_evidence_tier,
+                "states": [state.state_id for state in capture.states],
+                "accepted_state_alignments": sum(
+                    transform.accepted for transform in alignment.transforms
+                ),
+                "candidate_count": len(candidates.candidates),
+                "selection": selection.model_dump(mode="json"),
+            },
+            indent=2,
+        )
+    )
+
+
+@articulation_app.command("inspect-state")
+def inspect_articulation_state(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    state_id: Annotated[str, typer.Argument(help="Articulation state ID.")],
+) -> None:
+    capture = _artifact_model(
+        run_dir,
+        "reconstruction/articulation/capture_manifest.json",
+        ArticulationCaptureManifest,
+    )
+    alignment = _artifact_model(
+        run_dir,
+        "reconstruction/articulation/state_alignment.json",
+        ArticulationStateAlignmentArtifact,
+    )
+    state = next((item for item in capture.states if item.state_id == state_id), None)
+    transform = next(
+        (item for item in alignment.transforms if item.state_id == state_id),
+        None,
+    )
+    if state is None:
+        raise typer.BadParameter(f"articulation has no state {state_id!r}")
+    typer.echo(
+        json.dumps(
+            {
+                "state": state.model_dump(mode="json"),
+                "alignment": transform.model_dump(mode="json") if transform else None,
+            },
+            indent=2,
+        )
+    )
+
+
+@articulation_app.command("inspect-part")
+def inspect_articulation_part(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    part_id: Annotated[str, typer.Argument(help="Stable observed part ID.")],
+) -> None:
+    prompts = _artifact_model(
+        run_dir,
+        "reconstruction/articulation/part_prompt_manifest.json",
+        ArticulationPartPromptManifest,
+    )
+    motion = json.loads(
+        (run_dir / "reconstruction/articulation/measured_motion.json").read_text(encoding="utf-8")
+    )
+    prompt = next(
+        (
+            part
+            for item in prompts.objects
+            for part in item.movable_parts
+            if part.part_id == part_id
+        ),
+        None,
+    )
+    joints = [
+        joint for joint in motion.get("joint_hypotheses", []) if joint["child_part_id"] == part_id
+    ]
+    geometries = [
+        geometry for geometry in motion.get("part_geometries", []) if geometry["part_id"] == part_id
+    ]
+    if prompt is None:
+        raise typer.BadParameter(f"articulation has no part {part_id!r}")
+    typer.echo(
+        json.dumps(
+            {
+                "prompt": prompt.model_dump(mode="json"),
+                "measured_geometries": geometries,
+                "joint_hypotheses": joints,
+            },
+            indent=2,
+        )
+    )
+
+
+@articulation_app.command("inspect-candidate")
+def inspect_articulation_candidate(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    candidate_id: Annotated[str, typer.Argument(help="Articulated candidate ID.")],
+) -> None:
+    candidate = next(
+        (
+            item
+            for item in _articulation_candidates(run_dir).candidates
+            if item.candidate_id == candidate_id
+        ),
+        None,
+    )
+    if candidate is None:
+        raise typer.BadParameter(f"articulation has no candidate {candidate_id!r}")
+    typer.echo(json.dumps(candidate.model_dump(mode="json"), indent=2))
+
+
+@articulation_app.command("inspect-joint")
+def inspect_articulation_joint(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    joint_id: Annotated[str, typer.Argument(help="Candidate or measured joint ID.")],
+) -> None:
+    candidate_joints = [
+        {"candidate_id": candidate.candidate_id, **joint.model_dump(mode="json")}
+        for candidate in _articulation_candidates(run_dir).candidates
+        for joint in candidate.joints
+        if joint.joint_id == joint_id
+    ]
+    motion = json.loads(
+        (run_dir / "reconstruction/articulation/measured_motion.json").read_text(encoding="utf-8")
+    )
+    measured = [
+        joint for joint in motion.get("joint_hypotheses", []) if joint["joint_id"] == joint_id
+    ]
+    fitting = _artifact_model(
+        run_dir,
+        "reconstruction/articulation/fitting_manifest.json",
+        ArticulationFittingManifest,
+    )
+    fitted = [
+        {
+            "candidate_id": item.candidate_id,
+            **joint.model_dump(mode="json"),
+        }
+        for item in fitting.fittings
+        if item.fitted_model is not None
+        for joint in item.fitted_model.fitted_joints
+        if joint.candidate_joint_id == joint_id or joint.measured_joint_id == joint_id
+    ]
+    evaluation = _artifact_model(
+        run_dir,
+        "reconstruction/articulation/evaluation_manifest.json",
+        ArticulatedEvaluationManifest,
+    )
+    heldout = [
+        {
+            "candidate_id": item.candidate_id,
+            "state_id": state.state_id,
+            "inferred_q": state.inferred_joint_positions.get(joint_id),
+            "joint_q_residual": state.joint_q_residual,
+            "axis_error_degrees": state.axis_error_degrees,
+            "pivot_residual_part_diagonals": state.pivot_residual_part_diagonals,
+            "usable_views": state.usable_heldout_view_count,
+            "view_provenance": [view.model_dump(mode="json") for view in state.view_evaluations],
+        }
+        for item in evaluation.evaluations
+        for state in item.state_evaluations
+        if joint_id in state.inferred_joint_positions
+    ]
+    if not candidate_joints and not measured and not fitted:
+        raise typer.BadParameter(f"articulation has no joint {joint_id!r}")
+    typer.echo(
+        json.dumps(
+            {
+                "measured": measured,
+                "candidates": candidate_joints,
+                "fitted": fitted,
+                "heldout": heldout,
+            },
+            indent=2,
+        )
+    )
+
+
+@articulation_app.command("compare-candidates")
+def compare_articulation_candidates(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Articulated object ID.")],
+) -> None:
+    candidates = {
+        item.candidate_id: item
+        for item in _articulation_candidates(run_dir).candidates
+        if item.articulated_object_id == object_id
+    }
+    evaluation = _artifact_model(
+        run_dir,
+        "reconstruction/articulation/evaluation_manifest.json",
+        ArticulatedEvaluationManifest,
+    )
+    rows = [
+        {
+            "source_family": candidates[item.candidate_id].source_family,
+            **item.model_dump(mode="json"),
+        }
+        for item in evaluation.evaluations
+        if item.candidate_id in candidates
+    ]
+    if not rows:
+        raise typer.BadParameter(f"articulation has no candidates for {object_id!r}")
+    typer.echo(json.dumps(rows, indent=2))
+
+
+@articulation_app.command("render-previews")
+def render_articulation_previews(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    from recon2sim.adapters.articulation_selection import ArticulationSelectionAdapter
+
+    ArticulationSelectionAdapter.render_previews(run_dir)
+    typer.echo("regenerated deterministic Phase 5C articulation previews")
+
+
+@articulation_app.command("export-kinematic-bundle")
+def export_articulation_bundle(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Articulated object ID.")],
+    output: Annotated[Path, typer.Option("--output", help="Destination JSON path.")],
+) -> None:
+    source = run_dir / "reconstruction/articulation/selected" / object_id / "kinematic_bundle.json"
+    if not source.is_file():
+        raise typer.BadParameter(f"{object_id!r} has no selected kinematic bundle")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, output)
+    typer.echo(f"exported kinematic bundle for {object_id} to {output}")
+
+
+@articulation_app.command("export-preview-urdf")
+def export_articulation_preview_urdf(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Articulated object ID.")],
+    output: Annotated[Path, typer.Option("--output", help="Destination URDF path.")],
+) -> None:
+    source = run_dir / "reconstruction/articulation/selected" / object_id / "preview_only.urdf"
+    if not source.is_file():
+        raise typer.BadParameter(f"{object_id!r} has no visual-only preview URDF")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, output)
+    typer.echo(f"exported non-simulation-ready preview URDF to {output}")
+
+
+@articulation_app.command("explain-selection")
+def explain_articulation_selection(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Articulated object ID.")],
+) -> None:
+    selected = next(
+        (
+            item
+            for item in _articulation_selection(run_dir).objects
+            if item.articulated_object_id == object_id
+        ),
+        None,
+    )
+    if selected is None:
+        raise typer.BadParameter(f"articulation has no object {object_id!r}")
+    evaluation = _artifact_model(
+        run_dir,
+        "reconstruction/articulation/evaluation_manifest.json",
+        ArticulatedEvaluationManifest,
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "selection": selected.model_dump(mode="json"),
+                "candidate_gates": [
+                    item.model_dump(mode="json") for item in evaluation.evaluations
+                ],
+            },
+            indent=2,
+        )
+    )
+
+
+@validation_app.command("inspect-phase5c")
+def inspect_phase5c(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase5c_articulated_reconstruction.json",
+        Phase5CConsistencyReport,
+    )
+    typer.echo(json.dumps(report.model_dump(mode="json"), indent=2))
+
+
+@validation_app.command("verify-phase5c")
+def verify_phase5c(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase5c_articulated_reconstruction.json",
+        Phase5CConsistencyReport,
+    )
+    if not report.passed:
+        failed = [check.check_id for check in report.checks if not check.passed]
+        raise typer.BadParameter(f"Phase 5C consistency verification failed: {failed}")
+    typer.echo(
+        f"Phase 5C articulated-reconstruction consistency passed ({len(report.checks)} checks)"
+    )

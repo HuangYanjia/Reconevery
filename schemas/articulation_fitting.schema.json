@@ -1,0 +1,710 @@
+{
+  "$defs": {
+    "ArticulatedJointType": {
+      "enum": [
+        "fixed",
+        "prismatic",
+        "revolute",
+        "continuous_candidate",
+        "unknown"
+      ],
+      "title": "ArticulatedJointType",
+      "type": "string"
+    },
+    "ArticulatedLinkAssignment": {
+      "additionalProperties": false,
+      "properties": {
+        "assignments": {
+          "items": {
+            "$ref": "#/$defs/ArticulatedLinkAssignmentRecord"
+          },
+          "title": "Assignments",
+          "type": "array"
+        },
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "0.1.0",
+          "default": "0.1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "unmatched_candidate_links": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unmatched Candidate Links",
+          "type": "array"
+        },
+        "unmatched_observed_parts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unmatched Observed Parts",
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "assignments",
+        "unmatched_candidate_links",
+        "unmatched_observed_parts"
+      ],
+      "title": "ArticulatedLinkAssignment",
+      "type": "object"
+    },
+    "ArticulatedLinkAssignmentRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "ambiguous": {
+          "default": false,
+          "title": "Ambiguous",
+          "type": "boolean"
+        },
+        "assignment_confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Assignment Confidence",
+          "type": "number"
+        },
+        "candidate_link_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Candidate Link Ids",
+          "type": "array"
+        },
+        "evidence": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Evidence",
+          "type": "object"
+        },
+        "observed_part_id": {
+          "minLength": 1,
+          "title": "Observed Part Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "observed_part_id",
+        "candidate_link_ids",
+        "assignment_confidence",
+        "evidence"
+      ],
+      "title": "ArticulatedLinkAssignmentRecord",
+      "type": "object"
+    },
+    "ArticulationFittingArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "failure_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Reason"
+        },
+        "fitted_joint_positions": {
+          "additionalProperties": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object"
+          },
+          "title": "Fitted Joint Positions",
+          "type": "object"
+        },
+        "fitted_model": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FittedArticulatedKinematicModel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fitted_model_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitted Model Sha256"
+        },
+        "fitting_median_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Median Residual"
+        },
+        "fitting_part_iou": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Part Iou"
+        },
+        "fitting_state_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fitting State Ids",
+          "type": "array"
+        },
+        "heldout_state_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heldout State Ids",
+          "type": "array"
+        },
+        "joint_axis_signs": {
+          "additionalProperties": {
+            "enum": [
+              -1,
+              1
+            ],
+            "type": "integer"
+          },
+          "title": "Joint Axis Signs",
+          "type": "object"
+        },
+        "matrix_reference_world_from_candidate_base": {
+          "anyOf": [
+            {
+              "maxItems": 16,
+              "minItems": 16,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matrix Reference World From Candidate Base"
+        },
+        "scale": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scale"
+        },
+        "status": {
+          "enum": [
+            "fitted",
+            "ambiguous",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "structure_frozen_before_heldout": {
+          "const": true,
+          "default": true,
+          "title": "Structure Frozen Before Heldout",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "status",
+        "fitting_state_ids",
+        "heldout_state_ids",
+        "fitted_joint_positions",
+        "joint_axis_signs"
+      ],
+      "title": "ArticulationFittingArtifact",
+      "type": "object"
+    },
+    "FittedArticulatedJoint": {
+      "additionalProperties": false,
+      "properties": {
+        "axis_convention": {
+          "const": "oriented_toward_measured_axis",
+          "default": "oriented_toward_measured_axis",
+          "title": "Axis Convention",
+          "type": "string"
+        },
+        "axis_refinement_degrees": {
+          "minimum": 0,
+          "title": "Axis Refinement Degrees",
+          "type": "number"
+        },
+        "axis_sign": {
+          "enum": [
+            -1,
+            1
+          ],
+          "title": "Axis Sign",
+          "type": "integer"
+        },
+        "axis_sign_role": {
+          "const": "native_axis_flip_provenance_only",
+          "default": "native_axis_flip_provenance_only",
+          "title": "Axis Sign Role",
+          "type": "string"
+        },
+        "candidate_joint_id": {
+          "minLength": 1,
+          "title": "Candidate Joint Id",
+          "type": "string"
+        },
+        "child_observed_part_id": {
+          "minLength": 1,
+          "title": "Child Observed Part Id",
+          "type": "string"
+        },
+        "fitted_axis": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Fitted Axis",
+          "type": "array"
+        },
+        "fitted_pivot": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitted Pivot"
+        },
+        "fitting_residual_arbitrary_units": {
+          "minimum": 0,
+          "title": "Fitting Residual Arbitrary Units",
+          "type": "number"
+        },
+        "fitting_residual_part_diagonals": {
+          "minimum": 0,
+          "title": "Fitting Residual Part Diagonals",
+          "type": "number"
+        },
+        "fitting_state_q": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Fitting State Q",
+          "type": "object"
+        },
+        "joint_type": {
+          "$ref": "#/$defs/ArticulatedJointType"
+        },
+        "measured_joint_id": {
+          "minLength": 1,
+          "title": "Measured Joint Id",
+          "type": "string"
+        },
+        "parent_observed_part_id": {
+          "minLength": 1,
+          "title": "Parent Observed Part Id",
+          "type": "string"
+        },
+        "pivot_refinement_arbitrary_units": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pivot Refinement Arbitrary Units"
+        },
+        "pivot_refinement_part_diagonals": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pivot Refinement Part Diagonals"
+        },
+        "q_offset": {
+          "title": "Q Offset",
+          "type": "number"
+        },
+        "q_offset_evidence_state_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Q Offset Evidence State Ids",
+          "type": "array"
+        },
+        "q_offset_fitted": {
+          "default": false,
+          "title": "Q Offset Fitted",
+          "type": "boolean"
+        },
+        "q_scale": {
+          "title": "Q Scale",
+          "type": "number"
+        },
+        "q_scale_convention": {
+          "const": "candidate_q_per_measured_q",
+          "default": "candidate_q_per_measured_q",
+          "title": "Q Scale Convention",
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidate_joint_id",
+        "measured_joint_id",
+        "parent_observed_part_id",
+        "child_observed_part_id",
+        "joint_type",
+        "fitted_axis",
+        "axis_sign",
+        "q_scale",
+        "q_offset",
+        "fitting_state_q",
+        "axis_refinement_degrees",
+        "fitting_residual_arbitrary_units",
+        "fitting_residual_part_diagonals"
+      ],
+      "title": "FittedArticulatedJoint",
+      "type": "object"
+    },
+    "FittedArticulatedKinematicModel": {
+      "additionalProperties": false,
+      "properties": {
+        "ambiguity_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Ambiguity Reasons",
+          "type": "array"
+        },
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "fit_residual_arbitrary_units": {
+          "minimum": 0,
+          "title": "Fit Residual Arbitrary Units",
+          "type": "number"
+        },
+        "fit_residual_scene_diagonals": {
+          "minimum": 0,
+          "title": "Fit Residual Scene Diagonals",
+          "type": "number"
+        },
+        "fitted_joints": {
+          "items": {
+            "$ref": "#/$defs/FittedArticulatedJoint"
+          },
+          "title": "Fitted Joints",
+          "type": "array"
+        },
+        "fitting_state_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fitting State Ids",
+          "type": "array"
+        },
+        "generation_state_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Generation State Ids",
+          "type": "array"
+        },
+        "heldout_state_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heldout State Ids",
+          "type": "array"
+        },
+        "link_assignments": {
+          "items": {
+            "$ref": "#/$defs/ArticulatedLinkAssignmentRecord"
+          },
+          "title": "Link Assignments",
+          "type": "array"
+        },
+        "matrix_reference_world_from_candidate_base": {
+          "maxItems": 16,
+          "minItems": 16,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Matrix Reference World From Candidate Base",
+          "type": "array"
+        },
+        "scale": {
+          "exclusiveMinimum": 0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "0.1.0",
+          "default": "0.1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "matrix_reference_world_from_candidate_base",
+        "scale",
+        "link_assignments",
+        "fitted_joints",
+        "generation_state_ids",
+        "fitting_state_ids",
+        "heldout_state_ids",
+        "fit_residual_arbitrary_units",
+        "fit_residual_scene_diagonals"
+      ],
+      "title": "FittedArticulatedKinematicModel",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "candidate_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Candidate Manifest Sha256",
+      "type": "string"
+    },
+    "evidence_split_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Evidence Split Sha256",
+      "type": "string"
+    },
+    "fittings": {
+      "items": {
+        "$ref": "#/$defs/ArticulationFittingArtifact"
+      },
+      "title": "Fittings",
+      "type": "array"
+    },
+    "link_assignments": {
+      "items": {
+        "$ref": "#/$defs/ArticulatedLinkAssignment"
+      },
+      "title": "Link Assignments",
+      "type": "array"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidate_manifest_sha256",
+    "evidence_split_sha256",
+    "link_assignments",
+    "fittings",
+    "runtime_seconds"
+  ],
+  "title": "ArticulationFittingManifest",
+  "type": "object"
+}

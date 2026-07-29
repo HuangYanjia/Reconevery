@@ -1,0 +1,136 @@
+{
+  "$defs": {
+    "ArticulationEvidenceLevel": {
+      "enum": [
+        "single_state_prior_only",
+        "two_state_motion_supported",
+        "multi_state_heldout_available",
+        "multi_state_heldout_validated"
+      ],
+      "title": "ArticulationEvidenceLevel",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "accepted_alignment_state_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Accepted Alignment State Ids",
+      "type": "array"
+    },
+    "aligned_state_count": {
+      "minimum": 0,
+      "title": "Aligned State Count",
+      "type": "integer"
+    },
+    "candidate_count_by_family": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Candidate Count By Family",
+      "type": "object"
+    },
+    "capture_evidence_tier": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
+    "capture_state_count": {
+      "minimum": 0,
+      "title": "Capture State Count",
+      "type": "integer"
+    },
+    "effective_motion_evidence_level": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
+    "evaluated_candidate_count": {
+      "minimum": 0,
+      "title": "Evaluated Candidate Count",
+      "type": "integer"
+    },
+    "fitted_candidate_count": {
+      "minimum": 0,
+      "title": "Fitted Candidate Count",
+      "type": "integer"
+    },
+    "joint_hypothesis_count": {
+      "minimum": 0,
+      "title": "Joint Hypothesis Count",
+      "type": "integer"
+    },
+    "measured_part_count": {
+      "minimum": 0,
+      "title": "Measured Part Count",
+      "type": "integer"
+    },
+    "passing_candidate_count": {
+      "minimum": 0,
+      "title": "Passing Candidate Count",
+      "type": "integer"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_candidate_validation_level": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
+    "total_runtime_seconds": {
+      "minimum": 0,
+      "title": "Total Runtime Seconds",
+      "type": "number"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "capture_state_count",
+    "capture_evidence_tier",
+    "accepted_alignment_state_ids",
+    "effective_motion_evidence_level",
+    "selected_candidate_validation_level",
+    "aligned_state_count",
+    "measured_part_count",
+    "joint_hypothesis_count",
+    "candidate_count_by_family",
+    "fitted_candidate_count",
+    "evaluated_candidate_count",
+    "passing_candidate_count",
+    "total_runtime_seconds"
+  ],
+  "title": "ArticulationDiagnostics",
+  "type": "object"
+}

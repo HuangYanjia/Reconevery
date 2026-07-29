@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reconevery-articulation-evaluation-worker"
+version = "0.3.0"
+description = "Constrained articulated link fitting and held-out-state evaluation"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+  "numpy>=2.0,<3",
+  "scipy>=1.15,<2",
+  "trimesh>=4.8,<5",
+  "pillow>=11,<13",
+  "opencv-python-headless>=4.10,<5",
+  "torch==2.6.0",
+  "nvdiffrast @ git+https://github.com/NVlabs/nvdiffrast.git@253ac4fcea7de5f396371124af597e6cc957bfae",
+]
+
+[project.scripts]
+articulation-evaluation-worker = "articulation_evaluation_worker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["articulation_evaluation_worker*"]

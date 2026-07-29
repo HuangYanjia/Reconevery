@@ -1,0 +1,107 @@
+seed: 42
+stages:
+  articulation_capture:
+    adapter:
+      name: articulation_capture
+      config:
+        fake_mode: success
+        fake_state_count: 3
+    depends_on: []
+  articulation_state_alignment:
+    adapter:
+      name: articulation_state_alignment
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_module: articulation_alignment_worker
+        worker_script: tests/fixtures/fake_articulation_worker.py
+        docker_image: reconevery/articulation-alignment:phase5c
+        fake_mode: success
+        minimum_static_correspondences: 8
+    depends_on: [articulation_capture]
+  articulation_motion:
+    adapter:
+      name: articulation_motion
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_module: articulation_alignment_worker
+        worker_script: tests/fixtures/fake_articulation_worker.py
+        docker_image: reconevery/articulation-alignment:phase5c
+        fake_mode: success
+    depends_on: [articulation_state_alignment]
+  artvip_retrieval:
+    adapter:
+      name: artvip_retrieval
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_module: articulated_retrieval_worker
+        worker_script: tests/fixtures/fake_articulation_worker.py
+        docker_image: reconevery/articulated-retrieval:phase5c
+        source_family: artvip
+        fake_mode: success
+    depends_on: [articulation_motion]
+  partnet_retrieval:
+    adapter:
+      name: partnet_retrieval
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_module: articulated_retrieval_worker
+        worker_script: tests/fixtures/fake_articulation_worker.py
+        docker_image: reconevery/articulated-retrieval:phase5c
+        source_family: partnet_mobility
+        fake_mode: success
+    depends_on: [articulation_motion]
+  particulate_candidates:
+    adapter:
+      name: particulate_candidates
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_module: particulate_worker
+        worker_script: tests/fixtures/fake_articulation_worker.py
+        docker_image: reconevery/particulate:phase5c
+        fake_mode: success
+    depends_on: [articulation_motion, artvip_retrieval, partnet_retrieval]
+  articulation_fitting:
+    adapter:
+      name: articulation_fitting
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_module: articulation_evaluation_worker
+        worker_script: tests/fixtures/fake_articulation_worker.py
+        docker_image: reconevery/articulation-evaluation:phase5c
+        fake_mode: success
+    depends_on: [particulate_candidates]
+  articulation_evaluation:
+    adapter:
+      name: articulation_evaluation
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: fake_worker
+        worker_python: python
+        worker_module: articulation_evaluation_worker
+        worker_script: tests/fixtures/fake_articulation_worker.py
+        docker_image: reconevery/articulation-evaluation:phase5c
+        fake_mode: success
+    depends_on: [articulation_fitting]
+  articulation_selection:
+    adapter:
+      name: articulation_selection
+      config:
+        license_mode: research_evaluation
+    depends_on: [articulation_evaluation]
+  phase5c_consistency_validation:
+    adapter:
+      name: phase5c_consistency_validation
+      config: {}
+    depends_on: [articulation_selection]

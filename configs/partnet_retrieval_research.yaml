@@ -1,0 +1,15 @@
+seed: 42
+stages:
+  partnet_retrieval:
+    adapter:
+      name: partnet_retrieval
+      env: [PATH, HOME, TMPDIR]
+      config:
+        execution_mode: local_worker
+        worker_python: /absolute/path/to/articulation-env/bin/python
+        worker_module: articulated_retrieval_worker
+        docker_image: reconevery/articulated-retrieval:phase5c
+        source_family: partnet_mobility
+        index_path: /absolute/path/to/partnet_mobility/index.json
+        maximum_candidates: 5
+    depends_on: [articulation_motion]

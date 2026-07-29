@@ -4,6 +4,8 @@ import struct
 import zlib
 from pathlib import Path
 
+from PIL import Image
+
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
@@ -88,3 +90,14 @@ def validate_png(path: Path) -> None:
         raise ValueError(f"{path} contains an unexpected amount of PNG pixel data")
     if any(pixels[row * row_bytes] > 4 for row in range(height)):
         raise ValueError(f"{path} contains an invalid PNG row filter")
+
+
+def validate_binary_mask_png(path: Path) -> None:
+    with Image.open(path) as image:
+        image.load()
+        if image.format != "PNG":
+            raise ValueError(f"{path} is not a PNG image")
+        if image.mode != "L":
+            raise ValueError(f"{path} must be an 8-bit grayscale PNG mask")
+        if not set(image.tobytes()) <= {0, 255}:
+            raise ValueError(f"{path} must contain only binary mask values 0 and 255")

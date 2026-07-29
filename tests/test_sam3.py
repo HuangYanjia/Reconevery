@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageChops
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
@@ -122,6 +122,36 @@ def test_prompt_ids_are_unique_and_labels_are_nonempty() -> None:
         )
     with pytest.raises(ValidationError, match="must not be blank"):
         SegmentationPrompt.model_validate({"prompt_id": "empty", "label": " ", "text": "cup"})
+
+
+def test_prompt_mask_exclusions_reference_known_other_prompts() -> None:
+    prompt = {
+        "prompt_id": "cabinet_body",
+        "label": "cabinet body",
+        "text": "cabinet",
+    }
+    drawer = {"prompt_id": "drawer", "label": "drawer", "text": "drawer"}
+    manifest = SegmentationPromptManifest.model_validate(
+        {
+            "schema_version": "0.1.0",
+            "prompts": [{**prompt, "exclude_prompt_ids": ["drawer"]}, drawer],
+        }
+    )
+    assert manifest.prompts[0].exclude_prompt_ids == ["drawer"]
+    with pytest.raises(ValidationError, match="excludes unknown prompts"):
+        SegmentationPromptManifest.model_validate(
+            {
+                "schema_version": "0.1.0",
+                "prompts": [{**prompt, "exclude_prompt_ids": ["missing"]}, drawer],
+            }
+        )
+    with pytest.raises(ValidationError, match="cannot exclude itself"):
+        SegmentationPromptManifest.model_validate(
+            {
+                "schema_version": "0.1.0",
+                "prompts": [{**prompt, "exclude_prompt_ids": ["cabinet_body"]}, drawer],
+            }
+        )
 
 
 def test_unsupported_prompt_combinations_are_rejected() -> None:
@@ -298,6 +328,35 @@ def test_prompt_instance_limit_is_enforced(tmp_path: Path) -> None:
     )
     assert [track.object_id for track in _artifact(run_dir).tracks] == ["table_0001"]
     assert diagnostics["dropped_tracks"][0]["reason_code"] == "instance_limit"
+
+
+def test_prompt_mask_exclusion_subtracts_canonical_masks(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "prompts.yaml"
+    prompt_path.write_text(
+        "schema_version: '0.1.0'\n"
+        "prompts:\n"
+        "  - prompt_id: cabinet_body\n"
+        "    label: cabinet body\n"
+        "    text: cabinet\n"
+        "    exclude_prompt_ids: [drawer]\n"
+        "  - prompt_id: drawer\n"
+        "    label: drawer\n"
+        "    text: drawer\n",
+        encoding="utf-8",
+    )
+    run_dir, _ = _run(
+        tmp_path,
+        config=_config(mode="success_multi", prompt_path=prompt_path),
+    )
+    artifact = _artifact(run_dir)
+    body = next(track for track in artifact.tracks if track.semantic_label == "cabinet body")
+    drawer = next(track for track in artifact.tracks if track.semantic_label == "drawer")
+    drawer_by_frame = {item.frame_id: item for item in drawer.observations}
+    for body_observation in body.observations:
+        drawer_observation = drawer_by_frame[body_observation.frame_id]
+        with Image.open(run_dir / body_observation.mask_path) as body_mask:
+            with Image.open(run_dir / drawer_observation.mask_path) as drawer_mask:
+                assert ImageChops.multiply(body_mask, drawer_mask).getbbox() is None
 
 
 def test_canonical_ids_do_not_depend_on_raw_ids(tmp_path: Path) -> None:

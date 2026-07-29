@@ -104,6 +104,13 @@
           "title": "Enabled",
           "type": "boolean"
         },
+        "exclude_prompt_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Exclude Prompt Ids",
+          "type": "array"
+        },
         "frame_id": {
           "anyOf": [
             {

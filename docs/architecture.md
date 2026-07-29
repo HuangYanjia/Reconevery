@@ -184,3 +184,31 @@ crops, and fitting-only points. SAM 3D Objects and TRELLIS.2 generation run in
 parallel. Registration consumes fitting evidence; only evaluation sees held-out masks
 and dense depth. Lightweight selection applies gates, Pareto ranking, and license
 policy. GenRecon is not a canonical dependency.
+
+## Phase 5C multi-state branches
+
+`articulation_capture` imports only typed artifacts from independently valid Phase 5A
+state runs. `articulation_state_alignment` sees all state base geometry but explicitly
+excludes movable parts. `articulation_motion` and `articulation_fitting` receive only
+the generation/fitting state subset. Held-out state geometry is materialized only for
+`articulation_evaluation`. Stable part IDs map to state-local SAM track IDs. The
+selection boundary references exact candidate, assignment, fitted-model, and
+evaluation hashes; Scene IR consumes the fitted base Sim(3) and refined joints.
+
+ArtVIP and PartNet retrieval consume immutable local indices without network access.
+Official Particulate is a parallel research candidate source. Selection retains the
+measured links and adds validated visual links separately. The canonical result is a
+typed kinematic bundle plus `scene_ir/phase5c_scene.json`, not a simulation asset.
+# Phase 5C.2 identity boundary
+
+Articulated visual assets carry an explicit asset-to-candidate-base transform.
+The worker, selection artifact, and Scene IR consume the same hashed
+representation. Held-out evaluation records immutable per-view camera, depth,
+mask, link-coverage, and render identities.
+
+# Phase 5C.3 reference-world boundary
+
+Original measured anchors are immutable `reference_world` evidence on the object,
+while articulated links contain only candidate-base or link-local visuals. Scene IR
+and the typed kinematic bundle reference dedicated selected records by exact file
+hash, preventing nested-record identity ambiguity and measured double transforms.

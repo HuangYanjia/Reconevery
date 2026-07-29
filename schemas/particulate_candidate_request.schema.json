@@ -1,0 +1,239 @@
+{
+  "$defs": {
+    "ArticulatedLicenseRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_license": {
+          "minLength": 1,
+          "title": "Asset License",
+          "type": "string"
+        },
+        "checkpoint_license": {
+          "minLength": 1,
+          "title": "Checkpoint License",
+          "type": "string"
+        },
+        "code_license": {
+          "minLength": 1,
+          "title": "Code License",
+          "type": "string"
+        },
+        "commercial_review_status": {
+          "enum": [
+            "not_reviewed",
+            "research_only",
+            "approved_by_project_policy"
+          ],
+          "title": "Commercial Review Status",
+          "type": "string"
+        },
+        "dependency_licenses": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Dependency Licenses",
+          "type": "object"
+        },
+        "production_selectable": {
+          "title": "Production Selectable",
+          "type": "boolean"
+        },
+        "research_evaluation_allowed": {
+          "title": "Research Evaluation Allowed",
+          "type": "boolean"
+        },
+        "source_family": {
+          "$ref": "#/$defs/ArticulatedSourceFamily"
+        },
+        "training_data_notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Training Data Notes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_family",
+        "code_license",
+        "checkpoint_license",
+        "asset_license",
+        "commercial_review_status",
+        "research_evaluation_allowed",
+        "production_selectable"
+      ],
+      "title": "ArticulatedLicenseRecord",
+      "type": "object"
+    },
+    "ArticulatedSourceFamily": {
+      "enum": [
+        "measured_motion_analytic",
+        "artvip",
+        "partnet_mobility",
+        "particulate"
+      ],
+      "title": "ArticulatedSourceFamily",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "articulated_object_id": {
+      "minLength": 1,
+      "title": "Articulated Object Id",
+      "type": "string"
+    },
+    "candidate_id": {
+      "minLength": 1,
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "checkpoint_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Checkpoint Hashes",
+      "type": "object"
+    },
+    "checkpoint_repository": {
+      "const": "rayli/Particulate",
+      "title": "Checkpoint Repository",
+      "type": "string"
+    },
+    "checkpoint_revision": {
+      "const": "096167e661feb92a443535d15916323ec8a01613",
+      "title": "Checkpoint Revision",
+      "type": "string"
+    },
+    "generation_configuration": {
+      "additionalProperties": true,
+      "title": "Generation Configuration",
+      "type": "object"
+    },
+    "hypotheses_evaluated": {
+      "items": {
+        "enum": [
+          "+X",
+          "-X",
+          "+Y",
+          "-Y",
+          "+Z",
+          "-Z"
+        ],
+        "type": "string"
+      },
+      "title": "Hypotheses Evaluated",
+      "type": "array"
+    },
+    "hypothesis_selection_evidence": {
+      "minLength": 1,
+      "title": "Hypothesis Selection Evidence",
+      "type": "string"
+    },
+    "official_code_commit": {
+      "const": "dee37a75c449f324d9989993461ee09eaccc1686",
+      "title": "Official Code Commit",
+      "type": "string"
+    },
+    "official_repository": {
+      "const": "https://github.com/RuiningLi/particulate",
+      "title": "Official Repository",
+      "type": "string"
+    },
+    "output_directory": {
+      "title": "Output Directory",
+      "type": "string"
+    },
+    "runtime_model_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Runtime Model Hashes",
+      "type": "object"
+    },
+    "runtime_model_revisions": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{40}$",
+        "type": "string"
+      },
+      "title": "Runtime Model Revisions",
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "integer"
+    },
+    "source_backend": {
+      "minLength": 1,
+      "title": "Source Backend",
+      "type": "string"
+    },
+    "source_license": {
+      "$ref": "#/$defs/ArticulatedLicenseRecord"
+    },
+    "source_mesh_path": {
+      "title": "Source Mesh Path",
+      "type": "string"
+    },
+    "source_mesh_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Mesh Sha256",
+      "type": "string"
+    },
+    "source_representation": {
+      "minLength": 1,
+      "title": "Source Representation",
+      "type": "string"
+    },
+    "visual_completeness_status": {
+      "minLength": 1,
+      "title": "Visual Completeness Status",
+      "type": "string"
+    },
+    "working_frame_hypothesis": {
+      "enum": [
+        "+X",
+        "-X",
+        "+Y",
+        "-Y",
+        "+Z",
+        "-Z"
+      ],
+      "title": "Working Frame Hypothesis",
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidate_id",
+    "articulated_object_id",
+    "source_mesh_path",
+    "source_mesh_sha256",
+    "source_backend",
+    "source_representation",
+    "source_license",
+    "visual_completeness_status",
+    "official_repository",
+    "official_code_commit",
+    "checkpoint_repository",
+    "checkpoint_revision",
+    "checkpoint_hashes",
+    "runtime_model_revisions",
+    "runtime_model_hashes",
+    "working_frame_hypothesis",
+    "hypotheses_evaluated",
+    "hypothesis_selection_evidence",
+    "generation_configuration",
+    "output_directory",
+    "seed"
+  ],
+  "title": "ParticulateCandidateRequest",
+  "type": "object"
+}

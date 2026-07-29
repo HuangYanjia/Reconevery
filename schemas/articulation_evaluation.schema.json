@@ -1,0 +1,807 @@
+{
+  "$defs": {
+    "ArticulatedCandidateEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_alignment_state_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Accepted Alignment State Ids",
+          "type": "array"
+        },
+        "candidate_id": {
+          "minLength": 1,
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "candidate_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Candidate Sha256",
+          "type": "string"
+        },
+        "capture_state_count": {
+          "minimum": 1,
+          "title": "Capture State Count",
+          "type": "integer"
+        },
+        "failed_gates": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failed Gates",
+          "type": "array"
+        },
+        "fitted_model_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Fitted Model Sha256",
+          "type": "string"
+        },
+        "fitting_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Fitting Sha256",
+          "type": "string"
+        },
+        "heldout_evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Heldout Evidence Sha256",
+          "type": "string"
+        },
+        "heldout_q_objective_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Q Objective Path"
+        },
+        "heldout_q_objective_preview_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Q Objective Preview Path"
+        },
+        "heldout_q_objective_preview_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Q Objective Preview Sha256"
+        },
+        "heldout_q_objective_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Q Objective Sha256"
+        },
+        "heldout_state_validation_used": {
+          "title": "Heldout State Validation Used",
+          "type": "boolean"
+        },
+        "link_assignment_confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Link Assignment Confidence",
+          "type": "number"
+        },
+        "link_assignment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Link Assignment Sha256",
+          "type": "string"
+        },
+        "passed_hard_gates": {
+          "title": "Passed Hard Gates",
+          "type": "boolean"
+        },
+        "runtime_seconds": {
+          "minimum": 0,
+          "title": "Runtime Seconds",
+          "type": "number"
+        },
+        "selected_candidate_validation_level": {
+          "$ref": "#/$defs/ArticulationEvidenceLevel"
+        },
+        "state_evaluations": {
+          "items": {
+            "$ref": "#/$defs/ArticulationStateEvaluation"
+          },
+          "title": "State Evaluations",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/ArticulatedCandidateStatus"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "status",
+        "fitting_sha256",
+        "candidate_sha256",
+        "fitted_model_sha256",
+        "link_assignment_sha256",
+        "heldout_evidence_sha256",
+        "state_evaluations",
+        "passed_hard_gates",
+        "failed_gates",
+        "heldout_state_validation_used",
+        "capture_state_count",
+        "accepted_alignment_state_ids",
+        "selected_candidate_validation_level",
+        "link_assignment_confidence",
+        "runtime_seconds"
+      ],
+      "title": "ArticulatedCandidateEvaluation",
+      "type": "object"
+    },
+    "ArticulatedCandidateStatus": {
+      "enum": [
+        "accepted_articulated_visual_candidate",
+        "ambiguous_joint_type",
+        "ambiguous_link_assignment",
+        "prior_only_unvalidated",
+        "two_state_partially_validated",
+        "multi_state_validated",
+        "rejected_state_alignment",
+        "rejected_geometry_mismatch",
+        "rejected_joint_constraint",
+        "rejected_heldout_state",
+        "license_blocked",
+        "unresolved_no_candidate",
+        "backend_failed"
+      ],
+      "title": "ArticulatedCandidateStatus",
+      "type": "string"
+    },
+    "ArticulationEvidenceLevel": {
+      "enum": [
+        "single_state_prior_only",
+        "two_state_motion_supported",
+        "multi_state_heldout_available",
+        "multi_state_heldout_validated"
+      ],
+      "title": "ArticulationEvidenceLevel",
+      "type": "string"
+    },
+    "ArticulationHeldoutViewEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "camera_reconstruction_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Camera Reconstruction Sha256",
+          "type": "string"
+        },
+        "depth_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Path"
+        },
+        "depth_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Sha256"
+        },
+        "failure_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Reasons",
+          "type": "array"
+        },
+        "frame_id": {
+          "minLength": 1,
+          "title": "Frame Id",
+          "type": "string"
+        },
+        "missing_link_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing Link Ids",
+          "type": "array"
+        },
+        "raw_candidate_pixel_count": {
+          "minimum": 0,
+          "title": "Raw Candidate Pixel Count",
+          "type": "integer"
+        },
+        "render_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Render Path"
+        },
+        "render_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Render Sha256"
+        },
+        "rendered_link_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rendered Link Ids",
+          "type": "array"
+        },
+        "required_link_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Link Ids",
+          "type": "array"
+        },
+        "target_mask_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Target Mask Hashes",
+          "type": "object"
+        },
+        "target_mask_paths": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Target Mask Paths",
+          "type": "object"
+        },
+        "target_mask_pixel_count": {
+          "minimum": 0,
+          "title": "Target Mask Pixel Count",
+          "type": "integer"
+        },
+        "target_masks_complete": {
+          "title": "Target Masks Complete",
+          "type": "boolean"
+        },
+        "usable": {
+          "title": "Usable",
+          "type": "boolean"
+        },
+        "valid_depth": {
+          "title": "Valid Depth",
+          "type": "boolean"
+        },
+        "visible_candidate_pixel_count": {
+          "minimum": 0,
+          "title": "Visible Candidate Pixel Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "frame_id",
+        "camera_reconstruction_sha256",
+        "valid_depth",
+        "target_mask_paths",
+        "target_mask_hashes",
+        "target_masks_complete",
+        "required_link_ids",
+        "rendered_link_ids",
+        "missing_link_ids",
+        "usable",
+        "failure_reasons",
+        "raw_candidate_pixel_count",
+        "visible_candidate_pixel_count",
+        "target_mask_pixel_count"
+      ],
+      "title": "ArticulationHeldoutViewEvaluation",
+      "type": "object"
+    },
+    "ArticulationStateEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "axis_error_degrees": {
+          "anyOf": [
+            {
+              "maximum": 180,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Axis Error Degrees"
+        },
+        "base_depth_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Depth Residual"
+        },
+        "base_mask_iou": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Mask Iou"
+        },
+        "base_motion_arbitrary_units": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Motion Arbitrary Units"
+        },
+        "base_motion_scene_diagonals": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Motion Scene Diagonals"
+        },
+        "base_point_residual_arbitrary_units": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Point Residual Arbitrary Units"
+        },
+        "base_point_residual_scene_diagonals": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Point Residual Scene Diagonals"
+        },
+        "depth_inlier_fraction": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth Inlier Fraction"
+        },
+        "front_of_scene_violation_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Front Of Scene Violation Ratio"
+        },
+        "heldout": {
+          "title": "Heldout",
+          "type": "boolean"
+        },
+        "inferred_joint_positions": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Inferred Joint Positions",
+          "type": "object"
+        },
+        "joint_constraint_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Joint Constraint Residual"
+        },
+        "joint_position_source": {
+          "enum": [
+            "measured_geometry",
+            "interpolated",
+            "discrete_state"
+          ],
+          "title": "Joint Position Source",
+          "type": "string"
+        },
+        "joint_q_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Joint Q Residual"
+        },
+        "movable_part_mask_iou": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Movable Part Mask Iou"
+        },
+        "movable_point_residual_arbitrary_units": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Movable Point Residual Arbitrary Units"
+        },
+        "negative_space_violation_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Negative Space Violation Ratio"
+        },
+        "per_link_depth_residual": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Per Link Depth Residual",
+          "type": "object"
+        },
+        "pivot_residual_part_diagonals": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pivot Residual Part Diagonals"
+        },
+        "prismatic_orthogonal_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prismatic Orthogonal Residual"
+        },
+        "prismatic_rotation_leakage_degrees": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prismatic Rotation Leakage Degrees"
+        },
+        "render_paths": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Render Paths",
+          "type": "object"
+        },
+        "rendered_heldout_view_count": {
+          "minimum": 0,
+          "title": "Rendered Heldout View Count",
+          "type": "integer"
+        },
+        "requested_heldout_view_count": {
+          "minimum": 0,
+          "title": "Requested Heldout View Count",
+          "type": "integer"
+        },
+        "scene_diagonal_arbitrary_units": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scene Diagonal Arbitrary Units"
+        },
+        "state_id": {
+          "minLength": 1,
+          "title": "State Id",
+          "type": "string"
+        },
+        "usable_heldout_view_count": {
+          "minimum": 0,
+          "title": "Usable Heldout View Count",
+          "type": "integer"
+        },
+        "view_evaluations": {
+          "items": {
+            "$ref": "#/$defs/ArticulationHeldoutViewEvaluation"
+          },
+          "title": "View Evaluations",
+          "type": "array"
+        },
+        "views_with_target_masks": {
+          "minimum": 0,
+          "title": "Views With Target Masks",
+          "type": "integer"
+        },
+        "views_with_valid_depth": {
+          "minimum": 0,
+          "title": "Views With Valid Depth",
+          "type": "integer"
+        },
+        "whole_object_mask_iou": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Whole Object Mask Iou"
+        }
+      },
+      "required": [
+        "state_id",
+        "heldout",
+        "requested_heldout_view_count",
+        "usable_heldout_view_count",
+        "rendered_heldout_view_count",
+        "views_with_target_masks",
+        "views_with_valid_depth",
+        "per_link_depth_residual",
+        "inferred_joint_positions",
+        "joint_position_source"
+      ],
+      "title": "ArticulationStateEvaluation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "candidate_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Candidate Manifest Sha256",
+      "type": "string"
+    },
+    "candidate_structures_frozen_before_heldout": {
+      "const": true,
+      "default": true,
+      "title": "Candidate Structures Frozen Before Heldout",
+      "type": "boolean"
+    },
+    "evaluations": {
+      "items": {
+        "$ref": "#/$defs/ArticulatedCandidateEvaluation"
+      },
+      "title": "Evaluations",
+      "type": "array"
+    },
+    "evidence_split_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Evidence Split Sha256",
+      "type": "string"
+    },
+    "fitting_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Fitting Manifest Sha256",
+      "type": "string"
+    },
+    "link_assignments_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Link Assignments Sha256",
+      "type": "string"
+    },
+    "measured_motion_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Measured Motion Sha256",
+      "type": "string"
+    },
+    "measured_states_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Measured States Manifest Sha256",
+      "type": "string"
+    },
+    "peak_gpu_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Gpu Memory Bytes"
+    },
+    "peak_host_memory_bytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Peak Host Memory Bytes"
+    },
+    "request_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Request Sha256",
+      "type": "string"
+    },
+    "runtime_seconds": {
+      "minimum": 0,
+      "title": "Runtime Seconds",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "state_alignment_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "State Alignment Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "request_sha256",
+    "fitting_manifest_sha256",
+    "link_assignments_sha256",
+    "candidate_manifest_sha256",
+    "evidence_split_sha256",
+    "measured_states_manifest_sha256",
+    "state_alignment_sha256",
+    "measured_motion_sha256",
+    "evaluations",
+    "runtime_seconds"
+  ],
+  "title": "ArticulatedEvaluationManifest",
+  "type": "object"
+}

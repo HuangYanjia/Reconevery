@@ -192,3 +192,25 @@ Phase 5B adapters are `completion_evidence_package`,
 `completion_candidate_evaluation`, `completion_candidate_selection`, and
 `phase5b_consistency_validation`. Heavy generation, registration, and rendering live
 only under `workers/` or Docker.
+
+Phase 5C adapters are `articulation_capture`, `articulation_state_alignment`,
+`articulation_motion`, `artvip_retrieval`, `partnet_retrieval`,
+`particulate_candidates`, `articulation_fitting`, `articulation_evaluation`,
+`articulation_selection`, and `phase5c_consistency_validation`. Heavy Sim(3), point
+registration, official Particulate inference, and rendering are isolated in worker
+packages. Local and Docker workers receive only attempt workspaces. Articulated
+retrieval performs no runtime downloads. `articulation preflight-capture` checks real
+Phase 5A state lineages, stable-part mappings, masks, dense depth, registered views,
+reference state, and held-out feasibility before worker execution.
+# Phase 5C.2 articulation hardening
+
+The articulation fitting and evaluation adapters verify candidate visual hashes
+and spaces, bind evaluations to exact fitted-model and evidence digests, and
+reject held-out views with incomplete mapped-link coverage.
+
+# Phase 5C.3 selected artifacts
+
+The selection adapter keeps Phase 5A anchors in `reference_world`, writes dedicated
+selected candidate, fit, assignment, evaluation, identity, and bundle records, and
+publishes each record as a StageResult output. The consistency adapter re-hashes the
+exact files and rejects reference-world evidence inside transformed candidate links.

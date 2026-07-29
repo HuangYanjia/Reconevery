@@ -1,0 +1,27 @@
+seed: 42
+stages:
+  particulate_candidates:
+    adapter:
+      name: particulate_candidates
+      env: [PATH, HOME, TMPDIR, HF_HUB_OFFLINE]
+      timeout_s: 1800
+      required_gpu_memory_gb: 16
+      config:
+        execution_mode: docker
+        worker_module: particulate_worker
+        docker_image: reconevery/particulate:phase5c
+        docker_model_mounts:
+          /absolute/path/to/official/particulate: /opt/particulate
+          /absolute/path/to/particulate-cache: /models/particulate
+        official_repository_path: /opt/particulate
+        checkpoint_path: /models/particulate/model.pt
+        partfield_checkpoint_path: /models/particulate/model_objaverse.ckpt
+        checkpoint_hashes:
+          model.pt: ad6f14067dadf85335119199b94e8249401376d5700c9b627c3608594ea99b5c
+        runtime_model_revisions:
+          mikaelaangel/partfield-ckpt: 90b9b1e08b6a12fdcb6ee26b4854a26235e1765f
+        runtime_model_hashes:
+          model_objaverse.ckpt: 463efc8a3afd3913142aa025e0125c00f16ef452b8de6a132ebe32bbe7877ee4
+        source_meshes:
+          cabinet_visual: /absolute/path/to/cabinet.glb
+    depends_on: [articulation_motion, artvip_retrieval, partnet_retrieval]

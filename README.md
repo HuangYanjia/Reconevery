@@ -279,3 +279,33 @@ mask/depth evidence, and selects with an explicit license policy.
 Selected assets remain non-simulation-ready. Articulation, collision, physical
 properties, metric scale, gravity alignment, and simulator export are not included.
 See `docs/phase_5b_plan.md` and `docs/phase_5b_acceptance.md`.
+
+## Phase 5C: articulated visual hypotheses
+
+Phase 5C consumes multiple independently reconstructed static states. It aligns
+states with static base/environment evidence, keeps movable parts out of that
+alignment, estimates measured fixed/prismatic/revolute motion, and evaluates local
+ArtVIP, research-only PartNet-Mobility, and official Particulate priors. Candidate
+structure is frozen before held-out-state evaluation.
+Phase 5C.2 records each articulated visual's coordinate space and content
+identity, applies joint-axis sign exactly once, and requires complete per-link
+held-out render provenance before a candidate can pass.
+Phase 5C.3 keeps original measured anchors explicitly in `reference_world`, limits
+transformed links to candidate/link-local visuals, and binds Scene IR to dedicated
+selected records by their exact file hashes.
+
+```bash
+uv run recon2sim articulation capture-template \
+  --object-id cabinet_0001 --states closed,half_open,open
+uv run recon2sim articulation preflight-capture \
+  --capture-manifest configs/articulation_capture.yaml \
+  --part-manifest configs/articulation_parts/cabinet_drawer.yaml
+uv run recon2sim run --input examples/tabletop \
+  --config configs/phase5c_e2e_fake.yaml --run-dir runs/phase5c_fake
+uv run recon2sim articulation inspect runs/phase5c_fake
+uv run recon2sim validation verify-phase5c runs/phase5c_fake
+```
+
+Outputs remain in arbitrary, unoriented COLMAP coordinates. Preview URDFs contain
+visuals only. Collision, dynamics, metric scale, gravity alignment, and production
+simulator export are not implemented.

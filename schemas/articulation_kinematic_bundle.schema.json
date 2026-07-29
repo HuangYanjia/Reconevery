@@ -1,0 +1,644 @@
+{
+  "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
+    "ArticulatedJointType": {
+      "enum": [
+        "fixed",
+        "prismatic",
+        "revolute",
+        "continuous_candidate",
+        "unknown"
+      ],
+      "title": "ArticulatedJointType",
+      "type": "string"
+    },
+    "ArticulatedLicenseRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_license": {
+          "minLength": 1,
+          "title": "Asset License",
+          "type": "string"
+        },
+        "checkpoint_license": {
+          "minLength": 1,
+          "title": "Checkpoint License",
+          "type": "string"
+        },
+        "code_license": {
+          "minLength": 1,
+          "title": "Code License",
+          "type": "string"
+        },
+        "commercial_review_status": {
+          "enum": [
+            "not_reviewed",
+            "research_only",
+            "approved_by_project_policy"
+          ],
+          "title": "Commercial Review Status",
+          "type": "string"
+        },
+        "dependency_licenses": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Dependency Licenses",
+          "type": "object"
+        },
+        "production_selectable": {
+          "title": "Production Selectable",
+          "type": "boolean"
+        },
+        "research_evaluation_allowed": {
+          "title": "Research Evaluation Allowed",
+          "type": "boolean"
+        },
+        "source_family": {
+          "$ref": "#/$defs/ArticulatedSourceFamily"
+        },
+        "training_data_notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Training Data Notes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_family",
+        "code_license",
+        "checkpoint_license",
+        "asset_license",
+        "commercial_review_status",
+        "research_evaluation_allowed",
+        "production_selectable"
+      ],
+      "title": "ArticulatedLicenseRecord",
+      "type": "object"
+    },
+    "ArticulatedSourceFamily": {
+      "enum": [
+        "measured_motion_analytic",
+        "artvip",
+        "partnet_mobility",
+        "particulate"
+      ],
+      "title": "ArticulatedSourceFamily",
+      "type": "string"
+    },
+    "ArticulationEvidenceLevel": {
+      "enum": [
+        "single_state_prior_only",
+        "two_state_motion_supported",
+        "multi_state_heldout_available",
+        "multi_state_heldout_validated"
+      ],
+      "title": "ArticulationEvidenceLevel",
+      "type": "string"
+    },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
+      "type": "string"
+    },
+    "MeasuredJointHypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "axis": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Axis"
+        },
+        "axis_consistency_degrees": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Axis Consistency Degrees"
+        },
+        "candidate_limit_lower": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Limit Lower"
+        },
+        "candidate_limit_upper": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Limit Upper"
+        },
+        "child_part_id": {
+          "minLength": 1,
+          "title": "Child Part Id",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "fixed_translation_residual_arbitrary_units": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed Translation Residual Arbitrary Units"
+        },
+        "fixed_translation_residual_part_diagonals": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed Translation Residual Part Diagonals"
+        },
+        "joint_id": {
+          "minLength": 1,
+          "title": "Joint Id",
+          "type": "string"
+        },
+        "joint_type": {
+          "$ref": "#/$defs/ArticulatedJointType"
+        },
+        "limit_source": {
+          "default": "observed_range",
+          "enum": [
+            "observed_range",
+            "candidate_prior",
+            "unknown"
+          ],
+          "title": "Limit Source",
+          "type": "string"
+        },
+        "normalization_part_diagonal": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Normalization Part Diagonal"
+        },
+        "observed_position_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Position Max"
+        },
+        "observed_position_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Position Min"
+        },
+        "orthogonal_residual": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Orthogonal Residual"
+        },
+        "parent_part_id": {
+          "minLength": 1,
+          "title": "Parent Part Id",
+          "type": "string"
+        },
+        "pivot": {
+          "anyOf": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pivot"
+        },
+        "pivot_residual_arbitrary_units": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pivot Residual Arbitrary Units"
+        },
+        "pivot_residual_part_diagonals": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pivot Residual Part Diagonals"
+        },
+        "rotation_leakage_degrees": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rotation Leakage Degrees"
+        },
+        "states": {
+          "items": {
+            "$ref": "#/$defs/MeasuredJointState"
+          },
+          "title": "States",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "joint_id",
+        "parent_part_id",
+        "child_part_id",
+        "joint_type",
+        "states",
+        "confidence"
+      ],
+      "title": "MeasuredJointHypothesis",
+      "type": "object"
+    },
+    "MeasuredJointState": {
+      "additionalProperties": false,
+      "properties": {
+        "part_coverage": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Part Coverage",
+          "type": "number"
+        },
+        "part_registration_median_residual": {
+          "minimum": 0,
+          "title": "Part Registration Median Residual",
+          "type": "number"
+        },
+        "position": {
+          "title": "Position",
+          "type": "number"
+        },
+        "state_confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "State Confidence",
+          "type": "number"
+        },
+        "state_id": {
+          "minLength": 1,
+          "title": "State Id",
+          "type": "string"
+        },
+        "supporting_point_count": {
+          "minimum": 0,
+          "title": "Supporting Point Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "state_id",
+        "position",
+        "part_registration_median_residual",
+        "part_coverage",
+        "supporting_point_count",
+        "state_confidence"
+      ],
+      "title": "MeasuredJointState",
+      "type": "object"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
+    },
+    "SelectedArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "title": "SelectedArtifactReference",
+      "type": "object"
+    },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "articulated_object_id": {
+      "minLength": 1,
+      "title": "Articulated Object Id",
+      "type": "string"
+    },
+    "base_sim3": {
+      "items": {
+        "type": "number"
+      },
+      "maxItems": 16,
+      "minItems": 16,
+      "title": "Base Sim3",
+      "type": "array"
+    },
+    "candidate_id": {
+      "minLength": 1,
+      "title": "Candidate Id",
+      "type": "string"
+    },
+    "collision_ready": {
+      "const": false,
+      "default": false,
+      "title": "Collision Ready",
+      "type": "boolean"
+    },
+    "coordinate_convention": {
+      "$ref": "#/$defs/CoordinateConvention"
+    },
+    "evidence_level": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
+    "fitted_kinematic_model": {
+      "$ref": "#/$defs/SelectedArtifactReference"
+    },
+    "fitting_state_q": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "type": "number"
+        },
+        "type": "object"
+      },
+      "title": "Fitting State Q",
+      "type": "object"
+    },
+    "heldout_inferred_q": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "type": "number"
+        },
+        "type": "object"
+      },
+      "title": "Heldout Inferred Q",
+      "type": "object"
+    },
+    "license_record": {
+      "$ref": "#/$defs/ArticulatedLicenseRecord"
+    },
+    "measured_joint_hypotheses": {
+      "items": {
+        "$ref": "#/$defs/MeasuredJointHypothesis"
+      },
+      "title": "Measured Joint Hypotheses",
+      "type": "array"
+    },
+    "physical_validation": {
+      "const": "not_implemented",
+      "default": "not_implemented",
+      "title": "Physical Validation",
+      "type": "string"
+    },
+    "scale_status": {
+      "const": "scale_ambiguous",
+      "default": "scale_ambiguous",
+      "title": "Scale Status",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.2.0",
+      "default": "0.2.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_candidate": {
+      "$ref": "#/$defs/SelectedArtifactReference"
+    },
+    "selected_evaluation": {
+      "$ref": "#/$defs/SelectedArtifactReference"
+    },
+    "selected_identity_manifest": {
+      "$ref": "#/$defs/SelectedArtifactReference"
+    },
+    "selected_link_assignment": {
+      "$ref": "#/$defs/SelectedArtifactReference"
+    },
+    "sim_ready": {
+      "const": false,
+      "default": false,
+      "title": "Sim Ready",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "articulated_object_id",
+    "candidate_id",
+    "selected_identity_manifest",
+    "selected_candidate",
+    "fitted_kinematic_model",
+    "selected_link_assignment",
+    "selected_evaluation",
+    "base_sim3",
+    "fitting_state_q",
+    "heldout_inferred_q",
+    "license_record",
+    "measured_joint_hypotheses",
+    "evidence_level",
+    "coordinate_convention"
+  ],
+  "title": "ArticulatedKinematicBundle",
+  "type": "object"
+}

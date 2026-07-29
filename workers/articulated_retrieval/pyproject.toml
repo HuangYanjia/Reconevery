@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reconevery-articulated-retrieval-worker"
+version = "0.1.0"
+description = "Offline license-aware articulated asset retrieval"
+requires-python = ">=3.10,<3.13"
+dependencies = []
+
+[project.scripts]
+articulated-retrieval-worker = "articulated_retrieval_worker.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["articulated_retrieval_worker*"]

@@ -1,0 +1,28 @@
+name: Particulate Docker (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build pinned image without checkpoints
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/particulate/Dockerfile
+          push: false
+          tags: reconevery/particulate:phase5c
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Verify pinned official source
+        run: |
+          docker run --rm --entrypoint git reconevery/particulate:phase5c \
+            -C /opt/particulate rev-parse HEAD | \
+            grep -Fx dee37a75c449f324d9989993461ee09eaccc1686

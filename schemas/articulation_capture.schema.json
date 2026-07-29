@@ -1,0 +1,199 @@
+{
+  "$defs": {
+    "ArticulationEvidenceLevel": {
+      "enum": [
+        "single_state_prior_only",
+        "two_state_motion_supported",
+        "multi_state_heldout_available",
+        "multi_state_heldout_validated"
+      ],
+      "title": "ArticulationEvidenceLevel",
+      "type": "string"
+    },
+    "ArticulationStateRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "camera_evidence_path": {
+          "title": "Camera Evidence Path",
+          "type": "string"
+        },
+        "camera_reconstruction_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Camera Reconstruction Sha256",
+          "type": "string"
+        },
+        "dense_depth_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Dense Depth Manifest Sha256",
+          "type": "string"
+        },
+        "dense_map_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Dense Map Hashes",
+          "type": "object"
+        },
+        "depth_evidence_path": {
+          "title": "Depth Evidence Path",
+          "type": "string"
+        },
+        "frame_sequence_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Frame Sequence Digest",
+          "type": "string"
+        },
+        "ingest_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Ingest Manifest Sha256",
+          "type": "string"
+        },
+        "measured_geometry_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Measured Geometry Sha256",
+          "type": "string"
+        },
+        "measured_part_cloud_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Measured Part Cloud Hashes",
+          "type": "object"
+        },
+        "part_mask_hashes": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Part Mask Hashes",
+          "type": "object"
+        },
+        "part_track_ids": {
+          "additionalProperties": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "propertyNames": {
+            "minLength": 1
+          },
+          "title": "Part Track Ids",
+          "type": "object"
+        },
+        "phase5a_consistency_passed": {
+          "title": "Phase5A Consistency Passed",
+          "type": "boolean"
+        },
+        "registered_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Registered Frame Ids",
+          "type": "array"
+        },
+        "run_dir": {
+          "minLength": 1,
+          "title": "Run Dir",
+          "type": "string"
+        },
+        "segmentation_evidence_path": {
+          "title": "Segmentation Evidence Path",
+          "type": "string"
+        },
+        "segmentation_tracking_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Segmentation Tracking Sha256",
+          "type": "string"
+        },
+        "semantic_state_label": {
+          "minLength": 1,
+          "title": "Semantic State Label",
+          "type": "string"
+        },
+        "state_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+          "title": "State Id",
+          "type": "string"
+        },
+        "undistortion_evidence_path": {
+          "title": "Undistortion Evidence Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state_id",
+        "run_dir",
+        "semantic_state_label",
+        "part_track_ids",
+        "phase5a_consistency_passed",
+        "ingest_manifest_sha256",
+        "frame_sequence_digest",
+        "camera_reconstruction_sha256",
+        "segmentation_tracking_sha256",
+        "dense_depth_manifest_sha256",
+        "measured_geometry_sha256",
+        "part_mask_hashes",
+        "measured_part_cloud_hashes",
+        "registered_frame_ids",
+        "camera_evidence_path",
+        "segmentation_evidence_path",
+        "undistortion_evidence_path",
+        "depth_evidence_path",
+        "dense_map_hashes"
+      ],
+      "title": "ArticulationStateRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "articulated_object_id": {
+      "minLength": 1,
+      "title": "Articulated Object Id",
+      "type": "string"
+    },
+    "capture_evidence_tier": {
+      "$ref": "#/$defs/ArticulationEvidenceLevel"
+    },
+    "capture_state_count": {
+      "minimum": 1,
+      "title": "Capture State Count",
+      "type": "integer"
+    },
+    "prompt_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Prompt Manifest Sha256",
+      "type": "string"
+    },
+    "reference_state_id": {
+      "minLength": 1,
+      "title": "Reference State Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.2.0",
+      "default": "0.2.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "states": {
+      "items": {
+        "$ref": "#/$defs/ArticulationStateRecord"
+      },
+      "minItems": 1,
+      "title": "States",
+      "type": "array"
+    }
+  },
+  "required": [
+    "articulated_object_id",
+    "reference_state_id",
+    "states",
+    "prompt_manifest_sha256",
+    "capture_state_count",
+    "capture_evidence_tier"
+  ],
+  "title": "ArticulationCaptureManifest",
+  "type": "object"
+}

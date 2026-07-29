@@ -1,0 +1,117 @@
+{
+  "$defs": {
+    "ArticulatedEligibilityRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "articulated_object_id": {
+          "minLength": 1,
+          "title": "Articulated Object Id",
+          "type": "string"
+        },
+        "asset_type_hint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssetType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "explicitly_overridden": {
+          "default": false,
+          "title": "Explicitly Overridden",
+          "type": "boolean"
+        },
+        "movable_part_count": {
+          "minimum": 0,
+          "title": "Movable Part Count",
+          "type": "integer"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "semantic_label": {
+          "minLength": 1,
+          "title": "Semantic Label",
+          "type": "string"
+        },
+        "state_count": {
+          "minimum": 0,
+          "title": "State Count",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/$defs/ArticulatedEligibilityStatus"
+        }
+      },
+      "required": [
+        "articulated_object_id",
+        "semantic_label",
+        "state_count",
+        "movable_part_count",
+        "status",
+        "reason"
+      ],
+      "title": "ArticulatedEligibilityRecord",
+      "type": "object"
+    },
+    "ArticulatedEligibilityStatus": {
+      "enum": [
+        "eligible_multi_state",
+        "eligible_prior_only",
+        "deferred_insufficient_parts",
+        "deferred_insufficient_states",
+        "deferred_deformable",
+        "deferred_human",
+        "deferred_complex_mechanism",
+        "explicit_override"
+      ],
+      "title": "ArticulatedEligibilityStatus",
+      "type": "string"
+    },
+    "AssetType": {
+      "enum": [
+        "unclassified",
+        "static_structure",
+        "rigid",
+        "articulated",
+        "deformable",
+        "fluid_or_particle",
+        "ignore"
+      ],
+      "title": "AssetType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "phase5b_selection_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Phase5B Selection Sha256",
+      "type": "string"
+    },
+    "records": {
+      "items": {
+        "$ref": "#/$defs/ArticulatedEligibilityRecord"
+      },
+      "title": "Records",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "0.1.0",
+      "default": "0.1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "phase5b_selection_sha256",
+    "records"
+  ],
+  "title": "ArticulatedEligibilityArtifact",
+  "type": "object"
+}

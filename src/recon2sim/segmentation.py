@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from recon2sim.artifacts import (
     AnchorFrameDiagnostic,
@@ -512,6 +512,87 @@ def _same_deduplication_group(first: _CandidateTrack, second: _CandidateTrack) -
     )
 
 
+def _apply_prompt_mask_exclusions(
+    candidate: _CandidateTrack,
+    candidates: list[_CandidateTrack],
+    frame_manifest: IngestManifest,
+    config: TrackPostprocessingConfig,
+) -> tuple[_CandidateTrack | None, DroppedTrackDiagnostic | None]:
+    excluded_prompt_ids = set(candidate.prompt.exclude_prompt_ids)
+    if not excluded_prompt_ids:
+        return candidate, None
+    exclusion_by_frame: dict[str, Image.Image] = {}
+    for exclusion in sorted(candidates, key=lambda item: item.sort_key):
+        if exclusion.prompt.prompt_id not in excluded_prompt_ids:
+            continue
+        for observation in exclusion.observations:
+            frame_id = observation.raw.frame_id
+            existing = exclusion_by_frame.get(frame_id)
+            exclusion_by_frame[frame_id] = (
+                observation.binary_mask.copy()
+                if existing is None
+                else ImageChops.lighter(existing, observation.binary_mask)
+            )
+    frame_by_id = {frame.frame_id: frame for frame in frame_manifest.frames}
+    observations: list[_CandidateObservation] = []
+    for observation in candidate.observations:
+        excluded = exclusion_by_frame.get(observation.raw.frame_id)
+        mask = (
+            observation.binary_mask.copy()
+            if excluded is None
+            else ImageChops.subtract(observation.binary_mask, excluded)
+        )
+        if mask.getbbox() is None:
+            continue
+        bbox, area, centroid = _bbox_and_centroid(mask)
+        if area < config.min_mask_area_pixels:
+            continue
+        frame = frame_by_id[observation.raw.frame_id]
+        observations.append(
+            _CandidateObservation(
+                raw=observation.raw,
+                frame_index=observation.frame_index,
+                binary_mask=mask,
+                bbox_xywh=bbox,
+                area=area,
+                area_ratio=area / (frame.width * frame.height),
+                centroid=centroid,
+                camera_pose_available=observation.camera_pose_available,
+            )
+        )
+    if len(observations) < config.min_track_observations:
+        return None, _drop(
+            candidate.raw_model_object_id,
+            candidate.semantic_label,
+            candidate.prompt.prompt_id,
+            "mask_exclusion_short_track",
+            "prompt mask exclusions removed too many observations",
+        )
+    coverage = len(observations) / len(frame_manifest.frames)
+    if coverage < config.min_track_coverage:
+        return None, _drop(
+            candidate.raw_model_object_id,
+            candidate.semantic_label,
+            candidate.prompt.prompt_id,
+            "mask_exclusion_insufficient_coverage",
+            f"post-exclusion coverage {coverage:.6f} is below "
+            f"min_track_coverage={config.min_track_coverage}",
+        )
+    return (
+        _CandidateTrack(
+            raw_model_object_id=candidate.raw_model_object_id,
+            prompt=candidate.prompt,
+            semantic_label=candidate.semantic_label,
+            normalized_label=candidate.normalized_label,
+            observations=observations,
+            mean_score=candidate.mean_score,
+            minimum_score=candidate.minimum_score,
+            coverage=coverage,
+        ),
+        None,
+    )
+
+
 def _tracks_duplicate(
     first: _CandidateTrack,
     second: _CandidateTrack,
@@ -563,6 +644,20 @@ def canonicalize_worker_result(
             dropped.append(diagnostic)
         if candidate is not None:
             candidates.append(candidate)
+
+    source_candidates = candidates
+    candidates = []
+    for candidate in source_candidates:
+        composed, diagnostic = _apply_prompt_mask_exclusions(
+            candidate,
+            source_candidates,
+            frame_manifest,
+            config,
+        )
+        if diagnostic is not None:
+            dropped.append(diagnostic)
+        if composed is not None:
+            candidates.append(composed)
 
     candidates.sort(key=lambda item: (-item.mean_score, item.sort_key))
     kept: list[_CandidateTrack] = []

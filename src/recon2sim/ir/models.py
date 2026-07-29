@@ -290,11 +290,26 @@ class GeometryAsset(StrictModel):
             "partial_observation_supported",
             "partial_measured",
             "complete_visual_candidate",
+            "articulated_visual_candidate",
         ]
         | None
     ) = None
-    completion_status: Literal["not_completed", "selected_by_observation_validation"] | None = None
-    asset_role: Literal["measured_anchor", "visual_completion_candidate"] | None = None
+    completion_status: (
+        Literal[
+            "not_completed",
+            "selected_by_observation_validation",
+            "selected_by_multi_state_validation",
+        ]
+        | None
+    ) = None
+    asset_role: (
+        Literal[
+            "measured_anchor",
+            "visual_completion_candidate",
+            "articulated_visual_link",
+        ]
+        | None
+    ) = None
     observation_grounded: bool | None = None
     physical_validation: Literal["not_implemented"] | None = None
     collision_ready: bool | None = None
@@ -312,7 +327,31 @@ class GeometryAsset(StrictModel):
         ]
         | None
     ) = None
+    articulated_asset_space: Literal["reference_world", "candidate_base", "link_local"] | None = (
+        None
+    )
+    asset_to_candidate_base_transform: Transform | None = None
+    content_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     provenance: ProvenanceRecord
+
+    @model_validator(mode="after")
+    def articulated_asset_space_is_explicit(self) -> Self:
+        if self.articulated_asset_space is None:
+            if self.asset_to_candidate_base_transform is not None:
+                raise ValueError(
+                    "candidate-base transform requires an explicit articulated asset space"
+                )
+            return self
+        if self.content_sha256 is None:
+            raise ValueError("articulated assets require an exact content SHA-256")
+        if self.articulated_asset_space == "reference_world":
+            if self.asset_to_candidate_base_transform is not None:
+                raise ValueError(
+                    "reference-world evidence cannot declare a candidate-base transform"
+                )
+        elif self.asset_to_candidate_base_transform is None:
+            raise ValueError("candidate and link-local assets require a candidate-base transform")
+        return self
 
     @field_validator("uri", "alignment_transform_path", "license_record_path")
     @classmethod
@@ -373,7 +412,11 @@ class Joint(StrictModel):
     child_link_id: Identifier
     joint_type: Literal["fixed", "revolute", "prismatic"]
     axis_xyz: tuple[float, float, float] = (1.0, 0.0, 0.0)
+    origin_xyz: tuple[float, float, float] | None = None
     limits: tuple[float, float] | None = None
+    observed_position_range: tuple[float, float] | None = None
+    observed_state_positions: dict[str, float] = Field(default_factory=dict)
+    limit_source: Literal["observed_range", "candidate_prior", "unknown"] | None = None
 
     @field_validator("axis_xyz")
     @classmethod
@@ -382,7 +425,7 @@ class Joint(StrictModel):
             raise ValueError("joint axis must be non-zero")
         return value
 
-    @field_validator("limits")
+    @field_validator("limits", "observed_position_range")
     @classmethod
     def ordered_limits(cls, value: tuple[float, float] | None) -> tuple[float, float] | None:
         if value is not None and value[0] > value[1]:
@@ -394,9 +437,70 @@ class Articulation(StrictModel):
     articulation_id: Identifier
     links: Annotated[list[Link], Field(min_length=1)]
     joints: list[Joint] = Field(default_factory=list)
+    evidence_level: (
+        Literal[
+            "single_state_prior_only",
+            "two_state_motion_supported",
+            "multi_state_heldout_available",
+            "multi_state_heldout_validated",
+        ]
+        | None
+    ) = None
+    validation_artifact_path: str | None = None
+    selected_candidate_artifact_path: str | None = None
+    selected_candidate_artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    fitting_artifact_path: str | None = None
+    fitting_artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    link_assignment_artifact_path: str | None = None
+    link_assignment_artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    evaluation_artifact_path: str | None = None
+    evaluation_artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    selected_identity_manifest_path: str | None = None
+    selected_identity_manifest_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    kinematic_bundle_path: str | None = None
+    kinematic_bundle_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    selected_candidate_id: str | None = None
+    physical_validation: Literal["not_implemented"] | None = None
+    collision_ready: bool | None = None
+    sim_ready: bool | None = None
+
+    @field_validator(
+        "validation_artifact_path",
+        "selected_candidate_artifact_path",
+        "fitting_artifact_path",
+        "link_assignment_artifact_path",
+        "evaluation_artifact_path",
+        "selected_identity_manifest_path",
+        "kinematic_bundle_path",
+    )
+    @classmethod
+    def relative_articulation_validation_path(cls, value: str | None) -> str | None:
+        return _relative_path(value) if value is not None else None
 
     @model_validator(mode="after")
     def valid_link_graph(self) -> Self:
+        for name, path, digest in (
+            (
+                "selected candidate",
+                self.selected_candidate_artifact_path,
+                self.selected_candidate_artifact_sha256,
+            ),
+            ("fitting", self.fitting_artifact_path, self.fitting_artifact_sha256),
+            (
+                "link assignment",
+                self.link_assignment_artifact_path,
+                self.link_assignment_artifact_sha256,
+            ),
+            ("evaluation", self.evaluation_artifact_path, self.evaluation_artifact_sha256),
+            (
+                "selected identity",
+                self.selected_identity_manifest_path,
+                self.selected_identity_manifest_sha256,
+            ),
+            ("kinematic bundle", self.kinematic_bundle_path, self.kinematic_bundle_sha256),
+        ):
+            if (path is None) != (digest is None):
+                raise ValueError(f"{name} artifact path and SHA-256 must be paired")
         link_ids = [link.link_id for link in self.links]
         duplicate_links = _duplicates(link_ids)
         duplicate_joints = _duplicates([joint.joint_id for joint in self.joints])
@@ -431,10 +535,18 @@ class ObjectInstance(StrictModel):
             "partial_observation_supported",
             "partial_measured",
             "complete_visual_candidate",
+            "articulated_visual_candidate",
         ]
         | None
     ) = None
-    completion_status: Literal["not_completed", "selected_by_observation_validation"] | None = None
+    completion_status: (
+        Literal[
+            "not_completed",
+            "selected_by_observation_validation",
+            "selected_by_multi_state_validation",
+        ]
+        | None
+    ) = None
     observation_grounded: bool | None = None
     physical_validation: Literal["not_implemented"] | None = None
     sim_ready: bool | None = None
@@ -475,7 +587,15 @@ class ValidationReport(StrictModel):
 
 
 class SceneIR(StrictModel):
-    schema_version: Literal["0.1.0", "0.1.1", "0.1.2", "0.1.3", "0.1.4", "0.1.5"] = "0.1.1"
+    schema_version: Literal[
+        "0.1.0",
+        "0.1.1",
+        "0.1.2",
+        "0.1.3",
+        "0.1.4",
+        "0.1.5",
+        "0.1.6",
+    ] = "0.1.1"
     metadata: SceneMetadata
     cameras: list[Camera] = Field(default_factory=list)
     frames: list[FrameObservation] = Field(default_factory=list)
