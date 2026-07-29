@@ -51,6 +51,7 @@ from recon2sim.artifacts import (
     EndToEndConsistencyCheck,
     FittedArticulatedJoint,
     FittedArticulatedKinematicModel,
+    HeldoutQObjectiveAudit,
     MeasuredPartMotionArtifact,
     Phase5CConsistencyReport,
     SelectedArtifactReference,
@@ -316,7 +317,7 @@ def _preview_urdf_asset_transforms_match(
 
 class ArticulationSelectionAdapter:
     name = "articulation_selection"
-    version = "0.4.0"
+    version = "0.5.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         candidates = ArticulatedCandidateManifest.model_validate_json(
@@ -1459,7 +1460,7 @@ class ArticulationSelectionAdapter:
 
 class Phase5CConsistencyValidationAdapter:
     name = "phase5c_consistency_validation"
-    version = "0.4.0"
+    version = "0.5.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         geometry = ArticulatedPartStateGeometryManifest.model_validate_json(
@@ -1476,6 +1477,11 @@ class Phase5CConsistencyValidationAdapter:
             context.canonical_path("reconstruction", "articulation", "selection.json").read_text(
                 encoding="utf-8"
             )
+        )
+        evaluation = ArticulatedEvaluationManifest.model_validate_json(
+            context.canonical_path(
+                "reconstruction", "articulation", "evaluation_manifest.json"
+            ).read_text(encoding="utf-8")
         )
         specs = [
             InputSpec(
@@ -1547,6 +1553,21 @@ class Phase5CConsistencyValidationAdapter:
             for link in candidate.links
             for path in link.visual_asset_paths
         )
+        for item in evaluation.evaluations:
+            if item.heldout_q_objective_path is not None:
+                specs.append(
+                    InputSpec(
+                        item.heldout_q_objective_path,
+                        "heldout_q_objective_audit",
+                    )
+                )
+            if item.heldout_q_objective_preview_path is not None:
+                specs.append(
+                    InputSpec(
+                        item.heldout_q_objective_preview_path,
+                        "articulation_preview",
+                    )
+                )
         for selected in selection.objects:
             for path, kind in (
                 (selected.selected_candidate_path, "selected_articulated_candidate"),
@@ -2163,6 +2184,76 @@ class Phase5CConsistencyValidationAdapter:
                 if state.heldout
             ),
             "passing candidates have rendered target masks and dense depth on held-out views",
+        )
+        check(
+            "complete_requested_heldout_render_coverage",
+            all(
+                state.requested_heldout_view_count > 0
+                and state.usable_heldout_view_count == state.requested_heldout_view_count
+                and state.rendered_heldout_view_count == state.requested_heldout_view_count
+                and state.views_with_target_masks == state.requested_heldout_view_count
+                and state.views_with_valid_depth == state.requested_heldout_view_count
+                and all(view.usable for view in state.view_evaluations)
+                for item in evaluation.evaluations
+                for state in item.state_evaluations
+                if state.heldout
+            ),
+            "every requested held-out view has complete masks, depth, and required-link renders",
+        )
+        q_audits: list[HeldoutQObjectiveAudit] = []
+        q_audit_identity_valid = True
+        for item in evaluation.evaluations:
+            if not item.state_evaluations:
+                continue
+            if (
+                item.heldout_q_objective_path is None
+                or item.heldout_q_objective_sha256 is None
+                or item.heldout_q_objective_preview_path is None
+                or item.heldout_q_objective_preview_sha256 is None
+            ):
+                q_audit_identity_valid = False
+                continue
+            objective_path = context.path(*Path(item.heldout_q_objective_path).parts)
+            preview_path = context.path(*Path(item.heldout_q_objective_preview_path).parts)
+            try:
+                audit = HeldoutQObjectiveAudit.model_validate_json(
+                    objective_path.read_text(encoding="utf-8")
+                )
+                objective_sha256 = sha256_file(objective_path)
+                preview_sha256 = sha256_file(preview_path)
+            except (OSError, ValueError):
+                q_audit_identity_valid = False
+                continue
+            if (
+                audit.candidate_id != item.candidate_id
+                or objective_sha256 != item.heldout_q_objective_sha256
+                or preview_sha256 != item.heldout_q_objective_preview_sha256
+            ):
+                q_audit_identity_valid = False
+                continue
+            q_audits.append(audit)
+        check(
+            "heldout_q_objective_identity",
+            q_audit_identity_valid
+            and len(q_audits)
+            == sum(bool(item.state_evaluations) for item in evaluation.evaluations),
+            "every held-out candidate references exact deterministic q-objective artifacts",
+        )
+        check(
+            "heldout_q_global_minimum_verified",
+            bool(q_audits)
+            and all(
+                joint.grid_sample_count >= 401
+                and math.isclose(
+                    joint.refined_global_minimum_objective,
+                    min(item.total_objective for item in joint.all_local_minima),
+                    rel_tol=1e-8,
+                    abs_tol=1e-10,
+                )
+                for audit in q_audits
+                for joint in audit.joint_audits
+            ),
+            "held-out q uses a 401-sample global scan plus bounded local refinement",
         )
         fitted_by_id = {item.candidate_id: item for item in fitting.fittings}
 

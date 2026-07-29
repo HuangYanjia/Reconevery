@@ -29,6 +29,7 @@ from recon2sim.artifacts import (
     ArticulationFittingManifest,
     ArticulationStateAlignmentArtifact,
     DenseDepthManifest,
+    HeldoutQObjectiveAudit,
 )
 from recon2sim.storage import atomic_write_json
 
@@ -54,7 +55,7 @@ class ArticulationEvaluationConfig(ArticulationWorkerConfig):
 
 class ArticulationEvaluationAdapter:
     name = "articulation_evaluation"
-    version = "0.3.0"
+    version = "0.4.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         geometry = ArticulatedPartStateGeometryManifest.model_validate_json(
@@ -195,6 +196,50 @@ class ArticulationEvaluationAdapter:
 
     def expected_outputs(self, context: StageContext) -> list[OutputSpec]:
         root = "reconstruction/articulation"
+        fitting = ArticulationFittingManifest.model_validate_json(
+            context.canonical_path(
+                "reconstruction", "articulation", "fitting_manifest.json"
+            ).read_text(encoding="utf-8")
+        )
+        split = ArticulationEvidenceSplit.model_validate_json(
+            context.canonical_path(
+                "reconstruction", "articulation", "evidence_split.json"
+            ).read_text(encoding="utf-8")
+        )
+        alignment = ArticulationStateAlignmentArtifact.model_validate_json(
+            context.canonical_path(
+                "reconstruction", "articulation", "state_alignment.json"
+            ).read_text(encoding="utf-8")
+        )
+        accepted_states = {item.state_id for item in alignment.transforms if item.accepted}
+        heldout_evaluation_available = bool(set(split.heldout_validation_states) & accepted_states)
+        q_outputs: list[OutputSpec] = []
+        for item in fitting.fittings:
+            if item.status != "fitted" or not heldout_evaluation_available:
+                continue
+            safe_candidate_id = "".join(
+                character if character.isalnum() or character in "._-" else "_"
+                for character in item.candidate_id
+            )
+            q_outputs.extend(
+                (
+                    OutputSpec(
+                        f"{root}/raw/open_q_objective_{safe_candidate_id}.json",
+                        "heldout_q_objective_audit",
+                        "application/json",
+                        self.name,
+                        validation="json",
+                        model=HeldoutQObjectiveAudit,
+                    ),
+                    OutputSpec(
+                        f"{root}/previews/open_q_objective_{safe_candidate_id}.png",
+                        "articulation_preview",
+                        "image/png",
+                        self.name,
+                        validation="png",
+                    ),
+                )
+            )
         return [
             OutputSpec(
                 f"{root}/evaluation_manifest.json",
@@ -218,6 +263,7 @@ class ArticulationEvaluationAdapter:
                     "heldout_state_evaluation",
                 )
             ],
+            *q_outputs,
         ]
 
     def run(self, context: StageContext) -> StageResult:
@@ -296,6 +342,9 @@ class ArticulationEvaluationAdapter:
                     state_id: split.heldout_views_by_state.get(state_id, [])
                     for state_id in heldout_state_ids
                 },
+                "semantic_state_labels": {
+                    state.state_id: state.semantic_state_label for state in capture.states
+                },
                 "state_evidence": state_evidence,
             }
         )
@@ -340,6 +389,9 @@ class ArticulationEvaluationAdapter:
                 "heldout_views_by_state": {
                     state_id: split.heldout_views_by_state.get(state_id, [])
                     for state_id in heldout_state_ids
+                },
+                "semantic_state_labels": {
+                    state.state_id: state.semantic_state_label for state in capture.states
                 },
                 "state_evidence": state_evidence,
                 "frozen_candidate_ids": [
@@ -389,6 +441,26 @@ class ArticulationEvaluationAdapter:
                 raise RuntimeError("articulation evaluation link-assignment identity mismatch")
             if evaluation.heldout_evidence_sha256 != heldout_evidence_sha256:
                 raise RuntimeError("articulation evaluation held-out evidence identity mismatch")
+            if evaluation.heldout_q_objective_path is not None:
+                q_objective_path = context.path(*Path(evaluation.heldout_q_objective_path).parts)
+                q_preview_path = context.path(
+                    *Path(evaluation.heldout_q_objective_preview_path or "").parts
+                )
+                if sha256_file(q_objective_path) != evaluation.heldout_q_objective_sha256:
+                    raise RuntimeError("held-out q objective hash mismatch")
+                if sha256_file(q_preview_path) != evaluation.heldout_q_objective_preview_sha256:
+                    raise RuntimeError("held-out q objective preview hash mismatch")
+                audit = HeldoutQObjectiveAudit.model_validate_json(
+                    q_objective_path.read_text(encoding="utf-8")
+                )
+                if audit.candidate_id != evaluation.candidate_id:
+                    raise RuntimeError("held-out q objective candidate identity mismatch")
+                for joint_audit in audit.joint_audits:
+                    minimum = min(item.total_objective for item in joint_audit.all_local_minima)
+                    if abs(joint_audit.refined_global_minimum_objective - minimum) > 1e-8 * max(
+                        1.0, minimum
+                    ):
+                        raise RuntimeError("held-out q objective did not select a global minimum")
             for state_evaluation in evaluation.state_evaluations:
                 for view in state_evaluation.view_evaluations:
                     for path, expected_hash in view.target_mask_hashes.items():
@@ -428,8 +500,24 @@ class ArticulationEvaluationAdapter:
             for state in evaluation.state_evaluations
             for path in state.render_paths.values()
         ]
+        q_outputs = [
+            OutputSpec(
+                path,
+                ("heldout_q_objective_audit" if path.endswith(".json") else "articulation_preview"),
+                "application/json" if path.endswith(".json") else "image/png",
+                self.name,
+                validation="json" if path.endswith(".json") else "png",
+                model=HeldoutQObjectiveAudit if path.endswith(".json") else None,
+            )
+            for evaluation in result.evaluations
+            for path in (
+                evaluation.heldout_q_objective_path,
+                evaluation.heldout_q_objective_preview_path,
+            )
+            if path is not None
+        ]
         return StageResult(
-            outputs=render_outputs,
+            outputs=[*render_outputs, *q_outputs],
             metrics={
                 "evaluated_candidates": len(result.evaluations),
                 "passing_candidates": sum(item.passed_hard_gates for item in result.evaluations),

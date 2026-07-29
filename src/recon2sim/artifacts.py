@@ -245,6 +245,7 @@ class SegmentationPrompt(StrictModel):
     confidence_threshold: float | None = Field(default=None, ge=0, le=1)
     positive: bool = True
     synonym_group: str | None = None
+    exclude_prompt_ids: list[str] = Field(default_factory=list)
     instance_limit: int | None = Field(default=None, gt=0)
     notes: str | None = None
     enabled: bool = True
@@ -323,6 +324,13 @@ class SegmentationPromptManifest(StrictModel):
         prompt_ids = [prompt.prompt_id for prompt in self.prompts]
         if len(prompt_ids) != len(set(prompt_ids)):
             raise ValueError("segmentation prompt IDs must be unique")
+        known = set(prompt_ids)
+        for prompt in self.prompts:
+            unknown = sorted(set(prompt.exclude_prompt_ids) - known)
+            if unknown:
+                raise ValueError(f"prompt {prompt.prompt_id!r} excludes unknown prompts: {unknown}")
+            if prompt.prompt_id in prompt.exclude_prompt_ids:
+                raise ValueError("segmentation prompt cannot exclude itself")
         return self
 
 
@@ -4862,6 +4870,96 @@ class ArticulationStateEvaluation(StrictModel):
         return self
 
 
+class HeldoutQObjectiveSample(StrictModel):
+    q: float
+    measured_point_to_link_residual: float = Field(ge=0)
+    mask_loss: float | None = Field(default=None, ge=0)
+    depth_residual: float | None = Field(default=None, ge=0)
+    negative_space_penalty: float | None = Field(default=None, ge=0)
+    front_of_scene_penalty: float | None = Field(default=None, ge=0)
+    total_objective: float = Field(ge=0)
+    usable_view_count: int | None = Field(default=None, ge=0)
+
+
+class HeldoutQObjectiveMinimum(StrictModel):
+    q: float
+    total_objective: float = Field(ge=0)
+    source: Literal["grid_endpoint", "locally_refined"]
+
+
+class HeldoutQSemanticOrdering(StrictModel):
+    expected_semantic_ordering: Literal[
+        "closed -> half_open -> open, monotonic in either canonical sign"
+    ]
+    candidate_q_by_state: dict[str, float]
+    measured_q_by_state: dict[str, float]
+    observed_ordering: list[str]
+    direction: Literal["increasing", "decreasing", "inconsistent", "unavailable"]
+    ordering_consistent: bool | None
+    objective_gap_to_second_minimum: float | None = Field(default=None, ge=0)
+
+
+class HeldoutQObjectiveJointAudit(StrictModel):
+    state_id: Annotated[str, Field(min_length=1)]
+    joint_id: Annotated[str, Field(min_length=1)]
+    joint_type: ArticulatedJointType
+    lower_bound: float
+    upper_bound: float
+    candidate_limit_source: str | None = None
+    grid_sample_count: int = Field(ge=401)
+    legacy_optimizer_success: bool
+    legacy_optimizer_q: float | None = None
+    legacy_optimizer_objective: float | None = Field(default=None, ge=0)
+    legacy_optimizer_matches_global_minimum: bool
+    grid_global_minimum_q: float
+    grid_global_minimum_objective: float = Field(ge=0)
+    refined_global_minimum_q: float
+    refined_global_minimum_objective: float = Field(ge=0)
+    selected_q: float
+    selected_residual_arbitrary_units: float = Field(ge=0)
+    all_local_minima: list[HeldoutQObjectiveMinimum]
+    fitting_state_q: dict[str, float]
+    component_availability: dict[str, bool]
+    samples: list[HeldoutQObjectiveSample]
+    optimizer_global_minimum_verified: bool
+    classification: Literal[
+        "global_minimum_verified",
+        "legacy_optimizer_failure",
+        "heldout_motion_inconsistent",
+        "symmetric_or_multimodal_ambiguity",
+    ]
+    inconsistency_diagnostics: list[str]
+    semantic_ordering: HeldoutQSemanticOrdering
+
+    @model_validator(mode="after")
+    def grid_matches_samples(self) -> Self:
+        if self.grid_sample_count != len(self.samples):
+            raise ValueError("held-out q grid sample count does not match samples")
+        if self.upper_bound <= self.lower_bound:
+            raise ValueError("held-out q objective bounds must be ordered")
+        return self
+
+
+class HeldoutQObjectiveAudit(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    candidate_id: Annotated[str, Field(min_length=1)]
+    objective_definition: Literal[
+        "trimmed_measured_point_to_candidate_link_distance_normalized_by_part_diagonal"
+    ]
+    trim_fraction: float = Field(gt=0, le=1)
+    candidate_structure_frozen: Literal[True] = True
+    grid_sample_count: int = Field(ge=401)
+    joint_audits: list[HeldoutQObjectiveJointAudit]
+
+    @model_validator(mode="after")
+    def nonempty_consistent_grid(self) -> Self:
+        if not self.joint_audits:
+            raise ValueError("held-out q objective audit requires a fitted joint")
+        if any(item.grid_sample_count != self.grid_sample_count for item in self.joint_audits):
+            raise ValueError("held-out q objective audits use inconsistent grids")
+        return self
+
+
 class ArticulatedCandidateEvaluation(StrictModel):
     candidate_id: Annotated[str, Field(min_length=1)]
     status: ArticulatedCandidateStatus
@@ -4878,8 +4976,17 @@ class ArticulatedCandidateEvaluation(StrictModel):
     accepted_alignment_state_ids: list[str]
     selected_candidate_validation_level: ArticulationEvidenceLevel
     link_assignment_confidence: float = Field(ge=0, le=1)
+    heldout_q_objective_path: str | None = None
+    heldout_q_objective_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    heldout_q_objective_preview_path: str | None = None
+    heldout_q_objective_preview_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     runtime_seconds: float = Field(ge=0)
     warnings: list[str] = Field(default_factory=list)
+
+    @field_validator("heldout_q_objective_path", "heldout_q_objective_preview_path")
+    @classmethod
+    def safe_heldout_q_objective_paths(cls, value: str | None) -> str | None:
+        return _relative_artifact_path(value) if value is not None else None
 
     @model_validator(mode="after")
     def evaluation_gate_status(self) -> Self:
@@ -4911,6 +5018,18 @@ class ArticulatedCandidateEvaluation(StrictModel):
             and not self.passed_hard_gates
         ):
             raise ValueError("only a passing candidate may be held-out validated")
+        objective_fields = (
+            self.heldout_q_objective_path,
+            self.heldout_q_objective_sha256,
+            self.heldout_q_objective_preview_path,
+            self.heldout_q_objective_preview_sha256,
+        )
+        if any(value is not None for value in objective_fields) != all(
+            value is not None for value in objective_fields
+        ):
+            raise ValueError("held-out q objective path/hash fields must be complete")
+        if heldout and not all(value is not None for value in objective_fields):
+            raise ValueError("held-out articulation evaluation requires a q objective audit")
         return self
 
 

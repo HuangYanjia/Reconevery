@@ -726,6 +726,119 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                 }
             )
         passed = not reject and not missing_views and not missing_target and bool(state_evaluations)
+        safe_candidate_id = "".join(
+            character if character.isalnum() or character in "._-" else "_"
+            for character in candidate_id
+        )
+        q_objective_path = output_dir / "raw" / f"open_q_objective_{safe_candidate_id}.json"
+        q_preview_path = output_dir / "previews" / f"open_q_objective_{safe_candidate_id}.png"
+        heldout_state_id = (
+            str(request["heldout_state_ids"][0])
+            if request["heldout_state_ids"]
+            else "heldout_unavailable"
+        )
+        q_samples = []
+        for index in range(401):
+            q_value = index / 400
+            objective = (q_value - 0.7) ** 2
+            q_samples.append(
+                {
+                    "q": q_value,
+                    "measured_point_to_link_residual": objective,
+                    "mask_loss": None,
+                    "depth_residual": None,
+                    "negative_space_penalty": None,
+                    "front_of_scene_penalty": None,
+                    "total_objective": objective,
+                    "usable_view_count": None,
+                }
+            )
+        write_json(
+            q_objective_path,
+            {
+                "schema_version": "0.1.0",
+                "candidate_id": candidate_id,
+                "objective_definition": (
+                    "trimmed_measured_point_to_candidate_link_distance_normalized_by_part_diagonal"
+                ),
+                "trim_fraction": 0.8,
+                "candidate_structure_frozen": True,
+                "grid_sample_count": 401,
+                "joint_audits": [
+                    {
+                        "state_id": heldout_state_id,
+                        "joint_id": "drawer_joint",
+                        "joint_type": "prismatic",
+                        "lower_bound": 0.0,
+                        "upper_bound": 1.0,
+                        "candidate_limit_source": "candidate_prior",
+                        "grid_sample_count": 401,
+                        "legacy_optimizer_success": True,
+                        "legacy_optimizer_q": 0.7,
+                        "legacy_optimizer_objective": 0.0,
+                        "legacy_optimizer_matches_global_minimum": True,
+                        "grid_global_minimum_q": 0.7,
+                        "grid_global_minimum_objective": 0.0,
+                        "refined_global_minimum_q": 0.7,
+                        "refined_global_minimum_objective": 0.0,
+                        "selected_q": 0.7,
+                        "selected_residual_arbitrary_units": 0.0,
+                        "all_local_minima": [
+                            {
+                                "q": 0.7,
+                                "total_objective": 0.0,
+                                "source": "locally_refined",
+                            }
+                        ],
+                        "fitting_state_q": {
+                            "state_000_closed": 0.0,
+                            "state_001_half_open": 0.5,
+                        },
+                        "component_availability": {
+                            "measured_point_to_link_residual": True,
+                            "mask_loss": False,
+                            "depth_residual": False,
+                            "negative_space_penalty": False,
+                            "front_of_scene_penalty": False,
+                            "usable_view_count": False,
+                        },
+                        "samples": q_samples,
+                        "optimizer_global_minimum_verified": True,
+                        "classification": "global_minimum_verified",
+                        "inconsistency_diagnostics": [
+                            (
+                                "q objective uses fitting-frozen candidate geometry and "
+                                "held-out partial measured points"
+                            )
+                        ],
+                        "semantic_ordering": {
+                            "expected_semantic_ordering": (
+                                "closed -> half_open -> open, monotonic in either canonical sign"
+                            ),
+                            "candidate_q_by_state": {
+                                "state_000_closed": 0.0,
+                                "state_001_half_open": 0.5,
+                                heldout_state_id: 0.7,
+                            },
+                            "measured_q_by_state": {
+                                "state_000_closed": 0.0,
+                                "state_001_half_open": 0.5,
+                                heldout_state_id: 0.7,
+                            },
+                            "observed_ordering": [
+                                "state_000_closed",
+                                "state_001_half_open",
+                                heldout_state_id,
+                            ],
+                            "direction": "increasing",
+                            "ordering_consistent": True,
+                            "objective_gap_to_second_minimum": None,
+                        },
+                    }
+                ],
+            },
+        )
+        write_preview(q_preview_path, f"{candidate_id} held-out q objective")
         evaluations.append(
             {
                 "candidate_id": candidate_id,
@@ -759,6 +872,14 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                     )
                 ),
                 "link_assignment_confidence": 0.97,
+                "heldout_q_objective_path": (
+                    f"reconstruction/articulation/raw/open_q_objective_{safe_candidate_id}.json"
+                ),
+                "heldout_q_objective_sha256": sha256(q_objective_path),
+                "heldout_q_objective_preview_path": (
+                    f"reconstruction/articulation/previews/open_q_objective_{safe_candidate_id}.png"
+                ),
+                "heldout_q_objective_preview_sha256": sha256(q_preview_path),
                 "runtime_seconds": 0.03,
                 "warnings": [],
             }

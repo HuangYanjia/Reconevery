@@ -226,7 +226,7 @@ def _classify_worker_failure(exc: ProcessExecutionError) -> RuntimeError:
 
 class Sam3SegmentationTrackingAdapter:
     name = "sam3_segmentation_tracking"
-    version = "0.1.1"
+    version = "0.2.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         config = Sam3AdapterConfig.model_validate(context.config.adapter.config)

@@ -5,6 +5,7 @@ import hashlib
 import json
 import resource
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -59,6 +60,93 @@ def write_preview(path: Path, title: str, lines: list[str]) -> None:
     draw.text((28, 24), title, fill=(255, 255, 255))
     for index, line in enumerate(lines):
         draw.text((40, 112 + index * 40), line, fill=(28, 37, 46))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(path, format="PNG", optimize=False, compress_level=9)
+
+
+def write_q_objective_preview(
+    path: Path,
+    candidate_id: str,
+    joint_audits: list[dict[str, object]],
+) -> None:
+    width, height = 1280, max(720, 640 * len(joint_audits))
+    image = Image.new("RGB", (width, height), (246, 247, 249))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 0, width, 72), fill=(24, 33, 43))
+    draw.text((28, 24), f"Held-out q objective: {candidate_id}", fill=(255, 255, 255))
+    for audit_index, audit in enumerate(joint_audits):
+        samples = audit["samples"]
+        if not isinstance(samples, list) or not samples:
+            continue
+        q_values = [float(item["q"]) for item in samples]
+        objectives = [float(item["total_objective"]) for item in samples]
+        left, right = 90, width - 50
+        top = 110 + audit_index * 640
+        bottom = top + 470
+        q_min, q_max = min(q_values), max(q_values)
+        objective_min, objective_max = min(objectives), max(objectives)
+        q_span = max(q_max - q_min, np.finfo(np.float64).eps)
+        objective_span = max(
+            objective_max - objective_min,
+            np.finfo(np.float64).eps,
+        )
+
+        def point(
+            q_value: float,
+            objective: float,
+            *,
+            plot_left: int = left,
+            plot_right: int = right,
+            plot_top: int = top,
+            plot_bottom: int = bottom,
+            q_lower: float = q_min,
+            q_range: float = q_span,
+            objective_lower: float = objective_min,
+            objective_range: float = objective_span,
+        ) -> tuple[int, int]:
+            x = plot_left + int((q_value - q_lower) / q_range * (plot_right - plot_left))
+            y = plot_bottom - int(
+                (objective - objective_lower) / objective_range * (plot_bottom - plot_top)
+            )
+            return x, y
+
+        draw.rectangle((left, top, right, bottom), outline=(110, 120, 130), width=2)
+        draw.line(
+            [point(q_values[index], objectives[index]) for index in range(len(samples))],
+            fill=(42, 105, 170),
+            width=3,
+        )
+        markers = (
+            ("legacy", audit.get("legacy_optimizer_q"), (215, 85, 45)),
+            ("grid", audit["grid_global_minimum_q"], (125, 90, 190)),
+            ("selected", audit["selected_q"], (25, 150, 80)),
+        )
+        for label, value, color in markers:
+            if value is None:
+                continue
+            marker_x = point(float(value), objective_min)[0]
+            draw.line((marker_x, top, marker_x, bottom), fill=color, width=2)
+            draw.text((marker_x + 4, top + 4), label, fill=color)
+        semantic = audit["semantic_ordering"]
+        draw.text(
+            (left, bottom + 18),
+            (
+                f"{audit['joint_id']} [{audit['lower_bound']:.6g}, "
+                f"{audit['upper_bound']:.6g}] "
+                f"selected={audit['selected_q']:.6g} "
+                f"class={audit['classification']}"
+            ),
+            fill=(28, 37, 46),
+        )
+        draw.text(
+            (left, bottom + 44),
+            (
+                f"semantic ordering={semantic['direction']} "
+                f"consistent={semantic['ordering_consistent']} "
+                f"local minima={len(audit['all_local_minima'])}"
+            ),
+            fill=(28, 37, 46),
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, format="PNG", optimize=False, compress_level=9)
 
@@ -1030,7 +1118,180 @@ def _failed_gates(
     return failed
 
 
-def _heldout_joint_position(
+def _deterministic_global_q_search(
+    objective: Callable[[float], float],
+    lower: float,
+    upper: float,
+    *,
+    grid_sample_count: int = 401,
+) -> dict[str, object]:
+    if grid_sample_count < 401:
+        raise ValueError("held-out q global search requires at least 401 grid samples")
+    if not np.isfinite((lower, upper)).all() or upper <= lower:
+        raise ValueError("held-out q bounds must be finite and ordered")
+    from scipy.optimize import minimize_scalar
+
+    legacy = minimize_scalar(
+        objective,
+        bounds=(lower, upper),
+        method="bounded",
+        options={"maxiter": 40, "xatol": 1e-5},
+    )
+    legacy_success = bool(legacy.success and np.isfinite(legacy.x) and np.isfinite(legacy.fun))
+    q_values = np.linspace(lower, upper, grid_sample_count, dtype=np.float64)
+    objective_values = np.asarray(
+        [objective(float(value)) for value in q_values],
+        dtype=np.float64,
+    )
+    if not np.isfinite(objective_values).all():
+        raise RuntimeError("held-out q objective grid contains non-finite values")
+    grid_index = int(np.argmin(objective_values))
+    local_indices = [
+        index
+        for index, value in enumerate(objective_values)
+        if (index == 0 or value <= objective_values[index - 1])
+        and (index == len(objective_values) - 1 or value <= objective_values[index + 1])
+    ]
+    local_minima: list[dict[str, object]] = []
+    for index in local_indices:
+        if index in {0, len(q_values) - 1}:
+            local_minima.append(
+                {
+                    "q": float(q_values[index]),
+                    "total_objective": float(objective_values[index]),
+                    "source": "grid_endpoint",
+                }
+            )
+            continue
+        refined = minimize_scalar(
+            objective,
+            bounds=(float(q_values[index - 1]), float(q_values[index + 1])),
+            method="bounded",
+            options={"maxiter": 40, "xatol": 1e-7},
+        )
+        if refined.success and np.isfinite((refined.x, refined.fun)).all():
+            local_minima.append(
+                {
+                    "q": float(refined.x),
+                    "total_objective": float(refined.fun),
+                    "source": "locally_refined",
+                }
+            )
+        else:
+            local_minima.append(
+                {
+                    "q": float(q_values[index]),
+                    "total_objective": float(objective_values[index]),
+                    "source": "grid_endpoint",
+                }
+            )
+    if not local_minima:
+        raise RuntimeError("held-out q global search found no finite local minimum")
+    local_minima.sort(
+        key=lambda item: (
+            float(item["total_objective"]),
+            float(item["q"]),
+        )
+    )
+    selected = local_minima[0]
+    selected_objective = float(selected["total_objective"])
+    verification_tolerance = 1e-6 * max(1.0, abs(selected_objective))
+    legacy_global = bool(
+        legacy_success and float(legacy.fun) <= selected_objective + verification_tolerance
+    )
+    deterministic_global = bool(
+        selected_objective <= float(objective_values[grid_index]) + verification_tolerance
+    )
+    samples = [
+        {
+            "q": float(q_value),
+            "total_objective": float(objective_value),
+        }
+        for q_value, objective_value in zip(q_values, objective_values, strict=True)
+    ]
+    return {
+        "grid_sample_count": grid_sample_count,
+        "samples": samples,
+        "legacy_optimizer_success": legacy_success,
+        "legacy_optimizer_q": float(legacy.x) if legacy_success else None,
+        "legacy_optimizer_objective": float(legacy.fun) if legacy_success else None,
+        "legacy_optimizer_matches_global_minimum": legacy_global,
+        "grid_global_minimum_q": float(q_values[grid_index]),
+        "grid_global_minimum_objective": float(objective_values[grid_index]),
+        "refined_global_minimum_q": float(selected["q"]),
+        "refined_global_minimum_objective": selected_objective,
+        "all_local_minima": sorted(
+            local_minima,
+            key=lambda item: float(item["q"]),
+        ),
+        "optimizer_global_minimum_verified": deterministic_global,
+    }
+
+
+def _semantic_q_ordering(
+    *,
+    fitted_joint: dict[str, object],
+    heldout_state_id: str,
+    heldout_q: float,
+    semantic_state_labels: dict[str, str],
+    local_minima: list[dict[str, object]],
+) -> dict[str, object]:
+    candidate_q_by_state = {
+        str(state_id): float(value) for state_id, value in fitted_joint["fitting_state_q"].items()
+    }
+    candidate_q_by_state[heldout_state_id] = heldout_q
+    q_scale = float(fitted_joint.get("q_scale", 1.0))
+    q_offset = float(fitted_joint.get("q_offset", 0.0))
+    measured_q_by_state = (
+        {state_id: (value - q_offset) / q_scale for state_id, value in candidate_q_by_state.items()}
+        if abs(q_scale) > 1e-12
+        else {}
+    )
+    state_for_role: dict[str, str] = {}
+    for state_id, label in semantic_state_labels.items():
+        normalized = label.lower().replace("-", "_").replace(" ", "_")
+        if normalized in {"closed", "half_open", "open"}:
+            state_for_role[normalized] = state_id
+    ordered_ids = [
+        state_for_role[role] for role in ("closed", "half_open", "open") if role in state_for_role
+    ]
+    direction = "unavailable"
+    ordering_consistent: bool | None = None
+    if len(ordered_ids) == 3 and all(state_id in measured_q_by_state for state_id in ordered_ids):
+        values = [measured_q_by_state[state_id] for state_id in ordered_ids]
+        first_delta, second_delta = values[1] - values[0], values[2] - values[1]
+        tolerance = 1e-8 * max(1.0, *(abs(value) for value in values))
+        if first_delta > tolerance and second_delta > tolerance:
+            direction = "increasing"
+            ordering_consistent = True
+        elif first_delta < -tolerance and second_delta < -tolerance:
+            direction = "decreasing"
+            ordering_consistent = True
+        else:
+            direction = "inconsistent"
+            ordering_consistent = False
+    sorted_states = sorted(
+        measured_q_by_state,
+        key=lambda state_id: (measured_q_by_state[state_id], state_id),
+    )
+    objective_gap = None
+    minima_by_objective = sorted(float(item["total_objective"]) for item in local_minima)
+    if len(minima_by_objective) >= 2:
+        objective_gap = max(0.0, minima_by_objective[1] - minima_by_objective[0])
+    return {
+        "expected_semantic_ordering": (
+            "closed -> half_open -> open, monotonic in either canonical sign"
+        ),
+        "candidate_q_by_state": candidate_q_by_state,
+        "measured_q_by_state": measured_q_by_state,
+        "observed_ordering": sorted_states,
+        "direction": direction,
+        "ordering_consistent": ordering_consistent,
+        "objective_gap_to_second_minimum": objective_gap,
+    }
+
+
+def _heldout_joint_position_with_audit(
     *,
     input_root: Path,
     link: dict[str, object],
@@ -1040,14 +1301,16 @@ def _heldout_joint_position(
     measured_part: dict[str, object] | None,
     base_matrix: np.ndarray,
     reference_from_state: np.ndarray,
-) -> tuple[float | None, float | None]:
+    heldout_state_id: str,
+    semantic_state_labels: dict[str, str],
+) -> tuple[float | None, float | None, dict[str, object] | None]:
     if str(joint["joint_type"]) == "fixed":
-        return 0.0, 0.0
+        return 0.0, 0.0, None
     if measured_part is None:
-        return None, None
+        return None, None, None
     visual_paths = link["visual_asset_paths"]
     if not isinstance(visual_paths, list) or not visual_paths:
-        return None, None
+        return None, None, None
     visual_path = str(visual_paths[0])
     candidate_points = transform(
         load_points(str(input_root / visual_path)),
@@ -1063,7 +1326,7 @@ def _heldout_joint_position(
     candidate_points = candidate_points[::candidate_stride][:maximum_points]
     measured_points = measured_points[::measured_stride][:maximum_points]
     if not len(candidate_points) or not len(measured_points):
-        return None, None
+        return None, None, None
     lower_value = joint.get("candidate_limit_lower")
     upper_value = joint.get("candidate_limit_upper")
     if (
@@ -1086,7 +1349,7 @@ def _heldout_joint_position(
             )
             lower, upper = -diagonal, diagonal
     if not np.isfinite((lower, upper)).all() or upper <= lower:
-        return None, None
+        return None, None, None
     axis = np.asarray(fitted_joint["fitted_axis"], dtype=np.float64)
     pivot = (
         np.asarray(fitted_joint["fitted_pivot"], dtype=np.float64)
@@ -1115,17 +1378,123 @@ def _heldout_joint_position(
         keep = max(1, int(0.8 * len(residuals)))
         return float(np.mean(np.partition(residuals, keep - 1)[:keep]) / diagonal)
 
-    from scipy.optimize import minimize_scalar
-
-    result = minimize_scalar(
+    search = _deterministic_global_q_search(
         objective,
-        bounds=(lower, upper),
-        method="bounded",
-        options={"maxiter": 40, "xatol": 1e-5},
+        lower,
+        upper,
+        grid_sample_count=401,
     )
-    if not result.success or not np.isfinite(result.x):
-        return None, None
-    return float(result.x), float(result.fun * diagonal)
+    selected_q = float(search["refined_global_minimum_q"])
+    selected_objective = float(search["refined_global_minimum_objective"])
+    samples = [
+        {
+            "q": float(item["q"]),
+            "measured_point_to_link_residual": float(float(item["total_objective"]) * diagonal),
+            "mask_loss": None,
+            "depth_residual": None,
+            "negative_space_penalty": None,
+            "front_of_scene_penalty": None,
+            "total_objective": float(item["total_objective"]),
+            "usable_view_count": None,
+        }
+        for item in search["samples"]
+    ]
+    semantic_ordering = _semantic_q_ordering(
+        fitted_joint=fitted_joint,
+        heldout_state_id=heldout_state_id,
+        heldout_q=selected_q,
+        semantic_state_labels=semantic_state_labels,
+        local_minima=search["all_local_minima"],
+    )
+    objective_values = sorted(float(item["total_objective"]) for item in search["all_local_minima"])
+    ambiguous = bool(
+        len(objective_values) >= 2
+        and objective_values[1] - objective_values[0] <= 1e-4 * max(1.0, objective_values[0])
+    )
+    if not bool(search["legacy_optimizer_matches_global_minimum"]):
+        classification = "legacy_optimizer_failure"
+    elif ambiguous:
+        classification = "symmetric_or_multimodal_ambiguity"
+    elif semantic_ordering["ordering_consistent"] is False:
+        classification = "heldout_motion_inconsistent"
+    else:
+        classification = "global_minimum_verified"
+    diagnostics = [
+        "q objective uses fitting-frozen candidate geometry and held-out partial measured points",
+        "mask, depth, negative-space, and front-of-scene metrics are evaluated after q freezes",
+    ]
+    if semantic_ordering["ordering_consistent"] is False:
+        diagnostics.append("semantic closed/half_open/open q ordering is inconsistent")
+    if selected_objective > 0.05:
+        diagnostics.append("candidate geometry has a material held-out measured-surface residual")
+    audit = {
+        "state_id": heldout_state_id,
+        "joint_id": str(joint["joint_id"]),
+        "joint_type": str(joint["joint_type"]),
+        "lower_bound": lower,
+        "upper_bound": upper,
+        "candidate_limit_source": (
+            str(joint.get("limit_source")) if joint.get("limit_source") is not None else None
+        ),
+        "grid_sample_count": search["grid_sample_count"],
+        "legacy_optimizer_success": search["legacy_optimizer_success"],
+        "legacy_optimizer_q": search["legacy_optimizer_q"],
+        "legacy_optimizer_objective": search["legacy_optimizer_objective"],
+        "legacy_optimizer_matches_global_minimum": search[
+            "legacy_optimizer_matches_global_minimum"
+        ],
+        "grid_global_minimum_q": search["grid_global_minimum_q"],
+        "grid_global_minimum_objective": search["grid_global_minimum_objective"],
+        "refined_global_minimum_q": selected_q,
+        "refined_global_minimum_objective": selected_objective,
+        "selected_q": selected_q,
+        "selected_residual_arbitrary_units": selected_objective * diagonal,
+        "all_local_minima": search["all_local_minima"],
+        "fitting_state_q": {
+            str(state_id): float(value)
+            for state_id, value in fitted_joint["fitting_state_q"].items()
+        },
+        "component_availability": {
+            "measured_point_to_link_residual": True,
+            "mask_loss": False,
+            "depth_residual": False,
+            "negative_space_penalty": False,
+            "front_of_scene_penalty": False,
+            "usable_view_count": False,
+        },
+        "samples": samples,
+        "optimizer_global_minimum_verified": search["optimizer_global_minimum_verified"],
+        "classification": classification,
+        "inconsistency_diagnostics": diagnostics,
+        "semantic_ordering": semantic_ordering,
+    }
+    return selected_q, selected_objective * diagonal, audit
+
+
+def _heldout_joint_position(
+    *,
+    input_root: Path,
+    link: dict[str, object],
+    joint: dict[str, object],
+    fitted_joint: dict[str, object],
+    measured_joint: dict[str, object] | None,
+    measured_part: dict[str, object] | None,
+    base_matrix: np.ndarray,
+    reference_from_state: np.ndarray,
+) -> tuple[float | None, float | None]:
+    position, residual, _ = _heldout_joint_position_with_audit(
+        input_root=input_root,
+        link=link,
+        joint=joint,
+        fitted_joint=fitted_joint,
+        measured_joint=measured_joint,
+        measured_part=measured_part,
+        base_matrix=base_matrix,
+        reference_from_state=reference_from_state,
+        heldout_state_id="heldout",
+        semantic_state_labels={},
+    )
+    return position, residual
 
 
 def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> None:
@@ -1183,6 +1552,10 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                         "effective_motion_evidence_level"
                     ],
                     "link_assignment_confidence": 0.0,
+                    "heldout_q_objective_path": None,
+                    "heldout_q_objective_sha256": None,
+                    "heldout_q_objective_preview_path": None,
+                    "heldout_q_objective_preview_sha256": None,
                     "runtime_seconds": 0.0,
                     "warnings": [str(fit_item.get("failure_reason") or "candidate not fitted")],
                 }
@@ -1193,6 +1566,7 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
         if not isinstance(fitted_model, dict):
             raise ValueError("successful fitting omitted typed fitted kinematic model")
         state_evaluations = []
+        candidate_q_audits: list[dict[str, object]] = []
         base_matrix = np.asarray(
             fitted_model["matrix_reference_world_from_candidate_base"],
             dtype=np.float64,
@@ -1249,7 +1623,7 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                     if fitted_joint is None:
                         continue
                     observed_part = observed_by_link.get(link_id, "")
-                    position, q_fit_residual = _heldout_joint_position(
+                    position, q_fit_residual, q_audit = _heldout_joint_position_with_audit(
                         input_root=input_root,
                         link=link,
                         joint=joint,
@@ -1258,9 +1632,16 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                         measured_part=geometry_by_state.get((state_id, observed_part)),
                         base_matrix=base_matrix,
                         reference_from_state=alignment_by_state[state_id],
+                        heldout_state_id=state_id,
+                        semantic_state_labels={
+                            str(key): str(value)
+                            for key, value in request["semantic_state_labels"].items()
+                        },
                     )
                     if position is None:
                         continue
+                    if q_audit is not None:
+                        candidate_q_audits.append(q_audit)
                     inferred[str(joint["joint_id"])] = position
                     if q_fit_residual is not None:
                         heldout_q_fit_residuals[str(joint["joint_id"])] = q_fit_residual
@@ -1792,6 +2173,44 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
         assignment_confidences = [
             float(record["assignment_confidence"]) for record in assignment["assignments"]
         ]
+        safe_candidate_id = "".join(
+            character if character.isalnum() or character in "._-" else "_"
+            for character in candidate_id
+        )
+        q_objective_relative = None
+        q_objective_sha256 = None
+        q_preview_relative = None
+        q_preview_sha256 = None
+        if candidate_q_audits:
+            q_objective_relative = (
+                f"reconstruction/articulation/raw/open_q_objective_{safe_candidate_id}.json"
+            )
+            q_preview_relative = (
+                f"reconstruction/articulation/previews/open_q_objective_{safe_candidate_id}.png"
+            )
+            q_objective_path = output_dir / "raw" / f"open_q_objective_{safe_candidate_id}.json"
+            q_preview_path = output_dir / "previews" / f"open_q_objective_{safe_candidate_id}.png"
+            write_json(
+                q_objective_path,
+                {
+                    "schema_version": "0.1.0",
+                    "candidate_id": candidate_id,
+                    "objective_definition": (
+                        "trimmed_measured_point_to_candidate_link_distance_normalized_by_part_diagonal"
+                    ),
+                    "trim_fraction": 0.8,
+                    "candidate_structure_frozen": True,
+                    "grid_sample_count": 401,
+                    "joint_audits": candidate_q_audits,
+                },
+            )
+            write_q_objective_preview(
+                q_preview_path,
+                candidate_id,
+                candidate_q_audits,
+            )
+            q_objective_sha256 = sha256(q_objective_path)
+            q_preview_sha256 = sha256(q_preview_path)
         evaluations.append(
             {
                 "candidate_id": candidate_id,
@@ -1811,6 +2230,10 @@ def evaluate(request: dict[str, object], input_root: Path, output_dir: Path) -> 
                 "link_assignment_confidence": (
                     min(assignment_confidences) if assignment_confidences else 0.0
                 ),
+                "heldout_q_objective_path": q_objective_relative,
+                "heldout_q_objective_sha256": q_objective_sha256,
+                "heldout_q_objective_preview_path": q_preview_relative,
+                "heldout_q_objective_preview_sha256": q_preview_sha256,
                 "runtime_seconds": 0.0,
                 "warnings": (
                     [] if not failed else ["candidate failed frozen-structure held-out state gates"]

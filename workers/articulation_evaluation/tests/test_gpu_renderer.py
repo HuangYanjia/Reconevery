@@ -7,7 +7,9 @@ import numpy as np
 import pytest
 from articulation_evaluation_worker.cli import (
     _candidate_link_points,
+    _deterministic_global_q_search,
     _heldout_joint_position,
+    _semantic_q_ordering,
     _visual_asset_to_candidate_matrix,
 )
 from articulation_evaluation_worker.dense_io import read_dense_array
@@ -140,6 +142,72 @@ def test_heldout_geometry_recovers_only_prismatic_q(tmp_path: Path) -> None:
     )
     assert position == pytest.approx(0.7, abs=2e-3)
     assert residual is not None and residual < 1e-2
+
+
+def test_global_q_search_handles_multiple_minima_and_both_signs() -> None:
+    multimodal = _deterministic_global_q_search(
+        lambda q_value: min((q_value + 0.65) ** 2 + 0.02, (q_value - 0.55) ** 2),
+        -1.0,
+        1.0,
+        grid_sample_count=401,
+    )
+    assert multimodal["refined_global_minimum_q"] == pytest.approx(0.55, abs=1e-5)
+    assert len(multimodal["all_local_minima"]) >= 2
+    assert multimodal["optimizer_global_minimum_verified"] is True
+    for expected_q in (-0.7, 0.7):
+        result = _deterministic_global_q_search(
+            lambda q_value, expected=expected_q: (q_value - expected) ** 2,
+            -1.0,
+            1.0,
+            grid_sample_count=401,
+        )
+        assert result["refined_global_minimum_q"] == pytest.approx(expected_q, abs=1e-5)
+    boundary = _deterministic_global_q_search(
+        lambda q_value: (q_value + 1.0) ** 2,
+        -1.0,
+        1.0,
+        grid_sample_count=401,
+    )
+    assert boundary["refined_global_minimum_q"] == -1.0
+    assert boundary["optimizer_global_minimum_verified"] is True
+    assert boundary["legacy_optimizer_matches_global_minimum"] is True
+
+
+def test_semantic_q_ordering_is_diagnostic_only() -> None:
+    inconsistent = _semantic_q_ordering(
+        fitted_joint={
+            "fitting_state_q": {"closed": 0.0, "half": 3.0},
+            "q_scale": 1.0,
+            "q_offset": 0.0,
+        },
+        heldout_state_id="open",
+        heldout_q=-3.8,
+        semantic_state_labels={
+            "closed": "closed",
+            "half": "half_open",
+            "open": "open",
+        },
+        local_minima=[{"q": -3.8, "total_objective": 0.1}],
+    )
+    assert inconsistent["ordering_consistent"] is False
+    assert inconsistent["measured_q_by_state"]["open"] == -3.8
+    sign_reversed = _semantic_q_ordering(
+        fitted_joint={
+            "fitting_state_q": {"closed": 0.0, "half": -2.0},
+            "q_scale": 1.0,
+            "q_offset": 0.0,
+        },
+        heldout_state_id="open",
+        heldout_q=-4.0,
+        semantic_state_labels={
+            "closed": "closed",
+            "half": "half_open",
+            "open": "open",
+        },
+        local_minima=[{"q": -4.0, "total_objective": 0.1}],
+    )
+    assert sign_reversed["ordering_consistent"] is True
+    assert sign_reversed["direction"] == "decreasing"
 
 
 def test_link_local_asset_transform_is_used_for_registration(tmp_path: Path) -> None:

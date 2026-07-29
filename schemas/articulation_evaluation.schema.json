@@ -47,6 +47,56 @@
           "title": "Heldout Evidence Sha256",
           "type": "string"
         },
+        "heldout_q_objective_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Q Objective Path"
+        },
+        "heldout_q_objective_preview_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Q Objective Preview Path"
+        },
+        "heldout_q_objective_preview_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Q Objective Preview Sha256"
+        },
+        "heldout_q_objective_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Q Objective Sha256"
+        },
         "heldout_state_validation_used": {
           "title": "Heldout State Validation Used",
           "type": "boolean"

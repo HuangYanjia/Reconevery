@@ -44,6 +44,7 @@ class WorkerPrompt(WorkerModel):
     confidence_threshold: float | None
     positive: bool
     synonym_group: str | None
+    exclude_prompt_ids: list[str] = Field(default_factory=list)
     instance_limit: int | None
     notes: str | None
     enabled: bool

@@ -156,6 +156,10 @@ def _state_evaluation(candidate_id: str, iou: float) -> ArticulatedCandidateEval
         accepted_alignment_state_ids=["closed", "half", "open"],
         selected_candidate_validation_level="multi_state_heldout_validated",
         link_assignment_confidence=0.9,
+        heldout_q_objective_path=f"raw/open_q_objective_{candidate_id}.json",
+        heldout_q_objective_sha256="5" * 64,
+        heldout_q_objective_preview_path=f"previews/open_q_objective_{candidate_id}.png",
+        heldout_q_objective_preview_sha256="6" * 64,
         runtime_seconds=0,
     )
 
@@ -814,6 +818,106 @@ def test_heldout_joint_position_fits_only_q(tmp_path: Path) -> None:
     assert residual < 2e-3
 
 
+def test_heldout_q_search_finds_global_minimum_across_multiple_basins() -> None:
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("scipy")
+    evaluator = _evaluation_worker_module("articulation_evaluation_worker.cli")
+
+    def objective(q_value: float) -> float:
+        return min((q_value + 0.65) ** 2 + 0.02, (q_value - 0.55) ** 2)
+
+    result = evaluator._deterministic_global_q_search(
+        objective,
+        -1.0,
+        1.0,
+        grid_sample_count=401,
+    )
+
+    assert result["grid_sample_count"] == 401
+    assert len(result["samples"]) == 401
+    assert result["refined_global_minimum_q"] == pytest.approx(0.55, abs=1e-5)
+    assert result["refined_global_minimum_objective"] == pytest.approx(0.0, abs=1e-9)
+    assert len(result["all_local_minima"]) >= 2
+    assert np.isfinite(result["legacy_optimizer_q"])
+    assert result["optimizer_global_minimum_verified"] is True
+
+
+@pytest.mark.parametrize("expected_q", [-0.7, 0.7])
+def test_heldout_q_search_supports_both_prismatic_signs(expected_q: float) -> None:
+    pytest.importorskip("numpy")
+    pytest.importorskip("scipy")
+    evaluator = _evaluation_worker_module("articulation_evaluation_worker.cli")
+    result = evaluator._deterministic_global_q_search(
+        lambda q_value: (q_value - expected_q) ** 2,
+        -1.0,
+        1.0,
+        grid_sample_count=401,
+    )
+    assert result["refined_global_minimum_q"] == pytest.approx(expected_q, abs=1e-5)
+
+
+def test_heldout_q_search_verifies_boundary_global_minimum() -> None:
+    pytest.importorskip("numpy")
+    pytest.importorskip("scipy")
+    evaluator = _evaluation_worker_module("articulation_evaluation_worker.cli")
+    result = evaluator._deterministic_global_q_search(
+        lambda q_value: (q_value + 1.0) ** 2,
+        -1.0,
+        1.0,
+        grid_sample_count=401,
+    )
+    assert result["refined_global_minimum_q"] == -1.0
+    assert result["optimizer_global_minimum_verified"] is True
+    assert result["legacy_optimizer_matches_global_minimum"] is True
+
+
+def test_semantic_q_ordering_reports_inconsistency_without_forcing_q() -> None:
+    pytest.importorskip("numpy")
+    evaluator = _evaluation_worker_module("articulation_evaluation_worker.cli")
+    fitted_joint = {
+        "fitting_state_q": {"closed": 0.0, "half": 3.0},
+        "q_scale": 1.0,
+        "q_offset": 0.0,
+    }
+    ordering = evaluator._semantic_q_ordering(
+        fitted_joint=fitted_joint,
+        heldout_state_id="open",
+        heldout_q=-3.8,
+        semantic_state_labels={
+            "closed": "closed",
+            "half": "half_open",
+            "open": "open",
+        },
+        local_minima=[{"q": -3.8, "total_objective": 0.1}],
+    )
+    assert ordering["ordering_consistent"] is False
+    assert ordering["direction"] == "inconsistent"
+    assert ordering["measured_q_by_state"]["open"] == -3.8
+
+
+def test_semantic_q_ordering_accepts_consistent_sign_reversal() -> None:
+    pytest.importorskip("numpy")
+    evaluator = _evaluation_worker_module("articulation_evaluation_worker.cli")
+    fitted_joint = {
+        "fitting_state_q": {"closed": 0.0, "half": -2.0},
+        "q_scale": 1.0,
+        "q_offset": 0.0,
+    }
+    ordering = evaluator._semantic_q_ordering(
+        fitted_joint=fitted_joint,
+        heldout_state_id="open",
+        heldout_q=-4.0,
+        semantic_state_labels={
+            "closed": "closed",
+            "half": "half_open",
+            "open": "open",
+        },
+        local_minima=[{"q": -4.0, "total_objective": 0.1}],
+    )
+    assert ordering["ordering_consistent"] is True
+    assert ordering["direction"] == "decreasing"
+
+
 def test_improper_or_singular_state_transform_is_rejected() -> None:
     identity = [
         1.0,
@@ -1310,6 +1414,11 @@ def test_rejected_state_alignment_cannot_enter_motion_or_heldout(
         ).read_text()
     )
     assert evaluation_request["heldout_state_ids"] == []
+    assert evaluation_request["semantic_state_labels"] == {
+        "state_000": "closed",
+        "state_001": "half_open",
+        "state_002": "open",
+    }
     selection = ArticulatedCandidateSelection.model_validate_json(
         (run_dir / "reconstruction/articulation/selection.json").read_text()
     )
