@@ -280,6 +280,11 @@
           "title": "Sample Id",
           "type": "string"
         },
+        "scale_m_per_colmap": {
+          "exclusiveMinimum": 0,
+          "title": "Scale M Per Colmap",
+          "type": "number"
+        },
         "up_vector_colmap": {
           "maxItems": 3,
           "minItems": 3,
@@ -305,6 +310,7 @@
         "up_vector_colmap",
         "right_vector_colmap",
         "forward_vector_colmap",
+        "scale_m_per_colmap",
         "angular_deviation_degrees",
         "origin_deviation_colmap"
       ],
@@ -317,6 +323,21 @@
         "angular_uncertainty_degrees": {
           "minimum": 0,
           "title": "Angular Uncertainty Degrees",
+          "type": "number"
+        },
+        "angular_uncertainty_max_degrees": {
+          "minimum": 0,
+          "title": "Angular Uncertainty Max Degrees",
+          "type": "number"
+        },
+        "angular_uncertainty_p50_degrees": {
+          "minimum": 0,
+          "title": "Angular Uncertainty P50 Degrees",
+          "type": "number"
+        },
+        "angular_uncertainty_p90_degrees": {
+          "minimum": 0,
+          "title": "Angular Uncertainty P90 Degrees",
           "type": "number"
         },
         "bootstrap_samples": {
@@ -518,6 +539,31 @@
           "title": "Right Vector Colmap",
           "type": "array"
         },
+        "scale_annotation_jackknife_p90_m_per_colmap": {
+          "minimum": 0,
+          "title": "Scale Annotation Jackknife P90 M Per Colmap",
+          "type": "number"
+        },
+        "scale_m_per_colmap": {
+          "exclusiveMinimum": 0,
+          "title": "Scale M Per Colmap",
+          "type": "number"
+        },
+        "scale_measurement_uncertainty_m_per_colmap": {
+          "minimum": 0,
+          "title": "Scale Measurement Uncertainty M Per Colmap",
+          "type": "number"
+        },
+        "scale_relative_uncertainty": {
+          "minimum": 0,
+          "title": "Scale Relative Uncertainty",
+          "type": "number"
+        },
+        "scale_uncertainty_m_per_colmap": {
+          "minimum": 0,
+          "title": "Scale Uncertainty M Per Colmap",
+          "type": "number"
+        },
         "schema_version": {
           "const": "0.1.0",
           "default": "0.1.0",
@@ -585,8 +631,16 @@
         "measured_prismatic_axis_colmap",
         "projected_drawer_opening_direction_colmap",
         "angular_uncertainty_degrees",
+        "angular_uncertainty_p50_degrees",
+        "angular_uncertainty_p90_degrees",
+        "angular_uncertainty_max_degrees",
         "origin_uncertainty_colmap",
         "origin_uncertainty_m",
+        "scale_m_per_colmap",
+        "scale_annotation_jackknife_p90_m_per_colmap",
+        "scale_measurement_uncertainty_m_per_colmap",
+        "scale_uncertainty_m_per_colmap",
+        "scale_relative_uncertainty",
         "bootstrap_samples"
       ],
       "title": "LandmarkWorldDerivation",
@@ -864,6 +918,58 @@
           "default": false,
           "title": "Independent Metric Length Holdout Available",
           "type": "boolean"
+        },
+        "scale_annotation_jackknife_p90_m_per_colmap": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scale Annotation Jackknife P90 M Per Colmap"
+        },
+        "scale_measurement_uncertainty_m_per_colmap": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scale Measurement Uncertainty M Per Colmap"
+        },
+        "scale_relative_uncertainty": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scale Relative Uncertainty"
+        },
+        "scale_uncertainty_m_per_colmap": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scale Uncertainty M Per Colmap"
         },
         "sim3_roundtrip_error": {
           "minimum": 0,

@@ -330,6 +330,21 @@ def test_dual_known_distance_has_independent_frozen_scale_holdout() -> None:
     assert result["heldout_residuals"] == pytest.approx({"heldout_height": 0.0}, abs=1e-10)
 
 
+def test_scale_uncertainty_includes_jackknife_and_physical_measurement() -> None:
+    manifest, camera = _known_distance_fixture(independent_holdout=True)
+    manifest["known_distance"]["landmarks"][0]["measurement_uncertainty_m"] = 0.01
+    result = _known_distance_solution(
+        manifest,
+        camera,
+        {"frame_0", "frame_1"},
+        {"frame_2"},
+    )
+    assert result["scale_annotation_jackknife_p90"] == 0.0
+    assert result["scale_measurement_uncertainty"] == pytest.approx(0.005)
+    assert result["scale_uncertainty"] == pytest.approx(0.005)
+    assert result["scale_relative_uncertainty"] == pytest.approx(0.01)
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -356,6 +371,11 @@ def test_landmark_world_derivation_is_bound_to_current_solve_and_sources(
         "up_vector_colmap": [0.0, 0.0, 1.0],
         "forward_vector_colmap": [0.0, 1.0, 0.0],
         "origin_colmap": [0.0, 0.0, 0.0],
+        "scale_m_per_colmap": 0.1,
+        "scale_annotation_jackknife_p90_m_per_colmap": 0.001,
+        "scale_measurement_uncertainty_m_per_colmap": 0.002,
+        "scale_uncertainty_m_per_colmap": 0.003,
+        "scale_relative_uncertainty": 0.03,
     }
     derivation_path = tmp_path / "derivation.json"
     derivation_path.write_text(json.dumps(derivation), encoding="utf-8")
@@ -385,7 +405,12 @@ def test_landmark_world_derivation_is_bound_to_current_solve_and_sources(
         "landmarks": [
             {"point_id": point_id, "point_colmap": coordinates}
             for point_id, coordinates in derivation["point_coordinates_colmap"].items()
-        ]
+        ],
+        "robust_scale": 0.1,
+        "scale_annotation_jackknife_p90": 0.001,
+        "scale_measurement_uncertainty": 0.002,
+        "scale_uncertainty": 0.003,
+        "scale_relative_uncertainty": 0.03,
     }
     assert _landmark_world_derivation(manifest, tmp_path, known_distance) == derivation
 

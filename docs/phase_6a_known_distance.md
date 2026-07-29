@@ -47,3 +47,17 @@ source Scene IR hashes. It also records bootstrap subsets and uncertainties.
 The full-canonical solve rejects a derivation if any dependency hash, O/U/R
 coordinate, typed up vector, typed forward vector, or typed origin differs from
 the current evidence.
+
+Scale uncertainty has two independently recorded components:
+
+```text
+annotation component = p90 leave-one-fitting-frame-out scale deviation
+measurement component = physical distance uncertainty / reconstructed distance
+reported scale uncertainty = annotation component + measurement component
+```
+
+The sum is deliberately conservative and does not change the fitted scale or
+acceptance gates. The consistency validator recomputes the physical component
+from the typed fitting anchor and triangulated endpoints. A real known-distance
+run fails consistency when its measurement provenance or positive uncertainty
+is missing.

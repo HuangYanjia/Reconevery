@@ -5459,6 +5459,8 @@ class KnownDistanceLandmark(StrictModel):
     def distinct_endpoints(self) -> Self:
         if self.point_a_id == self.point_b_id:
             raise ValueError("known-distance endpoints must be distinct")
+        if self.measurement_provenance is not None and self.measurement_uncertainty_m <= 0:
+            raise ValueError("provenanced physical measurements require positive uncertainty")
         return self
 
 
@@ -5773,6 +5775,10 @@ class WorldCalibrationMetrics(StrictModel):
     gravity_fitting_error_degrees: float | None = Field(default=None, ge=0)
     gravity_heldout_error_degrees: float | None = Field(default=None, ge=0)
     forward_uncertainty_degrees: float | None = Field(default=None, ge=0)
+    scale_annotation_jackknife_p90_m_per_colmap: float | None = Field(default=None, ge=0)
+    scale_measurement_uncertainty_m_per_colmap: float | None = Field(default=None, ge=0)
+    scale_uncertainty_m_per_colmap: float | None = Field(default=None, ge=0)
+    scale_relative_uncertainty: float | None = Field(default=None, ge=0)
     sim3_roundtrip_error: float = Field(ge=0)
     fitting_known_distance_residuals: dict[str, float] = Field(default_factory=dict)
     heldout_known_distance_residuals: dict[str, float] = Field(default_factory=dict)
@@ -5837,6 +5843,7 @@ class LandmarkWorldBootstrapSample(StrictModel):
     up_vector_colmap: tuple[float, float, float]
     right_vector_colmap: tuple[float, float, float]
     forward_vector_colmap: tuple[float, float, float]
+    scale_m_per_colmap: float = Field(gt=0)
     angular_deviation_degrees: float = Field(ge=0)
     origin_deviation_colmap: float = Field(ge=0)
 
@@ -5868,12 +5875,30 @@ class LandmarkWorldDerivation(StrictModel):
     measured_prismatic_axis_colmap: tuple[float, float, float]
     projected_drawer_opening_direction_colmap: tuple[float, float, float]
     angular_uncertainty_degrees: float = Field(ge=0)
+    angular_uncertainty_p50_degrees: float = Field(ge=0)
+    angular_uncertainty_p90_degrees: float = Field(ge=0)
+    angular_uncertainty_max_degrees: float = Field(ge=0)
     origin_uncertainty_colmap: float = Field(ge=0)
     origin_uncertainty_m: float = Field(ge=0)
+    scale_m_per_colmap: float = Field(gt=0)
+    scale_annotation_jackknife_p90_m_per_colmap: float = Field(ge=0)
+    scale_measurement_uncertainty_m_per_colmap: float = Field(ge=0)
+    scale_uncertainty_m_per_colmap: float = Field(ge=0)
+    scale_relative_uncertainty: float = Field(ge=0)
     bootstrap_samples: Annotated[list[LandmarkWorldBootstrapSample], Field(min_length=3)]
 
     @model_validator(mode="after")
     def finite_orthonormal_landmark_frame(self) -> Self:
+        def quantile(values: list[float], probability: float) -> float:
+            ordered = sorted(values)
+            position = (len(ordered) - 1) * probability
+            lower = math.floor(position)
+            upper = math.ceil(position)
+            if lower == upper:
+                return ordered[lower]
+            fraction = position - lower
+            return ordered[lower] * (1.0 - fraction) + ordered[upper] * fraction
+
         required_points = {self.origin_point_id, self.up_point_id, self.right_point_id}
         if not required_points <= set(self.point_coordinates_colmap):
             raise ValueError("landmark derivation must contain the O/U/R point coordinates")
@@ -5925,6 +5950,63 @@ class LandmarkWorldDerivation(StrictModel):
             > 1e-9
         ):
             raise ValueError("landmark-derived origin must equal the declared O point")
+        angular_samples = [sample.angular_deviation_degrees for sample in self.bootstrap_samples]
+        expected_angular = (
+            quantile(angular_samples, 0.5),
+            quantile(angular_samples, 0.9),
+            max(angular_samples),
+        )
+        actual_angular = (
+            self.angular_uncertainty_p50_degrees,
+            self.angular_uncertainty_p90_degrees,
+            self.angular_uncertainty_max_degrees,
+        )
+        if (
+            max(
+                abs(actual - expected)
+                for actual, expected in zip(actual_angular, expected_angular, strict=True)
+            )
+            > 1e-12
+        ):
+            raise ValueError("landmark angular uncertainty must be derived from bootstrap samples")
+        if abs(self.angular_uncertainty_degrees - self.angular_uncertainty_p90_degrees) > 1e-12:
+            raise ValueError("landmark acceptance uncertainty must use angular p90")
+        origin_p90_colmap = quantile(
+            [sample.origin_deviation_colmap for sample in self.bootstrap_samples],
+            0.9,
+        )
+        if abs(self.origin_uncertainty_colmap - origin_p90_colmap) > 1e-12:
+            raise ValueError("landmark origin uncertainty must use bootstrap p90")
+        expected_origin_uncertainty_m = origin_p90_colmap * (
+            self.scale_m_per_colmap + self.scale_uncertainty_m_per_colmap
+        )
+        if abs(self.origin_uncertainty_m - expected_origin_uncertainty_m) > 1e-12:
+            raise ValueError(
+                "metric origin uncertainty must include scale and physical measurement uncertainty"
+            )
+        scale_annotation_p90 = quantile(
+            [
+                abs(sample.scale_m_per_colmap - self.scale_m_per_colmap)
+                for sample in self.bootstrap_samples
+            ],
+            0.9,
+        )
+        if abs(self.scale_annotation_jackknife_p90_m_per_colmap - scale_annotation_p90) > 1e-12:
+            raise ValueError("landmark scale uncertainty must use bootstrap p90")
+        expected_scale_uncertainty = (
+            self.scale_annotation_jackknife_p90_m_per_colmap
+            + self.scale_measurement_uncertainty_m_per_colmap
+        )
+        if abs(self.scale_uncertainty_m_per_colmap - expected_scale_uncertainty) > 1e-12:
+            raise ValueError(
+                "landmark scale uncertainty must conservatively include annotation "
+                "and physical measurement uncertainty"
+            )
+        expected_relative_uncertainty = (
+            self.scale_uncertainty_m_per_colmap / self.scale_m_per_colmap
+        )
+        if abs(self.scale_relative_uncertainty - expected_relative_uncertainty) > 1e-12:
+            raise ValueError("landmark relative scale uncertainty is inconsistent")
         return self
 
 

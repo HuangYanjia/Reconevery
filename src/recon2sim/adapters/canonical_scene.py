@@ -268,6 +268,71 @@ def _matrix_error(left: tuple[float, ...], right: tuple[float, ...]) -> float:
     return max(abs(actual - expected) for actual, expected in zip(left, right, strict=True))
 
 
+def _known_distance_uncertainty_is_bound(
+    manifest: WorldCalibrationManifest,
+    calibration: WorldCalibrationArtifact,
+    triangulated_payload: dict[str, object],
+) -> bool:
+    if manifest.known_distance is None:
+        return True
+    raw_landmarks = triangulated_payload.get("landmarks")
+    if not isinstance(raw_landmarks, list):
+        return False
+    triangulated_by_id: dict[str, tuple[float, ...]] = {}
+    for item in raw_landmarks:
+        if not isinstance(item, dict):
+            return False
+        point_id = item.get("point_id")
+        coordinates = item.get("point_colmap")
+        if not isinstance(point_id, str) or not isinstance(coordinates, list):
+            return False
+        triangulated_by_id[point_id] = tuple(float(value) for value in coordinates)
+    provenance_ok = all(
+        landmark.measurement_provenance is not None and landmark.measurement_uncertainty_m > 0
+        for landmark in manifest.known_distance.landmarks
+    )
+    expected_measurement_uncertainties = []
+    for landmark in manifest.known_distance.landmarks:
+        if landmark.role.value != "fitting":
+            continue
+        point_a = triangulated_by_id.get(landmark.point_a_id)
+        point_b = triangulated_by_id.get(landmark.point_b_id)
+        if point_a is None or point_b is None:
+            return False
+        distance = math.sqrt(
+            sum((left - right) ** 2 for left, right in zip(point_a, point_b, strict=True))
+        )
+        if distance <= 0:
+            return False
+        expected_measurement_uncertainties.append(landmark.measurement_uncertainty_m / distance)
+    metrics = calibration.metrics
+    candidate_transform = next(
+        (
+            candidate.transform
+            for candidate in calibration.candidates
+            if candidate.transform is not None
+        ),
+        None,
+    )
+    expected_measurement = max(expected_measurement_uncertainties, default=None)
+    actual_annotation = metrics.scale_annotation_jackknife_p90_m_per_colmap
+    actual_measurement = metrics.scale_measurement_uncertainty_m_per_colmap
+    actual_total = metrics.scale_uncertainty_m_per_colmap
+    actual_relative = metrics.scale_relative_uncertainty
+    return (
+        provenance_ok
+        and expected_measurement is not None
+        and actual_annotation is not None
+        and actual_measurement is not None
+        and actual_total is not None
+        and actual_relative is not None
+        and candidate_transform is not None
+        and abs(actual_measurement - expected_measurement) <= 1e-12
+        and abs(actual_total - (actual_annotation + actual_measurement)) <= 1e-12
+        and abs(actual_relative - actual_total / candidate_transform.scale_m_per_colmap) <= 1e-12
+    )
+
+
 class CanonicalSceneAdapter:
     name = "canonical_scene_wrapper"
     version = "0.3.0"
@@ -466,7 +531,7 @@ class CanonicalSceneAdapter:
 
 class Phase6AConsistencyValidationAdapter:
     name = "phase6a_consistency_validation"
-    version = "0.3.0"
+    version = "0.4.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         manifest = WorldCalibrationManifest.model_validate_json(
@@ -478,6 +543,10 @@ class Phase6AConsistencyValidationAdapter:
             InputSpec("calibration/evidence_manifest.json", "world_calibration_manifest"),
             InputSpec("calibration/request.json", "world_calibration_request"),
             InputSpec("calibration/world_calibration.json", "world_calibration_artifact"),
+            InputSpec(
+                "calibration/triangulated_landmarks.json",
+                "triangulated_calibration_landmarks",
+            ),
             InputSpec(
                 "calibration/canonical_scene_wrapper.json",
                 "canonical_scene_wrapper",
@@ -750,6 +819,17 @@ class Phase6AConsistencyValidationAdapter:
             calibration.metrics.independent_metric_length_holdout_available
             or calibration.metrics.heldout_metric_relative_error is None
         )
+        known_distance_uncertainty_provenance = True
+        if manifest.known_distance is not None:
+            triangulated_payload = json.loads(
+                context.path("calibration/triangulated_landmarks.json").read_text(encoding="utf-8")
+            )
+            assert isinstance(triangulated_payload, dict)
+            known_distance_uncertainty_provenance = _known_distance_uncertainty_is_bound(
+                manifest,
+                calibration,
+                triangulated_payload,
+            )
         status_flags_consistent = calibration.full_canonical_world_available == all(
             (
                 calibration.metric_scale_known,
@@ -994,6 +1074,11 @@ class Phase6AConsistencyValidationAdapter:
                 "independent_metric_holdout_semantics",
                 independent_metric_semantics,
                 "fitting metric residual is not duplicated as held-out length evidence",
+            ),
+            check(
+                "known_distance_uncertainty_provenance",
+                known_distance_uncertainty_provenance,
+                "metric scale uncertainty includes typed physical measurement provenance",
             ),
             check(
                 "canonical_scene_exact_references",

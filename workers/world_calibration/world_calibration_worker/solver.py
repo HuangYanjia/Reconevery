@@ -258,6 +258,21 @@ def _landmark_world_derivation(
         > 1e-9
     ):
         raise ValueError("landmark-derived origin does not match typed origin evidence")
+    uncertainty_fields = {
+        "scale_m_per_colmap": "robust_scale",
+        "scale_annotation_jackknife_p90_m_per_colmap": ("scale_annotation_jackknife_p90"),
+        "scale_measurement_uncertainty_m_per_colmap": "scale_measurement_uncertainty",
+        "scale_uncertainty_m_per_colmap": "scale_uncertainty",
+        "scale_relative_uncertainty": "scale_relative_uncertainty",
+    }
+    for derivation_key, solution_key in uncertainty_fields.items():
+        expected = known_distance.get(solution_key)
+        if (
+            expected is None
+            or derivation.get(derivation_key) is None
+            or abs(float(derivation[derivation_key]) - float(expected)) > 1e-12
+        ):
+            raise ValueError("landmark derivation scale uncertainty differs from the current solve")
     return derivation
 
 
@@ -279,6 +294,12 @@ def _known_distance_solution(
             "fitting_reprojection_error_px": None,
             "heldout_reprojection_error_px": None,
             "independent_length_holdout": False,
+            "scale_annotation_jackknife_p90": None,
+            "scale_measurement_uncertainty": None,
+            "scale_uncertainty": None,
+            "scale_relative_uncertainty": None,
+            "scale_jackknife_samples": [],
+            "robust_scale": None,
         }
     projections = projection_by_frame(camera)
     by_point: dict[str, list[dict[str, Any]]] = {}
@@ -338,6 +359,66 @@ def _known_distance_solution(
     if not fitting_scales:
         raise ValueError("known-distance calibration has no fitting anchor")
     robust_scale = _median(fitting_scales)
+    scale_jackknife_samples = []
+    fitting_frame_sequence = sorted(
+        {
+            str(item["frame_id"])
+            for observations in by_point.values()
+            for item in observations
+            if item["role"] == "fitting" and str(item["frame_id"]) in fitting_frames
+        }
+    )
+    for omitted_frame_id in fitting_frame_sequence:
+        sample_points: dict[str, np.ndarray] = {}
+        for point_id, observations in sorted(by_point.items()):
+            sample_observations = [
+                item
+                for item in observations
+                if item["role"] == "fitting"
+                and str(item["frame_id"]) in fitting_frames
+                and str(item["frame_id"]) != omitted_frame_id
+            ]
+            if len(sample_observations) < 2:
+                sample_points = {}
+                break
+            sample_points[point_id] = triangulate(
+                undistort_observations(sample_observations, camera),
+                projections,
+            )
+        if not sample_points:
+            continue
+        sample_scales = []
+        for landmark in known["landmarks"]:
+            if landmark["role"] != "fitting":
+                continue
+            point_a = sample_points[str(landmark["point_a_id"])]
+            point_b = sample_points[str(landmark["point_b_id"])]
+            distance = float(np.linalg.norm(point_a - point_b))
+            if distance <= np.finfo(np.float64).eps:
+                sample_scales = []
+                break
+            sample_scales.append(float(landmark["known_distance_m"]) / distance)
+        if sample_scales:
+            scale_jackknife_samples.append(
+                {
+                    "omitted_frame_id": omitted_frame_id,
+                    "scale_m_per_colmap": _median(sample_scales),
+                }
+            )
+    scale_deviations = [
+        abs(float(item["scale_m_per_colmap"]) - robust_scale) for item in scale_jackknife_samples
+    ]
+    scale_annotation_jackknife_p90 = (
+        float(np.quantile(scale_deviations, 0.9)) if scale_deviations else 0.0
+    )
+    scale_measurement_uncertainties = [
+        float(landmark.get("measurement_uncertainty_m", 0.0))
+        / anchor_values[str(landmark["landmark_id"])][0]
+        for landmark in known["landmarks"]
+        if landmark["role"] == "fitting"
+    ]
+    scale_measurement_uncertainty = max(scale_measurement_uncertainties, default=0.0)
+    scale_uncertainty = scale_annotation_jackknife_p90 + scale_measurement_uncertainty
     fitting_residuals = {
         landmark_id: abs(distance * robust_scale - known_m) / known_m
         for landmark_id, (distance, known_m) in anchor_values.items()
@@ -364,6 +445,12 @@ def _known_distance_solution(
         "fitting_reprojection_error_px": max(fitting_reprojection, default=None),
         "heldout_reprojection_error_px": max(heldout_reprojection, default=None),
         "independent_length_holdout": bool(heldout_residuals),
+        "scale_annotation_jackknife_p90": scale_annotation_jackknife_p90,
+        "scale_measurement_uncertainty": scale_measurement_uncertainty,
+        "scale_uncertainty": scale_uncertainty,
+        "scale_relative_uncertainty": scale_uncertainty / robust_scale,
+        "scale_jackknife_samples": scale_jackknife_samples,
+        "robust_scale": robust_scale,
     }
 
 
@@ -725,6 +812,14 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
             if isinstance(forward_record, dict)
             else None
         ),
+        "scale_annotation_jackknife_p90_m_per_colmap": known_distance[
+            "scale_annotation_jackknife_p90"
+        ],
+        "scale_measurement_uncertainty_m_per_colmap": known_distance[
+            "scale_measurement_uncertainty"
+        ],
+        "scale_uncertainty_m_per_colmap": known_distance["scale_uncertainty"],
+        "scale_relative_uncertainty": known_distance["scale_relative_uncertainty"],
         "sim3_roundtrip_error": roundtrip,
         "fitting_known_distance_residuals": known_distance["fitting_residuals"],
         "heldout_known_distance_residuals": known_distance["heldout_residuals"],

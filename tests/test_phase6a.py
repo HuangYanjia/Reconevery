@@ -11,6 +11,7 @@ from recon2sim.adapters.canonical_scene import (
     _asset_transform_policy,
     _canonical_scene,
     _joint_motion_matrix,
+    _known_distance_uncertainty_is_bound,
     _prismatic_unit_mappings,
     _requires_direct_world_wrapper,
     _transform_matrix,
@@ -352,7 +353,7 @@ def test_fake_phase6a_pipeline_resume_cli_and_source_immutability(tmp_path: Path
         (run_dir / "calibration/canonical_scene_wrapper.json").read_text(encoding="utf-8")
     )
     assert report.passed
-    assert len(report.checks) == 33
+    assert len(report.checks) == 34
     assert report.full_canonical_world_available
     assert not report.camera_poses_rewritten
     assert not report.source_geometry_rewritten
@@ -554,9 +555,17 @@ def _landmark_world_derivation_payload() -> dict[str, object]:
         "measured_prismatic_joint_id": "drawer_joint",
         "measured_prismatic_axis_colmap": [0.0, 1.0, 0.0],
         "projected_drawer_opening_direction_colmap": [0.0, 1.0, 0.0],
-        "angular_uncertainty_degrees": 0.5,
-        "origin_uncertainty_colmap": 0.01,
-        "origin_uncertainty_m": 0.005,
+        "angular_uncertainty_degrees": 0.1,
+        "angular_uncertainty_p50_degrees": 0.1,
+        "angular_uncertainty_p90_degrees": 0.1,
+        "angular_uncertainty_max_degrees": 0.1,
+        "origin_uncertainty_colmap": 0.001,
+        "origin_uncertainty_m": 0.000303,
+        "scale_m_per_colmap": 0.3,
+        "scale_annotation_jackknife_p90_m_per_colmap": 0.001,
+        "scale_measurement_uncertainty_m_per_colmap": 0.002,
+        "scale_uncertainty_m_per_colmap": 0.003,
+        "scale_relative_uncertainty": 0.01,
         "bootstrap_samples": [
             {
                 "sample_id": f"sample_{index}",
@@ -565,6 +574,7 @@ def _landmark_world_derivation_payload() -> dict[str, object]:
                 "up_vector_colmap": [0.0, 0.0, 1.0],
                 "right_vector_colmap": [1.0, 0.0, 0.0],
                 "forward_vector_colmap": [0.0, 1.0, 0.0],
+                "scale_m_per_colmap": [0.299, 0.3, 0.301][index],
                 "angular_deviation_degrees": 0.1,
                 "origin_deviation_colmap": 0.001,
             }
@@ -586,6 +596,145 @@ def test_landmark_world_derivation_has_one_evidence_bound_orthonormal_frame() ->
     payload["origin_colmap"] = [0.1, 0.0, 0.0]
     with pytest.raises(ValidationError, match="must equal"):
         LandmarkWorldDerivation.model_validate(payload)
+
+    payload = _landmark_world_derivation_payload()
+    payload["scale_uncertainty_m_per_colmap"] = 0.001
+    payload["scale_relative_uncertainty"] = 0.001 / 0.3
+    with pytest.raises(ValidationError, match="physical measurement uncertainty"):
+        LandmarkWorldDerivation.model_validate(payload)
+
+
+def test_provenanced_physical_measurement_requires_positive_uncertainty() -> None:
+    payload = {
+        "run_id": "measurement",
+        "frame_sequence_digest": "0" * 64,
+        "camera_reconstruction_path": "camera.json",
+        "camera_reconstruction_sha256": "1" * 64,
+        "source_scene_ir_path": "scene.json",
+        "source_scene_ir_sha256": "2" * 64,
+        "evidence": [],
+        "known_distance": {
+            "landmarks": [
+                {
+                    "landmark_id": "height",
+                    "point_a_id": "O",
+                    "point_b_id": "U",
+                    "known_distance_m": 0.9,
+                    "measurement_uncertainty_m": 0.0,
+                    "measurement_provenance": {
+                        "measurement_tool": "steel tape",
+                        "measurement_date": "2026-07-29",
+                        "measurement_definition": "fixed cabinet height",
+                        "point_a_description": "front-left-bottom",
+                        "point_b_description": "front-left-top",
+                        "units": "meters",
+                    },
+                    "role": "fitting",
+                }
+            ],
+            "observations": [
+                {
+                    "frame_id": frame_id,
+                    "point_id": point_id,
+                    "pixel_xy": [0.0, 0.0],
+                    "role": role,
+                }
+                for frame_id, role in (
+                    ("fit_0", "fitting"),
+                    ("fit_1", "fitting"),
+                    ("hold", "heldout"),
+                )
+                for point_id in ("O", "U")
+            ],
+        },
+        "evidence_tier": "scale_only",
+    }
+    with pytest.raises(ValidationError, match="positive uncertainty"):
+        WorldCalibrationManifest.model_validate(payload)
+
+
+def test_known_distance_uncertainty_is_recomputed_from_exact_measurement() -> None:
+    provenance = {
+        "measurement_tool": "steel tape",
+        "measurement_date": "2026-07-29",
+        "measurement_definition": "fixed cabinet dimension",
+        "point_a_description": "cabinet O",
+        "point_b_description": "fixed cabinet endpoint",
+        "units": "meters",
+    }
+    observations = [
+        {
+            "frame_id": frame_id,
+            "point_id": point_id,
+            "pixel_xy": [0.0, 0.0],
+            "role": role,
+        }
+        for frame_id, role in (
+            ("fit_0", "fitting"),
+            ("fit_1", "fitting"),
+            ("hold", "heldout"),
+        )
+        for point_id in ("O", "U", "R")
+    ]
+    manifest = WorldCalibrationManifest.model_validate(
+        {
+            "run_id": "uncertainty",
+            "frame_sequence_digest": "0" * 64,
+            "camera_reconstruction_path": "camera.json",
+            "camera_reconstruction_sha256": "1" * 64,
+            "source_scene_ir_path": "scene.json",
+            "source_scene_ir_sha256": "2" * 64,
+            "evidence": [],
+            "known_distance": {
+                "landmarks": [
+                    {
+                        "landmark_id": "height",
+                        "point_a_id": "O",
+                        "point_b_id": "U",
+                        "known_distance_m": 0.9,
+                        "measurement_uncertainty_m": 0.009,
+                        "measurement_provenance": provenance,
+                        "role": "fitting",
+                    },
+                    {
+                        "landmark_id": "width",
+                        "point_a_id": "O",
+                        "point_b_id": "R",
+                        "known_distance_m": 0.5,
+                        "measurement_uncertainty_m": 0.005,
+                        "measurement_provenance": provenance,
+                        "role": "heldout",
+                    },
+                ],
+                "observations": observations,
+            },
+            "evidence_tier": "scale_only",
+        }
+    )
+    artifact_payload = _artifact().model_dump(mode="json")
+    artifact_payload["metrics"].update(
+        {
+            "scale_annotation_jackknife_p90_m_per_colmap": 0.001,
+            "scale_measurement_uncertainty_m_per_colmap": 0.0045,
+            "scale_uncertainty_m_per_colmap": 0.0055,
+            "scale_relative_uncertainty": 0.00275,
+        }
+    )
+    artifact = WorldCalibrationArtifact.model_validate(artifact_payload)
+    triangulated = {
+        "landmarks": [
+            {"point_id": "O", "point_colmap": [0.0, 0.0, 0.0]},
+            {"point_id": "U", "point_colmap": [0.0, 0.0, 2.0]},
+            {"point_id": "R", "point_colmap": [1.0, 0.0, 0.0]},
+        ]
+    }
+    assert _known_distance_uncertainty_is_bound(manifest, artifact, triangulated)
+
+    artifact_payload["metrics"]["scale_measurement_uncertainty_m_per_colmap"] = 0.0
+    artifact_payload["metrics"]["scale_uncertainty_m_per_colmap"] = 0.001
+    artifact_payload["metrics"]["scale_relative_uncertainty"] = 0.0005
+    tampered = WorldCalibrationArtifact.model_validate(artifact_payload)
+    assert not _known_distance_uncertainty_is_bound(manifest, tampered, triangulated)
 
 
 def test_world_calibration_status_flags_are_mutually_consistent() -> None:

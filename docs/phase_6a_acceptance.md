@@ -21,7 +21,7 @@ maximum_sim3_roundtrip_error: 1.0e-8
 Real full-canonical acceptance requires a recorded metric measurement, disjoint
 fitting/held-out evidence, accepted gravity, forward, origin, a finite proper
 Sim(3), canonical camera validation, one derived metric geometry export, real
-rigid/articulated propagation, 33/33 consistency checks, and an identical
+rigid/articulated propagation, 34/34 consistency checks, and an identical
 resume with all Phase 6A stages cache hitting.
 
 For landmark-derived full canonicalization, the calibration artifact,
