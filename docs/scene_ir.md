@@ -151,7 +151,8 @@ the hash of the bytes at its declared path, never a digest of a nested parent re
 `canonical_x_forward_y_left_z_up`, meters, and `metric_scale_known`.
 
 The accompanying `calibration/canonical_scene_wrapper.json` stores the exact source
-Scene IR/calibration hashes and per-asset wrapper policies. Geometry URIs and source
+Scene IR, camera reconstruction, and calibration paths/hashes plus per-asset
+wrapper policies. Geometry URIs and source
 bytes are retained. A rejected or partial calibration produces a derived Scene IR
 with the original arbitrary/unoriented convention and no accepted canonical claim.
 

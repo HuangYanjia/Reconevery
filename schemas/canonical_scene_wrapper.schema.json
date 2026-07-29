@@ -210,6 +210,15 @@
       "title": "Source Artifacts Immutable",
       "type": "boolean"
     },
+    "source_camera_reconstruction_path": {
+      "title": "Source Camera Reconstruction Path",
+      "type": "string"
+    },
+    "source_camera_reconstruction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Camera Reconstruction Sha256",
+      "type": "string"
+    },
     "source_scene_ir_path": {
       "title": "Source Scene Ir Path",
       "type": "string"
@@ -223,6 +232,8 @@
   "required": [
     "source_scene_ir_path",
     "source_scene_ir_sha256",
+    "source_camera_reconstruction_path",
+    "source_camera_reconstruction_sha256",
     "calibration_artifact_path",
     "calibration_artifact_sha256",
     "calibration_status",

@@ -5839,6 +5839,8 @@ class CanonicalSceneWrapper(StrictModel):
     schema_version: Literal["0.1.0"] = "0.1.0"
     source_scene_ir_path: str
     source_scene_ir_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    source_camera_reconstruction_path: str
+    source_camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     calibration_artifact_path: str
     calibration_artifact_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     accepted_transform: WorldCalibrationTransform | None = None
@@ -5849,7 +5851,11 @@ class CanonicalSceneWrapper(StrictModel):
     revolute_quantity_policy: Literal["radians_unchanged"] = "radians_unchanged"
     source_artifacts_immutable: Literal[True] = True
 
-    @field_validator("source_scene_ir_path", "calibration_artifact_path")
+    @field_validator(
+        "source_scene_ir_path",
+        "source_camera_reconstruction_path",
+        "calibration_artifact_path",
+    )
     @classmethod
     def relative_wrapper_paths(cls, value: str) -> str:
         return _relative_artifact_path(value)

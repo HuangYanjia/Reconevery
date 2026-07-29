@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from recon2sim.adapters.canonical_scene import _canonical_scene
 from recon2sim.artifacts import (
+    CanonicalSceneWrapper,
     Phase6AConsistencyReport,
     WorldCalibrationArtifact,
     WorldCalibrationManifest,
@@ -268,6 +269,9 @@ def test_fake_phase6a_pipeline_resume_cli_and_source_immutability(tmp_path: Path
     report = Phase6AConsistencyReport.model_validate_json(
         (run_dir / "validation/phase6a_world_calibration.json").read_text(encoding="utf-8")
     )
+    wrapper = CanonicalSceneWrapper.model_validate_json(
+        (run_dir / "calibration/canonical_scene_wrapper.json").read_text(encoding="utf-8")
+    )
     assert report.passed
     assert len(report.checks) == 24
     assert report.full_canonical_world_available
@@ -275,6 +279,8 @@ def test_fake_phase6a_pipeline_resume_cli_and_source_immutability(tmp_path: Path
     assert not report.source_geometry_rewritten
     assert not report.collision_generation_implemented
     assert not report.physics_identification_implemented
+    assert wrapper.source_camera_reconstruction_path == manifest.camera_reconstruction_path
+    assert wrapper.source_camera_reconstruction_sha256 == manifest.camera_reconstruction_sha256
     resumed = runner.run(resume=True)
     assert all(item["last_execution"] == "cache_hit" for item in resumed["stages"].values())
     assert (run_dir / manifest.camera_reconstruction_path).read_bytes() == camera_before

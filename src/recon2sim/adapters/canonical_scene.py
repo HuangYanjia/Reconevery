@@ -282,6 +282,8 @@ class CanonicalSceneAdapter:
         wrapper = CanonicalSceneWrapper(
             source_scene_ir_path=manifest.source_scene_ir_path,
             source_scene_ir_sha256=manifest.source_scene_ir_sha256,
+            source_camera_reconstruction_path=manifest.camera_reconstruction_path,
+            source_camera_reconstruction_sha256=manifest.camera_reconstruction_sha256,
             calibration_artifact_path="calibration/world_calibration.json",
             calibration_artifact_sha256=sha256_file(calibration_path),
             accepted_transform=calibration.accepted_transform,
@@ -424,6 +426,10 @@ class Phase6AConsistencyValidationAdapter:
         source_hash_ok = sha256_file(source_scene_path) == manifest.source_scene_ir_sha256
         camera_path = context.path(*manifest.camera_reconstruction_path.split("/"))
         camera_hash_ok = sha256_file(camera_path) == manifest.camera_reconstruction_sha256
+        wrapper_camera_identity_ok = (
+            wrapper.source_camera_reconstruction_path == manifest.camera_reconstruction_path
+            and wrapper.source_camera_reconstruction_sha256 == manifest.camera_reconstruction_sha256
+        )
         transform_valid = transform is None or (
             transform.scale_m_per_colmap > 0
             and abs(transform.rotation_determinant - 1.0) <= 1e-6
@@ -518,7 +524,11 @@ class Phase6AConsistencyValidationAdapter:
                         )
         checks = [
             check("source_scene_hash", source_hash_ok, "source Scene IR hash matches"),
-            check("camera_hash", camera_hash_ok, "source camera reconstruction hash matches"),
+            check(
+                "camera_hash",
+                camera_hash_ok and wrapper_camera_identity_ok,
+                "wrapper references the exact immutable source camera reconstruction",
+            ),
             check("evidence_hashes", evidence_hashes, "declared evidence hashes match"),
             check(
                 "heldout_split_disjoint",
