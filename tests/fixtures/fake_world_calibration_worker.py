@@ -195,6 +195,15 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
             "reason": "no explicit AprilTag world contract derivation",
         },
     )
+    landmark_derivation_path = output_dir / "landmark_world_derivation.json"
+    write_json(
+        landmark_derivation_path,
+        {
+            "schema_version": "0.1.0",
+            "available": False,
+            "reason": "fake full-canonical fixture uses an AprilTag world contract",
+        },
+    )
     write_json(
         output_dir / "world_calibration.json",
         {
@@ -208,6 +217,7 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
             "selected_candidate_id": candidate["candidate_id"] if accepted else None,
             "accepted_transform": transform if accepted else None,
             "fiducial_world_derivation": derivation,
+            "landmark_world_derivation": None,
             "metrics": {
                 "fitting_metric_relative_error": 0.001 if metric else None,
                 "heldout_metric_relative_error": None,
@@ -273,6 +283,8 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
             "fiducial_world_derivation_sha256": (
                 sha256_file(derivation_path) if derivation is not None else None
             ),
+            "landmark_world_derivation_path": None,
+            "landmark_world_derivation_sha256": None,
             "warnings": [],
         },
     )

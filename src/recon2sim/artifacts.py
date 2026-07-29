@@ -5427,6 +5427,23 @@ class CalibrationLandmarkObservation(StrictModel):
     point_id: str = Field(min_length=1)
     pixel_xy: tuple[float, float]
     role: CalibrationEvidenceRole
+    annotation_method: str | None = Field(default=None, min_length=1)
+    annotation_confidence: float | None = Field(default=None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def annotation_provenance_is_paired(self) -> Self:
+        if (self.annotation_method is None) != (self.annotation_confidence is None):
+            raise ValueError("landmark annotation method and confidence must be paired")
+        return self
+
+
+class PhysicalMeasurementProvenance(StrictModel):
+    measurement_tool: str = Field(min_length=1)
+    measurement_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    measurement_definition: str = Field(min_length=1)
+    point_a_description: str = Field(min_length=1)
+    point_b_description: str = Field(min_length=1)
+    units: Literal["meters"] = "meters"
 
 
 class KnownDistanceLandmark(StrictModel):
@@ -5435,6 +5452,7 @@ class KnownDistanceLandmark(StrictModel):
     point_b_id: str = Field(min_length=1)
     known_distance_m: float = Field(gt=0)
     measurement_uncertainty_m: float = Field(default=0.0, ge=0)
+    measurement_provenance: PhysicalMeasurementProvenance | None = None
     role: CalibrationEvidenceRole
 
     @model_validator(mode="after")
@@ -5446,6 +5464,9 @@ class KnownDistanceLandmark(StrictModel):
 
 class KnownDistanceLandmarkManifest(StrictModel):
     schema_version: Literal["0.2.0"] = "0.2.0"
+    image_coordinate_space: Literal["registered_source_image_pixels"] = (
+        "registered_source_image_pixels"
+    )
     landmarks: Annotated[list[KnownDistanceLandmark], Field(min_length=1)]
     observations: Annotated[list[CalibrationLandmarkObservation], Field(min_length=4)]
 
@@ -5601,6 +5622,11 @@ class WorldCalibrationManifest(StrictModel):
     camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     source_scene_ir_path: str
     source_scene_ir_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    landmark_world_derivation_path: str | None = None
+    landmark_world_derivation_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     evidence: list[CalibrationEvidenceRecord]
     apriltag: AprilTagCalibrationRecord | None = None
     known_distance: KnownDistanceLandmarkManifest | None = None
@@ -5611,18 +5637,46 @@ class WorldCalibrationManifest(StrictModel):
     origin: CanonicalOriginEvidence | None = None
     evidence_tier: WorldCalibrationEvidenceTier
 
-    @field_validator("camera_reconstruction_path", "source_scene_ir_path")
+    @field_validator(
+        "camera_reconstruction_path",
+        "source_scene_ir_path",
+        "landmark_world_derivation_path",
+    )
     @classmethod
-    def relative_calibration_sources(cls, value: str) -> str:
-        return _relative_artifact_path(value)
+    def relative_calibration_sources(cls, value: str | None) -> str | None:
+        return _relative_artifact_path(value) if value is not None else None
 
     @model_validator(mode="after")
     def evidence_tier_matches_sources(self) -> Self:
+        if (self.landmark_world_derivation_path is None) != (
+            self.landmark_world_derivation_sha256 is None
+        ):
+            raise ValueError("landmark derivation path and SHA-256 must be paired")
         declared_sources = {
             source.relative_path: source.sha256
             for record in self.evidence
             for source in record.source_files
         }
+        if (
+            self.landmark_world_derivation_path is not None
+            and declared_sources.get(self.landmark_world_derivation_path)
+            != self.landmark_world_derivation_sha256
+        ):
+            raise ValueError("landmark world derivation must be an exact declared evidence source")
+        if self.landmark_world_derivation_path is not None and (
+            self.known_distance is None
+            or not any(
+                item.source is CalibrationEvidenceType.USER_UP_LANDMARKS for item in self.gravity
+            )
+            or self.forward is None
+            or self.forward.source is not CalibrationEvidenceType.FORWARD_LANDMARKS
+            or self.origin is None
+            or self.origin.source is not CalibrationEvidenceType.ORIGIN_LANDMARK
+        ):
+            raise ValueError(
+                "landmark world derivation requires known-distance, user-up, "
+                "forward-landmark, and origin-landmark evidence"
+            )
         if self.apriltag is not None:
             for image in self.apriltag.image_sources:
                 if declared_sources.get(image.image_path) != image.image_sha256:
@@ -5776,6 +5830,104 @@ class AprilTagWorldDerivation(StrictModel):
         return self
 
 
+class LandmarkWorldBootstrapSample(StrictModel):
+    sample_id: str = Field(min_length=1)
+    fitting_frame_ids: Annotated[list[str], Field(min_length=2)]
+    origin_colmap: tuple[float, float, float]
+    up_vector_colmap: tuple[float, float, float]
+    right_vector_colmap: tuple[float, float, float]
+    forward_vector_colmap: tuple[float, float, float]
+    angular_deviation_degrees: float = Field(ge=0)
+    origin_deviation_colmap: float = Field(ge=0)
+
+
+class LandmarkWorldDerivation(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    formula_version: Literal["cabinet_our_landmarks_drawer_forward_v1"] = (
+        "cabinet_our_landmarks_drawer_forward_v1"
+    )
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    landmark_manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    triangulated_landmarks_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    measured_motion_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    source_scene_ir_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    origin_point_id: str = Field(min_length=1)
+    up_point_id: str = Field(min_length=1)
+    right_point_id: str = Field(min_length=1)
+    point_coordinates_colmap: dict[str, tuple[float, float, float]]
+    up_vector_colmap: tuple[float, float, float]
+    right_vector_colmap: tuple[float, float, float]
+    forward_candidates_colmap: tuple[
+        tuple[float, float, float],
+        tuple[float, float, float],
+    ]
+    selected_forward_candidate: Literal["a", "b"]
+    forward_vector_colmap: tuple[float, float, float]
+    origin_colmap: tuple[float, float, float]
+    measured_prismatic_joint_id: str = Field(min_length=1)
+    measured_prismatic_axis_colmap: tuple[float, float, float]
+    projected_drawer_opening_direction_colmap: tuple[float, float, float]
+    angular_uncertainty_degrees: float = Field(ge=0)
+    origin_uncertainty_colmap: float = Field(ge=0)
+    origin_uncertainty_m: float = Field(ge=0)
+    bootstrap_samples: Annotated[list[LandmarkWorldBootstrapSample], Field(min_length=3)]
+
+    @model_validator(mode="after")
+    def finite_orthonormal_landmark_frame(self) -> Self:
+        required_points = {self.origin_point_id, self.up_point_id, self.right_point_id}
+        if not required_points <= set(self.point_coordinates_colmap):
+            raise ValueError("landmark derivation must contain the O/U/R point coordinates")
+        vectors = (
+            self.up_vector_colmap,
+            self.right_vector_colmap,
+            self.forward_vector_colmap,
+            self.measured_prismatic_axis_colmap,
+            self.projected_drawer_opening_direction_colmap,
+            *self.forward_candidates_colmap,
+        )
+        if not all(math.isfinite(value) for vector in vectors for value in vector):
+            raise ValueError("landmark world derivation vectors must be finite")
+        for vector in vectors:
+            norm = math.sqrt(sum(value * value for value in vector))
+            if abs(norm - 1.0) > 1e-6:
+                raise ValueError("landmark world derivation vectors must be normalized")
+        dot = sum(
+            up * right
+            for up, right in zip(
+                self.up_vector_colmap,
+                self.right_vector_colmap,
+                strict=True,
+            )
+        )
+        if abs(dot) > 1e-6:
+            raise ValueError("landmark-derived up and right axes must be orthogonal")
+        selected = self.forward_candidates_colmap[
+            0 if self.selected_forward_candidate == "a" else 1
+        ]
+        if (
+            max(
+                abs(actual - expected)
+                for actual, expected in zip(
+                    self.forward_vector_colmap,
+                    selected,
+                    strict=True,
+                )
+            )
+            > 1e-9
+        ):
+            raise ValueError("selected landmark forward vector does not match its candidate")
+        origin = self.point_coordinates_colmap[self.origin_point_id]
+        if (
+            max(
+                abs(actual - expected)
+                for actual, expected in zip(self.origin_colmap, origin, strict=True)
+            )
+            > 1e-9
+        ):
+            raise ValueError("landmark-derived origin must equal the declared O point")
+        return self
+
+
 class WorldCalibrationTransform(StrictModel):
     scale_m_per_colmap: float = Field(gt=0)
     rotation_canonical_from_colmap: Annotated[tuple[float, ...], Field(min_length=9, max_length=9)]
@@ -5906,6 +6058,7 @@ class WorldCalibrationArtifact(StrictModel):
     selected_candidate_id: str | None = None
     accepted_transform: WorldCalibrationTransform | None = None
     fiducial_world_derivation: AprilTagWorldDerivation | None = None
+    landmark_world_derivation: LandmarkWorldDerivation | None = None
     metrics: WorldCalibrationMetrics
     metric_scale_known: bool
     gravity_alignment_known: bool
@@ -5970,6 +6123,10 @@ class WorldCalibrationArtifact(StrictModel):
             WorldCalibrationEvidenceTier.FULL_CANONICAL
         ):
             raise ValueError("fiducial world derivation requires full-canonical evidence")
+        if self.landmark_world_derivation is not None and self.evidence_tier is not (
+            WorldCalibrationEvidenceTier.FULL_CANONICAL
+        ):
+            raise ValueError("landmark world derivation requires full-canonical evidence")
         return self
 
 
@@ -5990,6 +6147,11 @@ class WorldCalibrationDiagnostics(StrictModel):
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
+    landmark_world_derivation_path: str | None = None
+    landmark_world_derivation_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     warnings: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -6000,6 +6162,12 @@ class WorldCalibrationDiagnostics(StrictModel):
             raise ValueError("fiducial derivation path and SHA-256 must be paired")
         if self.fiducial_world_derivation_path is not None:
             _relative_artifact_path(self.fiducial_world_derivation_path)
+        if (self.landmark_world_derivation_path is None) != (
+            self.landmark_world_derivation_sha256 is None
+        ):
+            raise ValueError("landmark derivation path and SHA-256 must be paired")
+        if self.landmark_world_derivation_path is not None:
+            _relative_artifact_path(self.landmark_world_derivation_path)
         return self
 
 
@@ -6056,6 +6224,11 @@ class CanonicalSceneWrapper(StrictModel):
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
+    landmark_world_derivation_path: str | None = None
+    landmark_world_derivation_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     asset_mappings: list[CanonicalAssetMapping]
     prismatic_unit_mappings: list[CanonicalPrismaticUnitMapping] = Field(default_factory=list)
     camera_transform_policy: Literal["compose_world_wrapper"] = "compose_world_wrapper"
@@ -6069,6 +6242,7 @@ class CanonicalSceneWrapper(StrictModel):
         "source_camera_reconstruction_path",
         "calibration_artifact_path",
         "fiducial_world_derivation_path",
+        "landmark_world_derivation_path",
     )
     @classmethod
     def relative_wrapper_paths(cls, value: str | None) -> str | None:
@@ -6080,6 +6254,10 @@ class CanonicalSceneWrapper(StrictModel):
             self.fiducial_world_derivation_sha256 is None
         ):
             raise ValueError("wrapper fiducial derivation path and SHA-256 must be paired")
+        if (self.landmark_world_derivation_path is None) != (
+            self.landmark_world_derivation_sha256 is None
+        ):
+            raise ValueError("wrapper landmark derivation path and SHA-256 must be paired")
         return self
 
 

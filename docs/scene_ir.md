@@ -151,7 +151,7 @@ the hash of the bytes at its declared path, never a digest of a nested parent re
 `canonical_x_forward_y_left_z_up`, meters, and `metric_scale_known`.
 
 The accompanying `calibration/canonical_scene_wrapper.json` stores the exact source
-Scene IR, camera reconstruction, calibration, fiducial derivation, and per-asset
+Scene IR, camera reconstruction, calibration, fiducial or landmark derivation, and per-asset
 wrapper paths/hashes. Phase 6A Scene IR metadata repeats the exact source,
 calibration, and wrapper identities. Every retained geometry asset is marked as
 source-space. Reference-world/global assets require that exact wrapper after full
@@ -166,3 +166,9 @@ object root only and leaves all joint-local values unchanged. The wrapper record
 `prismatic_position_scale_to_m = calibration scale * source object scale` so a
 downstream compiler converts q exactly once. Reference-world measured assets are
 never baked or double transformed.
+
+A landmark-derived canonical scene cannot be interpreted from its top-level
+meter metadata alone. Consumers must verify and apply the referenced wrapper to
+source-space geometry. The exact O/U/R derivation remains auditable through the
+Scene IR calibration record instead of being reduced to unbound up, forward,
+and origin values.

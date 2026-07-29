@@ -94,7 +94,7 @@ def _strip_local_paths(value: object) -> object:
 
 class CalibrationEvidenceAdapter:
     name = "calibration_evidence"
-    version = "0.2.0"
+    version = "0.3.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         config = CalibrationEvidenceConfig.model_validate(context.config.adapter.config)

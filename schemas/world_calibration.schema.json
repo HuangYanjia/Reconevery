@@ -203,6 +203,395 @@
       "title": "AprilTagWorldDerivation",
       "type": "object"
     },
+    "LandmarkWorldBootstrapSample": {
+      "additionalProperties": false,
+      "properties": {
+        "angular_deviation_degrees": {
+          "minimum": 0,
+          "title": "Angular Deviation Degrees",
+          "type": "number"
+        },
+        "fitting_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 2,
+          "title": "Fitting Frame Ids",
+          "type": "array"
+        },
+        "forward_vector_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Forward Vector Colmap",
+          "type": "array"
+        },
+        "origin_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Colmap",
+          "type": "array"
+        },
+        "origin_deviation_colmap": {
+          "minimum": 0,
+          "title": "Origin Deviation Colmap",
+          "type": "number"
+        },
+        "right_vector_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Right Vector Colmap",
+          "type": "array"
+        },
+        "sample_id": {
+          "minLength": 1,
+          "title": "Sample Id",
+          "type": "string"
+        },
+        "up_vector_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Up Vector Colmap",
+          "type": "array"
+        }
+      },
+      "required": [
+        "sample_id",
+        "fitting_frame_ids",
+        "origin_colmap",
+        "up_vector_colmap",
+        "right_vector_colmap",
+        "forward_vector_colmap",
+        "angular_deviation_degrees",
+        "origin_deviation_colmap"
+      ],
+      "title": "LandmarkWorldBootstrapSample",
+      "type": "object"
+    },
+    "LandmarkWorldDerivation": {
+      "additionalProperties": false,
+      "properties": {
+        "angular_uncertainty_degrees": {
+          "minimum": 0,
+          "title": "Angular Uncertainty Degrees",
+          "type": "number"
+        },
+        "bootstrap_samples": {
+          "items": {
+            "$ref": "#/$defs/LandmarkWorldBootstrapSample"
+          },
+          "minItems": 3,
+          "title": "Bootstrap Samples",
+          "type": "array"
+        },
+        "camera_reconstruction_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Camera Reconstruction Sha256",
+          "type": "string"
+        },
+        "formula_version": {
+          "const": "cabinet_our_landmarks_drawer_forward_v1",
+          "default": "cabinet_our_landmarks_drawer_forward_v1",
+          "title": "Formula Version",
+          "type": "string"
+        },
+        "forward_candidates_colmap": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "maxItems": 3,
+              "minItems": 3,
+              "prefixItems": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            }
+          ],
+          "title": "Forward Candidates Colmap",
+          "type": "array"
+        },
+        "forward_vector_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Forward Vector Colmap",
+          "type": "array"
+        },
+        "landmark_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Landmark Manifest Sha256",
+          "type": "string"
+        },
+        "measured_motion_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Measured Motion Sha256",
+          "type": "string"
+        },
+        "measured_prismatic_axis_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Measured Prismatic Axis Colmap",
+          "type": "array"
+        },
+        "measured_prismatic_joint_id": {
+          "minLength": 1,
+          "title": "Measured Prismatic Joint Id",
+          "type": "string"
+        },
+        "origin_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Origin Colmap",
+          "type": "array"
+        },
+        "origin_point_id": {
+          "minLength": 1,
+          "title": "Origin Point Id",
+          "type": "string"
+        },
+        "origin_uncertainty_colmap": {
+          "minimum": 0,
+          "title": "Origin Uncertainty Colmap",
+          "type": "number"
+        },
+        "origin_uncertainty_m": {
+          "minimum": 0,
+          "title": "Origin Uncertainty M",
+          "type": "number"
+        },
+        "point_coordinates_colmap": {
+          "additionalProperties": {
+            "maxItems": 3,
+            "minItems": 3,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Point Coordinates Colmap",
+          "type": "object"
+        },
+        "projected_drawer_opening_direction_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Projected Drawer Opening Direction Colmap",
+          "type": "array"
+        },
+        "right_point_id": {
+          "minLength": 1,
+          "title": "Right Point Id",
+          "type": "string"
+        },
+        "right_vector_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Right Vector Colmap",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "0.1.0",
+          "default": "0.1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selected_forward_candidate": {
+          "enum": [
+            "a",
+            "b"
+          ],
+          "title": "Selected Forward Candidate",
+          "type": "string"
+        },
+        "source_scene_ir_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Scene Ir Sha256",
+          "type": "string"
+        },
+        "triangulated_landmarks_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Triangulated Landmarks Sha256",
+          "type": "string"
+        },
+        "up_point_id": {
+          "minLength": 1,
+          "title": "Up Point Id",
+          "type": "string"
+        },
+        "up_vector_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Up Vector Colmap",
+          "type": "array"
+        }
+      },
+      "required": [
+        "camera_reconstruction_sha256",
+        "landmark_manifest_sha256",
+        "triangulated_landmarks_sha256",
+        "measured_motion_sha256",
+        "source_scene_ir_sha256",
+        "origin_point_id",
+        "up_point_id",
+        "right_point_id",
+        "point_coordinates_colmap",
+        "up_vector_colmap",
+        "right_vector_colmap",
+        "forward_candidates_colmap",
+        "selected_forward_candidate",
+        "forward_vector_colmap",
+        "origin_colmap",
+        "measured_prismatic_joint_id",
+        "measured_prismatic_axis_colmap",
+        "projected_drawer_opening_direction_colmap",
+        "angular_uncertainty_degrees",
+        "origin_uncertainty_colmap",
+        "origin_uncertainty_m",
+        "bootstrap_samples"
+      ],
+      "title": "LandmarkWorldDerivation",
+      "type": "object"
+    },
     "WorldCalibrationCandidate": {
       "additionalProperties": false,
       "properties": {
@@ -651,6 +1040,17 @@
     "gravity_alignment_known": {
       "title": "Gravity Alignment Known",
       "type": "boolean"
+    },
+    "landmark_world_derivation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LandmarkWorldDerivation"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "manifest_path": {
       "title": "Manifest Path",

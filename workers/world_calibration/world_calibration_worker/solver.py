@@ -21,6 +21,7 @@ from world_calibration_worker.landmark_triangulation import (
     projection_by_frame,
     reprojection_errors,
     triangulate,
+    undistort_observations,
 )
 from world_calibration_worker.schema import read_json, write_json
 from world_calibration_worker.sim3 import matrix, transform_points, umeyama
@@ -184,6 +185,82 @@ def _tag_world_derivation(
     }
 
 
+def _landmark_world_derivation(
+    manifest: dict[str, Any],
+    input_root: Path,
+    known_distance: dict[str, Any],
+) -> dict[str, Any] | None:
+    relative_path = manifest.get("landmark_world_derivation_path")
+    expected_sha256 = manifest.get("landmark_world_derivation_sha256")
+    if relative_path is None and expected_sha256 is None:
+        return None
+    if not isinstance(relative_path, str) or not isinstance(expected_sha256, str):
+        raise ValueError("landmark derivation path and SHA-256 must be paired")
+    path = input_root / relative_path
+    if _sha256(path) != expected_sha256:
+        raise ValueError("landmark world derivation hash mismatch")
+    derivation = read_json(path)
+    if derivation.get("camera_reconstruction_sha256") != manifest.get(
+        "camera_reconstruction_sha256"
+    ):
+        raise ValueError("landmark derivation camera hash mismatch")
+    if derivation.get("source_scene_ir_sha256") != manifest.get("source_scene_ir_sha256"):
+        raise ValueError("landmark derivation source Scene IR hash mismatch")
+    declared_source_hashes = {
+        str(source["sha256"])
+        for evidence in manifest.get("evidence", [])
+        for source in evidence.get("source_files", [])
+    }
+    required_hashes = {
+        str(derivation[key])
+        for key in (
+            "landmark_manifest_sha256",
+            "triangulated_landmarks_sha256",
+            "measured_motion_sha256",
+        )
+    }
+    if not required_hashes <= declared_source_hashes:
+        raise ValueError("landmark derivation dependencies are not exact evidence sources")
+    derived_points = {
+        str(record["point_id"]): np.asarray(record["point_colmap"], dtype=np.float64)
+        for record in known_distance["landmarks"]
+    }
+    for point_id, coordinates in derivation["point_coordinates_colmap"].items():
+        actual = derived_points.get(str(point_id))
+        if (
+            actual is None
+            or np.max(np.abs(actual - np.asarray(coordinates, dtype=np.float64))) > 1e-6
+        ):
+            raise ValueError("landmark derivation coordinates differ from the current solve")
+    up = np.asarray(derivation["up_vector_colmap"], dtype=np.float64)
+    forward = np.asarray(derivation["forward_vector_colmap"], dtype=np.float64)
+    origin = np.asarray(derivation["origin_colmap"], dtype=np.float64)
+    gravity_matches = any(
+        item.get("source") == "user_up_landmarks"
+        and np.max(np.abs(np.asarray(item["up_vector_colmap"], dtype=np.float64) - up)) <= 1e-9
+        for item in manifest.get("gravity", [])
+    )
+    forward_record = manifest.get("forward")
+    origin_record = manifest.get("origin")
+    if not gravity_matches:
+        raise ValueError("landmark-derived up does not match typed gravity evidence")
+    if (
+        not isinstance(forward_record, dict)
+        or np.max(
+            np.abs(np.asarray(forward_record["forward_vector_colmap"], dtype=np.float64) - forward)
+        )
+        > 1e-9
+    ):
+        raise ValueError("landmark-derived forward does not match typed forward evidence")
+    if (
+        not isinstance(origin_record, dict)
+        or np.max(np.abs(np.asarray(origin_record["origin_colmap"], dtype=np.float64) - origin))
+        > 1e-9
+    ):
+        raise ValueError("landmark-derived origin does not match typed origin evidence")
+    return derivation
+
+
 def _known_distance_solution(
     manifest: dict[str, Any],
     camera: dict[str, Any],
@@ -222,9 +299,11 @@ def _known_distance_solution(
         ]
         if len(fitting) < 2:
             raise ValueError(f"landmark {point_id!r} has fewer than two fitting observations")
-        point = triangulate(fitting, projections)
-        fitting_errors = reprojection_errors(point, fitting, projections)
-        heldout_errors = reprojection_errors(point, heldout, projections)
+        fitting_undistorted = undistort_observations(fitting, camera)
+        heldout_undistorted = undistort_observations(heldout, camera)
+        point = triangulate(fitting_undistorted, projections)
+        fitting_errors = reprojection_errors(point, fitting_undistorted, projections)
+        heldout_errors = reprojection_errors(point, heldout_undistorted, projections)
         triangulated[point_id] = point
         records.append(
             {
@@ -388,6 +467,11 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
         camera,
         fitting_frames,
         heldout_frames,
+    )
+    landmark_derivation = _landmark_world_derivation(
+        manifest,
+        input_root,
+        known_distance,
     )
     tag_scale, tag_rotation, tag_translation, tag_metrics = _tag_solution(
         manifest,
@@ -675,6 +759,23 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
         "calibration/apriltag_world_derivation.json" if tag_derivation is not None else None
     )
     derivation_sha256 = _sha256(derivation_path) if tag_derivation is not None else None
+    landmark_derivation_path = output_dir / "landmark_world_derivation.json"
+    write_json(
+        landmark_derivation_path,
+        landmark_derivation
+        if landmark_derivation is not None
+        else {
+            "schema_version": "0.1.0",
+            "available": False,
+            "reason": "no landmark world derivation evidence",
+        },
+    )
+    landmark_derivation_relative_path = (
+        "calibration/landmark_world_derivation.json" if landmark_derivation is not None else None
+    )
+    landmark_derivation_sha256 = (
+        _sha256(landmark_derivation_path) if landmark_derivation is not None else None
+    )
     write_json(
         output_dir / "world_calibration.json",
         {
@@ -688,6 +789,7 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
             "selected_candidate_id": selected_candidate_id,
             "accepted_transform": accepted_transform,
             "fiducial_world_derivation": tag_derivation,
+            "landmark_world_derivation": landmark_derivation,
             "metrics": metrics,
             "metric_scale_known": output_metric,
             "gravity_alignment_known": output_gravity,
@@ -745,6 +847,8 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
             },
             "fiducial_world_derivation_path": derivation_relative_path,
             "fiducial_world_derivation_sha256": derivation_sha256,
+            "landmark_world_derivation_path": landmark_derivation_relative_path,
+            "landmark_world_derivation_sha256": landmark_derivation_sha256,
             "warnings": warnings,
         },
     )

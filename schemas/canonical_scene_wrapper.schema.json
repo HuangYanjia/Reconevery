@@ -275,6 +275,31 @@
       "default": null,
       "title": "Fiducial World Derivation Sha256"
     },
+    "landmark_world_derivation_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Landmark World Derivation Path"
+    },
+    "landmark_world_derivation_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Landmark World Derivation Sha256"
+    },
     "prismatic_unit_mappings": {
       "items": {
         "$ref": "#/$defs/CanonicalPrismaticUnitMapping"

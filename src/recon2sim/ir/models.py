@@ -204,6 +204,11 @@ class WorldCalibrationSceneReference(StrictModel):
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
+    landmark_world_derivation_path: str | None = None
+    landmark_world_derivation_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     geometry_requires_world_wrapper: bool
 
     @field_validator(
@@ -211,6 +216,7 @@ class WorldCalibrationSceneReference(StrictModel):
         "world_calibration_artifact_path",
         "canonical_scene_wrapper_path",
         "fiducial_world_derivation_path",
+        "landmark_world_derivation_path",
     )
     @classmethod
     def relative_world_calibration_paths(cls, value: str | None) -> str | None:
@@ -222,6 +228,10 @@ class WorldCalibrationSceneReference(StrictModel):
             self.fiducial_world_derivation_sha256 is None
         ):
             raise ValueError("fiducial derivation path and SHA-256 must be paired")
+        if (self.landmark_world_derivation_path is None) != (
+            self.landmark_world_derivation_sha256 is None
+        ):
+            raise ValueError("landmark derivation path and SHA-256 must be paired")
         return self
 
 
@@ -648,6 +658,7 @@ class SceneIR(StrictModel):
         "0.1.5",
         "0.1.6",
         "0.1.7",
+        "0.1.8",
     ] = "0.1.1"
     metadata: SceneMetadata
     cameras: list[Camera] = Field(default_factory=list)

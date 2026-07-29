@@ -1813,6 +1813,31 @@
           "title": "Geometry Requires World Wrapper",
           "type": "boolean"
         },
+        "landmark_world_derivation_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Landmark World Derivation Path"
+        },
+        "landmark_world_derivation_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Landmark World Derivation Sha256"
+        },
         "source_scene_ir_path": {
           "title": "Source Scene Ir Path",
           "type": "string"
@@ -1917,7 +1942,8 @@
         "0.1.4",
         "0.1.5",
         "0.1.6",
-        "0.1.7"
+        "0.1.7",
+        "0.1.8"
       ],
       "title": "Schema Version",
       "type": "string"

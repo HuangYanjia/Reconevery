@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+import cv2
 import numpy as np
 
 
@@ -39,6 +40,46 @@ def projection_by_frame(camera: dict[str, Any]) -> dict[str, np.ndarray]:
         translation_camera_world = -rotation_camera_world @ translation_world_camera
         extrinsic = np.column_stack((rotation_camera_world, translation_camera_world))
         result[str(pose["frame_id"])] = intrinsic @ extrinsic
+    return result
+
+
+def undistort_observations(
+    observations: list[dict[str, Any]],
+    camera: dict[str, Any],
+) -> list[dict[str, Any]]:
+    intrinsics = camera["intrinsics"]
+    distortion = [float(value) for value in intrinsics.get("distortion", [])]
+    if not distortion:
+        return [dict(item) for item in observations]
+    model = str(camera["model"])
+    if model != "OPENCV" or len(distortion) != 4:
+        raise ValueError(
+            "known-distance triangulation supports distortion only for the "
+            "four-parameter COLMAP OPENCV model"
+        )
+    intrinsic = np.asarray(
+        [
+            [intrinsics["fx"], 0.0, intrinsics["cx"]],
+            [0.0, intrinsics["fy"], intrinsics["cy"]],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+    pixels = np.asarray(
+        [item["pixel_xy"] for item in observations],
+        dtype=np.float64,
+    ).reshape(-1, 1, 2)
+    undistorted = cv2.undistortPoints(
+        pixels,
+        intrinsic,
+        np.asarray(distortion, dtype=np.float64),
+        P=intrinsic,
+    ).reshape(-1, 2)
+    result = []
+    for item, pixel in zip(observations, undistorted, strict=True):
+        normalized = dict(item)
+        normalized["pixel_xy"] = [float(pixel[0]), float(pixel[1])]
+        result.append(normalized)
     return result
 
 
@@ -94,4 +135,5 @@ __all__ = [
     "quaternion_rotation",
     "reprojection_errors",
     "triangulate",
+    "undistort_observations",
 ]

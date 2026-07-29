@@ -108,7 +108,7 @@ def _dataset_split(manifest: WorldCalibrationManifest) -> WorldCalibrationDatase
 
 class WorldCalibrationAdapter:
     name = "world_calibration"
-    version = "0.2.0"
+    version = "0.3.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         manifest = WorldCalibrationManifest.model_validate_json(
@@ -204,6 +204,13 @@ class WorldCalibrationAdapter:
             OutputSpec(
                 "calibration/apriltag_world_derivation.json",
                 "apriltag_world_derivation",
+                "application/json",
+                self.name,
+                validation="json",
+            ),
+            OutputSpec(
+                "calibration/landmark_world_derivation.json",
+                "landmark_world_derivation",
                 "application/json",
                 self.name,
                 validation="json",

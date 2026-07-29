@@ -18,6 +18,7 @@ from recon2sim.adapters.canonical_scene import (
 from recon2sim.adapters.world_calibration import _dataset_split
 from recon2sim.artifacts import (
     CanonicalSceneWrapper,
+    LandmarkWorldDerivation,
     Phase6AConsistencyReport,
     WorldCalibrationArtifact,
     WorldCalibrationManifest,
@@ -527,6 +528,64 @@ def test_dataset_split_uses_typed_roles_not_misleading_evidence_ids() -> None:
     split = _dataset_split(manifest)
     assert split.fitting_evidence_ids == ["heldout_in_name_but_fit"]
     assert split.heldout_evidence_ids == ["fitting_in_name_but_hold"]
+
+
+def _landmark_world_derivation_payload() -> dict[str, object]:
+    return {
+        "camera_reconstruction_sha256": "1" * 64,
+        "landmark_manifest_sha256": "2" * 64,
+        "triangulated_landmarks_sha256": "3" * 64,
+        "measured_motion_sha256": "4" * 64,
+        "source_scene_ir_sha256": "5" * 64,
+        "origin_point_id": "O",
+        "up_point_id": "U",
+        "right_point_id": "R",
+        "point_coordinates_colmap": {
+            "O": [0.0, 0.0, 0.0],
+            "U": [0.0, 0.0, 2.0],
+            "R": [1.0, 0.0, 0.0],
+        },
+        "up_vector_colmap": [0.0, 0.0, 1.0],
+        "right_vector_colmap": [1.0, 0.0, 0.0],
+        "forward_candidates_colmap": [[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]],
+        "selected_forward_candidate": "a",
+        "forward_vector_colmap": [0.0, 1.0, 0.0],
+        "origin_colmap": [0.0, 0.0, 0.0],
+        "measured_prismatic_joint_id": "drawer_joint",
+        "measured_prismatic_axis_colmap": [0.0, 1.0, 0.0],
+        "projected_drawer_opening_direction_colmap": [0.0, 1.0, 0.0],
+        "angular_uncertainty_degrees": 0.5,
+        "origin_uncertainty_colmap": 0.01,
+        "origin_uncertainty_m": 0.005,
+        "bootstrap_samples": [
+            {
+                "sample_id": f"sample_{index}",
+                "fitting_frame_ids": ["frame_0", f"frame_{index + 1}"],
+                "origin_colmap": [0.0, 0.0, 0.0],
+                "up_vector_colmap": [0.0, 0.0, 1.0],
+                "right_vector_colmap": [1.0, 0.0, 0.0],
+                "forward_vector_colmap": [0.0, 1.0, 0.0],
+                "angular_deviation_degrees": 0.1,
+                "origin_deviation_colmap": 0.001,
+            }
+            for index in range(3)
+        ],
+    }
+
+
+def test_landmark_world_derivation_has_one_evidence_bound_orthonormal_frame() -> None:
+    derivation = LandmarkWorldDerivation.model_validate(_landmark_world_derivation_payload())
+    assert derivation.origin_colmap == derivation.point_coordinates_colmap["O"]
+
+    payload = _landmark_world_derivation_payload()
+    payload["forward_vector_colmap"] = [0.0, -1.0, 0.0]
+    with pytest.raises(ValidationError, match="does not match"):
+        LandmarkWorldDerivation.model_validate(payload)
+
+    payload = _landmark_world_derivation_payload()
+    payload["origin_colmap"] = [0.1, 0.0, 0.0]
+    with pytest.raises(ValidationError, match="must equal"):
+        LandmarkWorldDerivation.model_validate(payload)
 
 
 def test_world_calibration_status_flags_are_mutually_consistent() -> None:

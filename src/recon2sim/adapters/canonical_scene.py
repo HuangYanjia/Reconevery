@@ -270,7 +270,7 @@ def _matrix_error(left: tuple[float, ...], right: tuple[float, ...]) -> float:
 
 class CanonicalSceneAdapter:
     name = "canonical_scene_wrapper"
-    version = "0.2.0"
+    version = "0.3.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         manifest = WorldCalibrationManifest.model_validate_json(
@@ -309,6 +309,13 @@ class CanonicalSceneAdapter:
                 InputSpec(
                     "calibration/apriltag_world_derivation.json",
                     "apriltag_world_derivation",
+                )
+            )
+        if calibration.landmark_world_derivation is not None:
+            specs.append(
+                InputSpec(
+                    "calibration/landmark_world_derivation.json",
+                    "landmark_world_derivation",
                 )
             )
         specs.extend(
@@ -396,6 +403,16 @@ class CanonicalSceneAdapter:
                 if calibration.fiducial_world_derivation is not None
                 else None
             ),
+            landmark_world_derivation_path=(
+                "calibration/landmark_world_derivation.json"
+                if calibration.landmark_world_derivation is not None
+                else None
+            ),
+            landmark_world_derivation_sha256=(
+                sha256_file(root / "landmark_world_derivation.json")
+                if calibration.landmark_world_derivation is not None
+                else None
+            ),
             asset_mappings=mappings,
             prismatic_unit_mappings=_prismatic_unit_mappings(source_scene, calibration),
         )
@@ -403,7 +420,7 @@ class CanonicalSceneAdapter:
         atomic_write_json(root / "canonical_scene_wrapper.json", wrapper)
         wrapper_path = root / "canonical_scene_wrapper.json"
         wrapper_sha256 = sha256_file(wrapper_path)
-        scene.schema_version = "0.1.7"
+        scene.schema_version = "0.1.8"
         requires_direct_wrapper = {
             asset.asset_id: (
                 _requires_direct_world_wrapper(
@@ -422,6 +439,8 @@ class CanonicalSceneAdapter:
             canonical_scene_wrapper_sha256=wrapper_sha256,
             fiducial_world_derivation_path=wrapper.fiducial_world_derivation_path,
             fiducial_world_derivation_sha256=wrapper.fiducial_world_derivation_sha256,
+            landmark_world_derivation_path=wrapper.landmark_world_derivation_path,
+            landmark_world_derivation_sha256=wrapper.landmark_world_derivation_sha256,
             geometry_requires_world_wrapper=any(requires_direct_wrapper.values()),
         )
         for asset in scene.geometry_assets:
@@ -447,7 +466,7 @@ class CanonicalSceneAdapter:
 
 class Phase6AConsistencyValidationAdapter:
     name = "phase6a_consistency_validation"
-    version = "0.2.0"
+    version = "0.3.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         manifest = WorldCalibrationManifest.model_validate_json(
@@ -502,6 +521,15 @@ class Phase6AConsistencyValidationAdapter:
                     wrapper.fiducial_world_derivation_path,
                     "apriltag_world_derivation",
                     expected_sha256=wrapper.fiducial_world_derivation_sha256,
+                    include_producer_signature=False,
+                )
+            )
+        if wrapper.landmark_world_derivation_path is not None:
+            specs.append(
+                InputSpec(
+                    wrapper.landmark_world_derivation_path,
+                    "landmark_world_derivation",
+                    expected_sha256=wrapper.landmark_world_derivation_sha256,
                     include_producer_signature=False,
                 )
             )
@@ -632,6 +660,10 @@ class Phase6AConsistencyValidationAdapter:
             == wrapper.fiducial_world_derivation_path
             and scene_reference.fiducial_world_derivation_sha256
             == wrapper.fiducial_world_derivation_sha256
+            and scene_reference.landmark_world_derivation_path
+            == wrapper.landmark_world_derivation_path
+            and scene_reference.landmark_world_derivation_sha256
+            == wrapper.landmark_world_derivation_sha256
             and scene_reference.geometry_requires_world_wrapper == bool(directly_wrapped_asset_ids)
         )
         geometry_wrapper_references = all(
@@ -656,22 +688,40 @@ class Phase6AConsistencyValidationAdapter:
         )
         derivation_ok = True
         if manifest.apriltag is not None and manifest.apriltag.world_contract is not None:
-            derivation = calibration.fiducial_world_derivation
-            derivation_path = context.path("calibration/apriltag_world_derivation.json")
+            fiducial_derivation = calibration.fiducial_world_derivation
+            fiducial_derivation_path = context.path("calibration/apriltag_world_derivation.json")
             derivation_ok = (
-                derivation is not None
+                fiducial_derivation is not None
                 and wrapper.fiducial_world_derivation_path
                 == "calibration/apriltag_world_derivation.json"
-                and wrapper.fiducial_world_derivation_sha256 == sha256_file(derivation_path)
-                and json.loads(derivation_path.read_text(encoding="utf-8"))
-                == derivation.model_dump(mode="json")
-                and derivation.world_contract == manifest.apriltag.world_contract
-                and set(derivation.fitting_detection_frame_ids) <= set(split.fitting_frame_ids)
-                and set(derivation.heldout_detection_frame_ids) <= set(split.heldout_frame_ids)
+                and wrapper.fiducial_world_derivation_sha256
+                == sha256_file(fiducial_derivation_path)
+                and json.loads(fiducial_derivation_path.read_text(encoding="utf-8"))
+                == fiducial_derivation.model_dump(mode="json")
+                and fiducial_derivation.world_contract == manifest.apriltag.world_contract
+                and set(fiducial_derivation.fitting_detection_frame_ids)
+                <= set(split.fitting_frame_ids)
+                and set(fiducial_derivation.heldout_detection_frame_ids)
+                <= set(split.heldout_frame_ids)
                 and calibration.metrics.heldout_tag_translation_error_m
-                == derivation.heldout_translation_residual_m
+                == fiducial_derivation.heldout_translation_residual_m
                 and calibration.metrics.heldout_tag_rotation_error_degrees
-                == derivation.heldout_orientation_residual_degrees
+                == fiducial_derivation.heldout_orientation_residual_degrees
+            )
+        if manifest.landmark_world_derivation_path is not None:
+            landmark_derivation = calibration.landmark_world_derivation
+            landmark_derivation_path = context.path("calibration/landmark_world_derivation.json")
+            derivation_ok = derivation_ok and (
+                landmark_derivation is not None
+                and wrapper.landmark_world_derivation_path
+                == "calibration/landmark_world_derivation.json"
+                and wrapper.landmark_world_derivation_sha256
+                == sha256_file(landmark_derivation_path)
+                and json.loads(landmark_derivation_path.read_text(encoding="utf-8"))
+                == landmark_derivation.model_dump(mode="json")
+                and landmark_derivation.camera_reconstruction_sha256
+                == manifest.camera_reconstruction_sha256
+                and landmark_derivation.source_scene_ir_sha256 == manifest.source_scene_ir_sha256
             )
         role_split_ok = all(
             record.evidence_id
@@ -861,6 +911,7 @@ class Phase6AConsistencyValidationAdapter:
                 or (
                     (manifest.forward is not None and manifest.origin is not None)
                     or calibration.fiducial_world_derivation is not None
+                    or calibration.landmark_world_derivation is not None
                 ),
                 "forward and origin policies are explicit",
             ),
@@ -930,9 +981,9 @@ class Phase6AConsistencyValidationAdapter:
                 "upstream inputs remain immutable",
             ),
             check(
-                "fiducial_world_contract_derivation",
+                "evidence_bound_world_derivation",
                 derivation_ok,
-                "fiducial axes and origin are bound to exact fitting and held-out tag poses",
+                "fiducial or landmark axes and origin are bound to exact source evidence",
             ),
             check(
                 "typed_evidence_roles",

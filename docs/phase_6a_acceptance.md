@@ -24,6 +24,12 @@ Sim(3), canonical camera validation, one derived metric geometry export, real
 rigid/articulated propagation, 33/33 consistency checks, and an identical
 resume with all Phase 6A stages cache hitting.
 
+For landmark-derived full canonicalization, the calibration artifact,
+canonical wrapper, and canonical Scene IR must all reference the exact copied
+`landmark_world_derivation.json` bytes. Its dependency hashes and recomputed
+O/U/R coordinates are checked before solving. Source-space geometry remains
+unchanged and declares that the world wrapper is required.
+
 Example real execution:
 
 ```bash

@@ -499,6 +499,33 @@
     "CalibrationLandmarkObservation": {
       "additionalProperties": false,
       "properties": {
+        "annotation_confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Annotation Confidence"
+        },
+        "annotation_method": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Annotation Method"
+        },
         "frame_id": {
           "minLength": 1,
           "title": "Frame Id",
@@ -872,6 +899,17 @@
           "title": "Landmark Id",
           "type": "string"
         },
+        "measurement_provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PhysicalMeasurementProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "measurement_uncertainty_m": {
           "default": 0.0,
           "minimum": 0,
@@ -905,6 +943,12 @@
     "KnownDistanceLandmarkManifest": {
       "additionalProperties": false,
       "properties": {
+        "image_coordinate_space": {
+          "const": "registered_source_image_pixels",
+          "default": "registered_source_image_pixels",
+          "title": "Image Coordinate Space",
+          "type": "string"
+        },
         "landmarks": {
           "items": {
             "$ref": "#/$defs/KnownDistanceLandmark"
@@ -933,6 +977,51 @@
         "observations"
       ],
       "title": "KnownDistanceLandmarkManifest",
+      "type": "object"
+    },
+    "PhysicalMeasurementProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "measurement_date": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Measurement Date",
+          "type": "string"
+        },
+        "measurement_definition": {
+          "minLength": 1,
+          "title": "Measurement Definition",
+          "type": "string"
+        },
+        "measurement_tool": {
+          "minLength": 1,
+          "title": "Measurement Tool",
+          "type": "string"
+        },
+        "point_a_description": {
+          "minLength": 1,
+          "title": "Point A Description",
+          "type": "string"
+        },
+        "point_b_description": {
+          "minLength": 1,
+          "title": "Point B Description",
+          "type": "string"
+        },
+        "units": {
+          "const": "meters",
+          "default": "meters",
+          "title": "Units",
+          "type": "string"
+        }
+      },
+      "required": [
+        "measurement_tool",
+        "measurement_date",
+        "measurement_definition",
+        "point_a_description",
+        "point_b_description"
+      ],
+      "title": "PhysicalMeasurementProvenance",
       "type": "object"
     },
     "WorldCalibrationEvidenceTier": {
@@ -1038,6 +1127,31 @@
         }
       ],
       "default": null
+    },
+    "landmark_world_derivation_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Landmark World Derivation Path"
+    },
+    "landmark_world_derivation_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Landmark World Derivation Sha256"
     },
     "origin": {
       "anyOf": [
