@@ -53,6 +53,17 @@
           "minimum": 0,
           "title": "Tag Id",
           "type": "integer"
+        },
+        "world_contract": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AprilTagWorldContract"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -307,6 +318,59 @@
       "title": "AprilTagImageSourceRecord",
       "type": "object"
     },
+    "AprilTagSignedAxis": {
+      "enum": [
+        "+X_tag",
+        "-X_tag",
+        "+Y_tag",
+        "-Y_tag",
+        "+Z_tag",
+        "-Z_tag"
+      ],
+      "title": "AprilTagSignedAxis",
+      "type": "string"
+    },
+    "AprilTagWorldContract": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_forward_from_tag_axis": {
+          "$ref": "#/$defs/AprilTagSignedAxis"
+        },
+        "canonical_up_from_tag_axis": {
+          "$ref": "#/$defs/AprilTagSignedAxis"
+        },
+        "mounting_description": {
+          "minLength": 1,
+          "title": "Mounting Description",
+          "type": "string"
+        },
+        "mounting_uncertainty_degrees": {
+          "minimum": 0,
+          "title": "Mounting Uncertainty Degrees",
+          "type": "number"
+        },
+        "origin_uncertainty_m": {
+          "minimum": 0,
+          "title": "Origin Uncertainty M",
+          "type": "number"
+        },
+        "tag_origin_policy": {
+          "const": "tag_center",
+          "default": "tag_center",
+          "title": "Tag Origin Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonical_up_from_tag_axis",
+        "canonical_forward_from_tag_axis",
+        "mounting_description",
+        "mounting_uncertainty_degrees",
+        "origin_uncertainty_m"
+      ],
+      "title": "AprilTagWorldContract",
+      "type": "object"
+    },
     "CalibrationEvidenceRecord": {
       "additionalProperties": false,
       "properties": {
@@ -335,6 +399,9 @@
           ],
           "default": null,
           "title": "Measurement Uncertainty"
+        },
+        "role": {
+          "$ref": "#/$defs/CalibrationEvidenceRole"
         },
         "source_files": {
           "items": {
@@ -370,10 +437,20 @@
       "required": [
         "evidence_id",
         "evidence_type",
-        "trust"
+        "trust",
+        "role"
       ],
       "title": "CalibrationEvidenceRecord",
       "type": "object"
+    },
+    "CalibrationEvidenceRole": {
+      "enum": [
+        "fitting",
+        "heldout",
+        "diagnostic"
+      ],
+      "title": "CalibrationEvidenceRole",
+      "type": "string"
     },
     "CalibrationEvidenceType": {
       "enum": [
@@ -445,12 +522,16 @@
           "minLength": 1,
           "title": "Point Id",
           "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/CalibrationEvidenceRole"
         }
       },
       "required": [
         "frame_id",
         "point_id",
-        "pixel_xy"
+        "pixel_xy",
+        "role"
       ],
       "title": "CalibrationLandmarkObservation",
       "type": "object"
@@ -806,13 +887,17 @@
           "minLength": 1,
           "title": "Point B Id",
           "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/CalibrationEvidenceRole"
         }
       },
       "required": [
         "landmark_id",
         "point_a_id",
         "point_b_id",
-        "known_distance_m"
+        "known_distance_m",
+        "role"
       ],
       "title": "KnownDistanceLandmark",
       "type": "object"
@@ -837,8 +922,8 @@
           "type": "array"
         },
         "schema_version": {
-          "const": "0.1.0",
-          "default": "0.1.0",
+          "const": "0.2.0",
+          "default": "0.2.0",
           "title": "Schema Version",
           "type": "string"
         }
@@ -971,8 +1056,11 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "0.1.0",
-      "default": "0.1.0",
+      "default": "0.2.0",
+      "enum": [
+        "0.1.0",
+        "0.2.0"
+      ],
       "title": "Schema Version",
       "type": "string"
     },

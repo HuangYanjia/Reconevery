@@ -3,6 +3,13 @@
     "WorldCalibrationDatasetSplit": {
       "additionalProperties": false,
       "properties": {
+        "diagnostic_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Diagnostic Evidence Ids",
+          "type": "array"
+        },
         "fitting_evidence_ids": {
           "items": {
             "type": "string"
@@ -64,6 +71,9 @@
           },
           {
             "type": "integer"
+          },
+          {
+            "type": "boolean"
           }
         ]
       },
@@ -113,8 +123,11 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "0.1.0",
-      "default": "0.1.0",
+      "default": "0.2.0",
+      "enum": [
+        "0.1.0",
+        "0.2.0"
+      ],
       "title": "Schema Version",
       "type": "string"
     },

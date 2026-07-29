@@ -223,9 +223,11 @@ worker in `local_worker`, `docker`, or `fake_worker` mode and validates the exac
 request, evidence split, source hashes, artifact, diagnostics, and nine previews.
 
 `canonical_scene_wrapper` composes accepted transforms without rewriting source
-files. `phase6a_consistency_validation` performs 24 checks covering evidence
+files and records exact prismatic local-to-meter mappings. `phase6a_consistency_validation`
+performs 33 checks covering evidence
 identity, split isolation, proper/invertible Sim(3), truthful coordinate metadata,
-source immutability, rigid/articulated propagation, single scaling of prismatic
-quantities, unchanged angles, and the no-collision/no-physics boundary.
+source immutability, world-space articulated pose parity, unchanged local joints,
+fiducial derivation, typed known-distance roles, exact Scene IR wrapper identity,
+and the no-collision/no-physics boundary.
 
 The core adapters import no NumPy, SciPy, OpenCV, AprilTag, Open3D, or trimesh.

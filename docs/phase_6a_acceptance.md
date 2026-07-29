@@ -11,6 +11,8 @@ maximum_heldout_tag_translation_error_m: 0.02
 maximum_heldout_tag_rotation_error_degrees: 3.0
 minimum_known_distance_anchors: 1
 maximum_known_distance_relative_error: 0.02
+maximum_heldout_landmark_reprojection_error_px: 2.0
+allow_single_metric_anchor_without_length_holdout: true
 maximum_gravity_heldout_error_degrees: 3.0
 maximum_forward_uncertainty_degrees: 5.0
 maximum_sim3_roundtrip_error: 1.0e-8
@@ -19,7 +21,7 @@ maximum_sim3_roundtrip_error: 1.0e-8
 Real full-canonical acceptance requires a recorded metric measurement, disjoint
 fitting/held-out evidence, accepted gravity, forward, origin, a finite proper
 Sim(3), canonical camera validation, one derived metric geometry export, real
-rigid/articulated propagation, 24/24 consistency checks, and an identical
+rigid/articulated propagation, 33/33 consistency checks, and an identical
 resume with all Phase 6A stages cache hitting.
 
 Example real execution:

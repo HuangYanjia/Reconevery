@@ -151,12 +151,18 @@ the hash of the bytes at its declared path, never a digest of a nested parent re
 `canonical_x_forward_y_left_z_up`, meters, and `metric_scale_known`.
 
 The accompanying `calibration/canonical_scene_wrapper.json` stores the exact source
-Scene IR, camera reconstruction, and calibration paths/hashes plus per-asset
-wrapper policies. Geometry URIs and source
-bytes are retained. A rejected or partial calibration produces a derived Scene IR
+Scene IR, camera reconstruction, calibration, fiducial derivation, and per-asset
+wrapper paths/hashes. Phase 6A Scene IR metadata repeats the exact source,
+calibration, and wrapper identities. Every retained geometry asset is marked as
+source-space. Reference-world/global assets require that exact wrapper after full
+acceptance; candidate-base/link-local assets declare hierarchy-root composition
+instead and must not receive the wrapper twice.
+Geometry URIs and source bytes are retained. A rejected or partial calibration produces a derived Scene IR
 with the original arbitrary/unoriented convention and no accepted canonical claim.
 
-Articulated base transforms compose with the world Sim(3). Prismatic positions and
-verified linear ranges scale once. Revolute positions and ranges remain radians.
-Reference-world measured assets receive only the wrapper and are never baked or
-double transformed.
+Phase 5C object transforms map object local to COLMAP world. Joint axes, pivots,
+and prismatic q are object-local; revolute q is radians. Phase 6A left-composes the
+object root only and leaves all joint-local values unchanged. The wrapper records
+`prismatic_position_scale_to_m = calibration scale * source object scale` so a
+downstream compiler converts q exactly once. Reference-world measured assets are
+never baked or double transformed.

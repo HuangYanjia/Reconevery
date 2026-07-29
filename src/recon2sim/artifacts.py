@@ -5282,6 +5282,21 @@ class CalibrationEvidenceType(StrEnum):
     FIDUCIAL_ORIGIN = "fiducial_origin"
 
 
+class CalibrationEvidenceRole(StrEnum):
+    FITTING = "fitting"
+    HELDOUT = "heldout"
+    DIAGNOSTIC = "diagnostic"
+
+
+class AprilTagSignedAxis(StrEnum):
+    POSITIVE_X = "+X_tag"
+    NEGATIVE_X = "-X_tag"
+    POSITIVE_Y = "+Y_tag"
+    NEGATIVE_Y = "-Y_tag"
+    POSITIVE_Z = "+Z_tag"
+    NEGATIVE_Z = "-Z_tag"
+
+
 class CalibrationFileReference(StrictModel):
     relative_path: str
     sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -5297,6 +5312,7 @@ class CalibrationEvidenceRecord(StrictModel):
     evidence_id: str = Field(min_length=1)
     evidence_type: CalibrationEvidenceType
     trust: WorldCalibrationTrust
+    role: CalibrationEvidenceRole
     source_files: list[CalibrationFileReference] = Field(default_factory=list)
     supports_metric_scale: bool = False
     supports_gravity: bool = False
@@ -5360,6 +5376,23 @@ class AprilTagDetectionRecord(StrictModel):
         return _relative_artifact_path(value)
 
 
+class AprilTagWorldContract(StrictModel):
+    tag_origin_policy: Literal["tag_center"] = "tag_center"
+    canonical_up_from_tag_axis: AprilTagSignedAxis
+    canonical_forward_from_tag_axis: AprilTagSignedAxis
+    mounting_description: str = Field(min_length=1)
+    mounting_uncertainty_degrees: float = Field(ge=0)
+    origin_uncertainty_m: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def up_and_forward_are_orthogonal(self) -> Self:
+        up_axis = self.canonical_up_from_tag_axis.value[1]
+        forward_axis = self.canonical_forward_from_tag_axis.value[1]
+        if up_axis == forward_axis:
+            raise ValueError("AprilTag up and forward axes must be orthogonal")
+        return self
+
+
 class AprilTagCalibrationRecord(StrictModel):
     official_repository: Literal["https://github.com/AprilRobotics/apriltag"] = (
         "https://github.com/AprilRobotics/apriltag"
@@ -5370,6 +5403,7 @@ class AprilTagCalibrationRecord(StrictModel):
     tag_id: int = Field(ge=0)
     detection_edge_size_m: float = Field(gt=0)
     detector_source_path: str = Field(min_length=1)
+    world_contract: AprilTagWorldContract | None = None
     image_sources: list[AprilTagImageSourceRecord] = Field(default_factory=list)
     detections: list[AprilTagDetectionRecord] = Field(default_factory=list)
 
@@ -5392,6 +5426,7 @@ class CalibrationLandmarkObservation(StrictModel):
     frame_id: str = Field(min_length=1)
     point_id: str = Field(min_length=1)
     pixel_xy: tuple[float, float]
+    role: CalibrationEvidenceRole
 
 
 class KnownDistanceLandmark(StrictModel):
@@ -5400,6 +5435,7 @@ class KnownDistanceLandmark(StrictModel):
     point_b_id: str = Field(min_length=1)
     known_distance_m: float = Field(gt=0)
     measurement_uncertainty_m: float = Field(default=0.0, ge=0)
+    role: CalibrationEvidenceRole
 
     @model_validator(mode="after")
     def distinct_endpoints(self) -> Self:
@@ -5409,27 +5445,44 @@ class KnownDistanceLandmark(StrictModel):
 
 
 class KnownDistanceLandmarkManifest(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.2.0"] = "0.2.0"
     landmarks: Annotated[list[KnownDistanceLandmark], Field(min_length=1)]
     observations: Annotated[list[CalibrationLandmarkObservation], Field(min_length=4)]
 
     @model_validator(mode="after")
     def observed_endpoints(self) -> Self:
         known = {item.point_id for item in self.observations}
-        counts: dict[str, set[str]] = {}
+        fitting_counts: dict[str, set[str]] = {}
+        heldout_counts: dict[str, set[str]] = {}
         for item in self.observations:
-            counts.setdefault(item.point_id, set()).add(item.frame_id)
+            if item.role is CalibrationEvidenceRole.FITTING:
+                fitting_counts.setdefault(item.point_id, set()).add(item.frame_id)
+            elif item.role is CalibrationEvidenceRole.HELDOUT:
+                heldout_counts.setdefault(item.point_id, set()).add(item.frame_id)
         required = {
             point_id for item in self.landmarks for point_id in (item.point_a_id, item.point_b_id)
         }
         missing = required - known
         if missing:
             raise ValueError(f"known-distance points lack observations: {sorted(missing)}")
-        sparse = sorted(point_id for point_id in required if len(counts.get(point_id, set())) < 2)
+        sparse = sorted(
+            point_id for point_id in required if len(fitting_counts.get(point_id, set())) < 2
+        )
         if sparse:
             raise ValueError(
-                f"calibration points require observations in at least two frames: {sparse}"
+                "calibration points require fitting observations in at least two "
+                f"registered frames: {sparse}"
             )
+        missing_holdout = sorted(
+            point_id for point_id in required if not heldout_counts.get(point_id)
+        )
+        if missing_holdout:
+            raise ValueError(
+                "calibration points require at least one held-out image observation: "
+                f"{missing_holdout}"
+            )
+        if not any(item.role is CalibrationEvidenceRole.FITTING for item in self.landmarks):
+            raise ValueError("known-distance calibration requires at least one fitting anchor")
         return self
 
 
@@ -5522,6 +5575,7 @@ class WorldCalibrationDatasetSplit(StrictModel):
     schema_version: Literal["0.1.0"] = "0.1.0"
     fitting_evidence_ids: list[str]
     heldout_evidence_ids: list[str]
+    diagnostic_evidence_ids: list[str] = Field(default_factory=list)
     fitting_frame_ids: list[str]
     heldout_frame_ids: list[str]
     split_policy: str = Field(min_length=1)
@@ -5530,13 +5584,17 @@ class WorldCalibrationDatasetSplit(StrictModel):
     def disjoint_calibration_evidence(self) -> Self:
         if set(self.fitting_evidence_ids) & set(self.heldout_evidence_ids):
             raise ValueError("calibration fitting and held-out evidence IDs must be disjoint")
+        if set(self.diagnostic_evidence_ids) & set(self.fitting_evidence_ids) or set(
+            self.diagnostic_evidence_ids
+        ) & set(self.heldout_evidence_ids):
+            raise ValueError("diagnostic calibration evidence must be disjoint")
         if set(self.fitting_frame_ids) & set(self.heldout_frame_ids):
             raise ValueError("calibration fitting and held-out frame IDs must be disjoint")
         return self
 
 
 class WorldCalibrationManifest(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.1.0", "0.2.0"] = "0.2.0"
     run_id: str = Field(min_length=1)
     frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     camera_reconstruction_path: str
@@ -5572,16 +5630,39 @@ class WorldCalibrationManifest(StrictModel):
                         "every AprilTag image source must have an exact matching "
                         "calibration evidence file reference"
                     )
+        direct_fiducial_orientation = any(
+            item.source is CalibrationEvidenceType.FIDUCIAL_ORIENTATION for item in self.gravity
+        ) or (
+            self.forward is not None
+            and self.forward.source is CalibrationEvidenceType.FIDUCIAL_ORIENTATION
+        )
+        direct_fiducial_origin = (
+            self.origin is not None
+            and self.origin.source is CalibrationEvidenceType.FIDUCIAL_ORIGIN
+        )
+        if direct_fiducial_orientation or direct_fiducial_origin:
+            raise ValueError(
+                "fiducial-derived orientation and origin must use the AprilTag "
+                "world_contract so their derivation is tied to exact tag poses"
+            )
         metric = (
             self.apriltag is not None
             or self.known_distance is not None
             or bool(self.external_metric)
             or any(item.supports_metric_scale for item in self.evidence)
         )
-        gravity = bool(self.floor_planes) or any(
-            item.source is not CalibrationEvidenceType.MANHATTAN_DIAGNOSTIC for item in self.gravity
+        tag_contract = self.apriltag is not None and self.apriltag.world_contract is not None
+        gravity = (
+            tag_contract
+            or bool(self.floor_planes)
+            or any(
+                item.source is not CalibrationEvidenceType.MANHATTAN_DIAGNOSTIC
+                for item in self.gravity
+            )
         )
-        if metric and gravity and self.forward is not None and self.origin is not None:
+        forward = tag_contract or self.forward is not None
+        origin = tag_contract or self.origin is not None
+        if metric and gravity and forward and origin:
             expected = WorldCalibrationEvidenceTier.FULL_CANONICAL
         elif metric and gravity:
             expected = WorldCalibrationEvidenceTier.METRIC_AND_GRAVITY
@@ -5600,7 +5681,7 @@ class WorldCalibrationManifest(StrictModel):
 
 
 class WorldCalibrationRequest(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.1.0", "0.2.0"] = "0.2.0"
     manifest_path: str
     manifest_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
@@ -5610,7 +5691,7 @@ class WorldCalibrationRequest(StrictModel):
     source_scene_ir_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     dataset_split: WorldCalibrationDatasetSplit
     solver_configuration: dict[str, object]
-    acceptance_gates: dict[str, float | int]
+    acceptance_gates: dict[str, float | int | bool]
     output_directory: str
     seed: int
     fake_mode: str | None = None
@@ -5629,6 +5710,9 @@ class WorldCalibrationRequest(StrictModel):
 class WorldCalibrationMetrics(StrictModel):
     fitting_metric_relative_error: float | None = Field(default=None, ge=0)
     heldout_metric_relative_error: float | None = Field(default=None, ge=0)
+    fitting_landmark_reprojection_error_px: float | None = Field(default=None, ge=0)
+    heldout_landmark_reprojection_error_px: float | None = Field(default=None, ge=0)
+    independent_metric_length_holdout_available: bool = False
     heldout_tag_detection_count: int = Field(default=0, ge=0)
     heldout_tag_translation_error_m: float | None = Field(default=None, ge=0)
     heldout_tag_rotation_error_degrees: float | None = Field(default=None, ge=0)
@@ -5636,7 +5720,60 @@ class WorldCalibrationMetrics(StrictModel):
     gravity_heldout_error_degrees: float | None = Field(default=None, ge=0)
     forward_uncertainty_degrees: float | None = Field(default=None, ge=0)
     sim3_roundtrip_error: float = Field(ge=0)
-    known_distance_residuals: dict[str, float] = Field(default_factory=dict)
+    fitting_known_distance_residuals: dict[str, float] = Field(default_factory=dict)
+    heldout_known_distance_residuals: dict[str, float] = Field(default_factory=dict)
+
+
+class AprilTagWorldDerivation(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    official_commit: Annotated[str, Field(pattern=r"^[0-9a-f]{40}$")]
+    tag_family: str = Field(min_length=1)
+    tag_id: int = Field(ge=0)
+    fitting_detection_frame_ids: list[str]
+    heldout_detection_frame_ids: list[str]
+    tag_pose_sha256_by_frame: dict[str, Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]]
+    matrix_tag_from_colmap: Annotated[tuple[float, ...], Field(min_length=16, max_length=16)]
+    world_contract: AprilTagWorldContract
+    derived_up_vector_colmap: tuple[float, float, float]
+    derived_forward_vector_colmap: tuple[float, float, float]
+    derived_origin_colmap: tuple[float, float, float]
+    heldout_translation_residual_m: float = Field(ge=0)
+    heldout_orientation_residual_degrees: float = Field(ge=0)
+    angular_uncertainty_degrees: float = Field(ge=0)
+    origin_uncertainty_m: float = Field(ge=0)
+
+    @model_validator(mode="after")
+    def derived_frame_is_finite_right_handed(self) -> Self:
+        if set(self.fitting_detection_frame_ids) & set(self.heldout_detection_frame_ids):
+            raise ValueError("fiducial fitting and held-out detections must be disjoint")
+        expected_pose_ids = set(self.fitting_detection_frame_ids) | set(
+            self.heldout_detection_frame_ids
+        )
+        if set(self.tag_pose_sha256_by_frame) != expected_pose_ids:
+            raise ValueError("fiducial pose hashes must cover exactly the derivation detections")
+        values = (
+            *self.matrix_tag_from_colmap,
+            *self.derived_up_vector_colmap,
+            *self.derived_forward_vector_colmap,
+            *self.derived_origin_colmap,
+        )
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("fiducial world derivation must be finite")
+        up_norm = math.sqrt(sum(value * value for value in self.derived_up_vector_colmap))
+        forward_norm = math.sqrt(sum(value * value for value in self.derived_forward_vector_colmap))
+        dot = sum(
+            up * forward
+            for up, forward in zip(
+                self.derived_up_vector_colmap,
+                self.derived_forward_vector_colmap,
+                strict=True,
+            )
+        )
+        if abs(up_norm - 1.0) > 1e-6 or abs(forward_norm - 1.0) > 1e-6:
+            raise ValueError("derived fiducial axes must be normalized")
+        if abs(dot) > 1e-6:
+            raise ValueError("derived fiducial up and forward must be orthogonal")
+        return self
 
 
 class WorldCalibrationTransform(StrictModel):
@@ -5759,7 +5896,7 @@ class WorldCalibrationCandidate(StrictModel):
 
 
 class WorldCalibrationArtifact(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.1.0", "0.2.0"] = "0.2.0"
     status: WorldCalibrationStatus
     evidence_tier: WorldCalibrationEvidenceTier
     manifest_path: str
@@ -5768,6 +5905,7 @@ class WorldCalibrationArtifact(StrictModel):
     candidates: list[WorldCalibrationCandidate]
     selected_candidate_id: str | None = None
     accepted_transform: WorldCalibrationTransform | None = None
+    fiducial_world_derivation: AprilTagWorldDerivation | None = None
     metrics: WorldCalibrationMetrics
     metric_scale_known: bool
     gravity_alignment_known: bool
@@ -5793,18 +5931,50 @@ class WorldCalibrationArtifact(StrictModel):
         )
         if self.full_canonical_world_available != all(flags):
             raise ValueError("full canonical availability must match all calibration components")
+        accepted = {
+            WorldCalibrationStatus.ACCEPTED_FULL_CANONICAL,
+            WorldCalibrationStatus.ACCEPTED_METRIC_ONLY,
+            WorldCalibrationStatus.ACCEPTED_GRAVITY_ONLY,
+        }
         if self.status is WorldCalibrationStatus.ACCEPTED_FULL_CANONICAL:
-            if not self.full_canonical_world_available or self.accepted_transform is None:
+            if (
+                flags != (True, True, True, True)
+                or not self.full_canonical_world_available
+                or self.accepted_transform is None
+                or self.selected_candidate_id is None
+            ):
                 raise ValueError("accepted full canonical status requires an accepted transform")
+        elif self.status is WorldCalibrationStatus.ACCEPTED_METRIC_ONLY:
+            if (
+                flags != (True, False, False, False)
+                or self.accepted_transform is None
+                or self.selected_candidate_id is None
+            ):
+                raise ValueError("accepted metric-only status has inconsistent component flags")
+        elif self.status is WorldCalibrationStatus.ACCEPTED_GRAVITY_ONLY:
+            if (
+                flags != (False, True, False, False)
+                or self.accepted_transform is not None
+                or self.selected_candidate_id is not None
+            ):
+                raise ValueError("accepted gravity-only status has inconsistent component flags")
         elif self.full_canonical_world_available:
             raise ValueError("only accepted_full_canonical may claim a full canonical world")
+        if self.status not in accepted and (
+            self.accepted_transform is not None or self.selected_candidate_id is not None
+        ):
+            raise ValueError("rejected and insufficient calibration cannot select a transform")
         if self.accepted_transform is None and self.selected_candidate_id is not None:
             raise ValueError("selected calibration candidate requires an accepted transform")
+        if self.fiducial_world_derivation is not None and self.evidence_tier is not (
+            WorldCalibrationEvidenceTier.FULL_CANONICAL
+        ):
+            raise ValueError("fiducial world derivation requires full-canonical evidence")
         return self
 
 
 class WorldCalibrationDiagnostics(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.1.0", "0.2.0"] = "0.2.0"
     status: WorldCalibrationStatus
     metric_evidence_count: int = Field(ge=0)
     gravity_evidence_count: int = Field(ge=0)
@@ -5815,7 +5985,22 @@ class WorldCalibrationDiagnostics(StrictModel):
     total_runtime_seconds: float = Field(ge=0)
     peak_host_memory_bytes: int | None = Field(default=None, ge=0)
     runtime_environment: dict[str, str] = Field(default_factory=dict)
+    fiducial_world_derivation_path: str | None = None
+    fiducial_world_derivation_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def derivation_path_hash_pair(self) -> Self:
+        if (self.fiducial_world_derivation_path is None) != (
+            self.fiducial_world_derivation_sha256 is None
+        ):
+            raise ValueError("fiducial derivation path and SHA-256 must be paired")
+        if self.fiducial_world_derivation_path is not None:
+            _relative_artifact_path(self.fiducial_world_derivation_path)
+        return self
 
 
 class CanonicalAssetMapping(StrictModel):
@@ -5824,6 +6009,7 @@ class CanonicalAssetMapping(StrictModel):
     source_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     transform_policy: Literal[
         "wrapper_sim3",
+        "hierarchy_root_composition",
         "rotation_only",
         "scale_once",
         "angular_unchanged",
@@ -5835,8 +6021,28 @@ class CanonicalAssetMapping(StrictModel):
         return _relative_artifact_path(value)
 
 
+class CanonicalPrismaticUnitMapping(StrictModel):
+    object_id: str = Field(min_length=1)
+    articulation_id: str = Field(min_length=1)
+    joint_id: str = Field(min_length=1)
+    prismatic_position_space: Literal["object_local"] = "object_local"
+    source_object_scale_colmap_per_local_unit: float = Field(gt=0)
+    world_scale_m_per_colmap: float = Field(gt=0)
+    prismatic_position_scale_to_m: float = Field(gt=0)
+    raw_joint_values_unchanged: Literal[True] = True
+
+    @model_validator(mode="after")
+    def effective_scale_is_exact(self) -> Self:
+        expected = self.source_object_scale_colmap_per_local_unit * self.world_scale_m_per_colmap
+        if abs(self.prismatic_position_scale_to_m - expected) > 1e-9 * max(1.0, expected):
+            raise ValueError(
+                "prismatic metric scale must include root and world scale exactly once"
+            )
+        return self
+
+
 class CanonicalSceneWrapper(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.1.0", "0.2.0"] = "0.2.0"
     source_scene_ir_path: str
     source_scene_ir_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     source_camera_reconstruction_path: str
@@ -5845,20 +6051,36 @@ class CanonicalSceneWrapper(StrictModel):
     calibration_artifact_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     accepted_transform: WorldCalibrationTransform | None = None
     calibration_status: WorldCalibrationStatus
+    fiducial_world_derivation_path: str | None = None
+    fiducial_world_derivation_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     asset_mappings: list[CanonicalAssetMapping]
+    prismatic_unit_mappings: list[CanonicalPrismaticUnitMapping] = Field(default_factory=list)
     camera_transform_policy: Literal["compose_world_wrapper"] = "compose_world_wrapper"
-    prismatic_quantity_policy: Literal["scale_once"] = "scale_once"
-    revolute_quantity_policy: Literal["radians_unchanged"] = "radians_unchanged"
+    articulation_quantity_policy: Literal["root_wrapper_local_quantities_unchanged"] = (
+        "root_wrapper_local_quantities_unchanged"
+    )
     source_artifacts_immutable: Literal[True] = True
 
     @field_validator(
         "source_scene_ir_path",
         "source_camera_reconstruction_path",
         "calibration_artifact_path",
+        "fiducial_world_derivation_path",
     )
     @classmethod
-    def relative_wrapper_paths(cls, value: str) -> str:
-        return _relative_artifact_path(value)
+    def relative_wrapper_paths(cls, value: str | None) -> str | None:
+        return _relative_artifact_path(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def derivation_reference_pair(self) -> Self:
+        if (self.fiducial_world_derivation_path is None) != (
+            self.fiducial_world_derivation_sha256 is None
+        ):
+            raise ValueError("wrapper fiducial derivation path and SHA-256 must be paired")
+        return self
 
 
 class Phase6AConsistencyReport(StrictModel):

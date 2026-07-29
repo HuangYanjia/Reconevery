@@ -1,4 +1,4 @@
-schema_version: "0.1.0"
+schema_version: "0.2.0"
 run_id: calibration_apriltag_example
 frame_sequence_digest: "0000000000000000000000000000000000000000000000000000000000000000"
 camera_reconstruction_path: calibration/source/camera_reconstruction.json
@@ -9,6 +9,7 @@ evidence:
   - evidence_id: apriltag_fitting
     evidence_type: apriltag
     trust: metric_fiducial
+    role: fitting
     source_files:
       - relative_path: calibration/source/tag_frame_fitting.png
         sha256: "0000000000000000000000000000000000000000000000000000000000000000"
@@ -23,6 +24,13 @@ apriltag:
   tag_id: 0
   detection_edge_size_m: 0.100
   detector_source_path: apriltag_pose.h::estimate_tag_pose
+  world_contract:
+    tag_origin_policy: tag_center
+    canonical_up_from_tag_axis: +Z_tag
+    canonical_forward_from_tag_axis: +X_tag
+    mounting_description: surveyed fixed tag board
+    mounting_uncertainty_degrees: 0.5
+    origin_uncertainty_m: 0.002
   image_sources:
     - frame_id: replace_with_registered_frame_id
       image_path: calibration/source/tag_frame_fitting.png
@@ -39,4 +47,4 @@ gravity: []
 floor_planes: []
 forward: null
 origin: null
-evidence_tier: scale_only
+evidence_tier: full_canonical

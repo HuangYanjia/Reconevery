@@ -94,7 +94,7 @@ def _strip_local_paths(value: object) -> object:
 
 class CalibrationEvidenceAdapter:
     name = "calibration_evidence"
-    version = "0.1.0"
+    version = "0.2.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         config = CalibrationEvidenceConfig.model_validate(context.config.adapter.config)
@@ -377,6 +377,7 @@ class CalibrationEvidenceAdapter:
                     "evidence_id": "apriltag_fitting",
                     "evidence_type": "apriltag",
                     "trust": "metric_fiducial",
+                    "role": "fitting",
                     "source_files": source_files[::2],
                     "supports_metric_scale": True,
                     "supports_gravity": False,
@@ -389,6 +390,7 @@ class CalibrationEvidenceAdapter:
                     "evidence_id": "apriltag_heldout",
                     "evidence_type": "apriltag",
                     "trust": "metric_fiducial",
+                    "role": "heldout",
                     "source_files": source_files[1::2],
                     "supports_metric_scale": True,
                     "supports_gravity": False,
@@ -406,37 +408,19 @@ class CalibrationEvidenceAdapter:
                 "tag_id": 0,
                 "detection_edge_size_m": 0.1,
                 "detector_source_path": "apriltag_pose.h::estimate_tag_pose",
+                "world_contract": {
+                    "tag_origin_policy": "tag_center",
+                    "canonical_up_from_tag_axis": "+Z_tag",
+                    "canonical_forward_from_tag_axis": "+X_tag",
+                    "mounting_description": "surveyed fixed tag board",
+                    "mounting_uncertainty_degrees": 0.1,
+                    "origin_uncertainty_m": 0.001,
+                },
                 "detections": detections,
-            }
-            gravity = [
-                {
-                    "evidence_id": "surveyed_tag_up",
-                    "source": "fiducial_orientation",
-                    "trust": "surveyed",
-                    "up_vector_colmap": [0.0, 0.0, 1.0],
-                    "sign_evidence": "explicit surveyed tag board +Z",
-                    "fitting_residual_degrees": 0.2,
-                    "heldout_residual_degrees": 0.3,
-                    "angular_uncertainty_degrees": 0.5,
-                    "supporting_ids": [item["frame_id"] for item in detections],
-                }
-            ]
-            forward = {
-                "source": "forward_landmarks",
-                "policy": "surveyed fiducial +X",
-                "forward_vector_colmap": [1.0, 0.0, 0.0],
-                "uncertainty_degrees": 0.5,
-                "supporting_ids": ["tag_0"],
-            }
-            origin = {
-                "source": "fiducial_origin",
-                "policy": "tag center",
-                "origin_colmap": [-0.5, 1.0, -0.25],
-                "supporting_ids": ["tag_0"],
             }
         return WorldCalibrationManifest.model_validate(
             {
-                "schema_version": "0.1.0",
+                "schema_version": "0.2.0",
                 "run_id": "phase6a_fake",
                 "frame_sequence_digest": camera.frame_sequence_digest,
                 "camera_reconstruction_path": "calibration/source/camera_reconstruction.json",

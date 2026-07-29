@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -77,6 +78,10 @@ def write_preview(path: Path, title: str) -> None:
     image.save(path, format="PNG", optimize=False, compress_level=9)
 
 
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
     request = read_json(request_path)
     mode = str(request.get("fake_mode") or "perfect_full_canonical")
@@ -148,10 +153,52 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
         "warnings": [],
     }
     accepted = status.startswith("accepted_") and metric
+    derivation = (
+        {
+            "schema_version": "0.1.0",
+            "official_commit": "0e16a12dd380fd607e4afd54712ee9b1ffb9ec8f",
+            "tag_family": "tagStandard41h12",
+            "tag_id": 0,
+            "fitting_detection_frame_ids": ["frame_000000", "frame_000002", "frame_000004"],
+            "heldout_detection_frame_ids": ["frame_000001", "frame_000003", "frame_000005"],
+            "tag_pose_sha256_by_frame": {
+                f"frame_{index:06d}": f"{index + 1:064x}" for index in range(6)
+            },
+            "matrix_tag_from_colmap": MATRIX,
+            "world_contract": {
+                "tag_origin_policy": "tag_center",
+                "canonical_up_from_tag_axis": "+Z_tag",
+                "canonical_forward_from_tag_axis": "+X_tag",
+                "mounting_description": "surveyed fixed tag board",
+                "mounting_uncertainty_degrees": 0.1,
+                "origin_uncertainty_m": 0.001,
+            },
+            "derived_up_vector_colmap": [0.0, 0.0, 1.0],
+            "derived_forward_vector_colmap": [1.0, 0.0, 0.0],
+            "derived_origin_colmap": [-0.5, 1.0, -0.25],
+            "heldout_translation_residual_m": 0.004,
+            "heldout_orientation_residual_degrees": 0.5,
+            "angular_uncertainty_degrees": 0.1,
+            "origin_uncertainty_m": 0.001,
+        }
+        if full
+        else None
+    )
+    derivation_path = output_dir / "apriltag_world_derivation.json"
+    write_json(
+        derivation_path,
+        derivation
+        if derivation is not None
+        else {
+            "schema_version": "0.1.0",
+            "available": False,
+            "reason": "no explicit AprilTag world contract derivation",
+        },
+    )
     write_json(
         output_dir / "world_calibration.json",
         {
-            "schema_version": "0.1.0",
+            "schema_version": "0.2.0",
             "status": status,
             "evidence_tier": candidate["evidence_tier"],
             "manifest_path": request["manifest_path"],
@@ -160,9 +207,13 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
             "candidates": [candidate],
             "selected_candidate_id": candidate["candidate_id"] if accepted else None,
             "accepted_transform": transform if accepted else None,
+            "fiducial_world_derivation": derivation,
             "metrics": {
                 "fitting_metric_relative_error": 0.001 if metric else None,
-                "heldout_metric_relative_error": 0.002 if metric else None,
+                "heldout_metric_relative_error": None,
+                "fitting_landmark_reprojection_error_px": None,
+                "heldout_landmark_reprojection_error_px": None,
+                "independent_metric_length_holdout_available": False,
                 "heldout_tag_detection_count": 3 if metric else 0,
                 "heldout_tag_translation_error_m": 0.004 if metric else None,
                 "heldout_tag_rotation_error_degrees": 0.5 if metric else None,
@@ -170,7 +221,8 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
                 "gravity_heldout_error_degrees": 0.4 if gravity else None,
                 "forward_uncertainty_degrees": 0.5 if forward else None,
                 "sim3_roundtrip_error": 0.0,
-                "known_distance_residuals": {"fake_distance": 0.001} if metric else {},
+                "fitting_known_distance_residuals": {},
+                "heldout_known_distance_residuals": {},
             },
             "metric_scale_known": metric and status not in {"rejected_heldout_validation"},
             "gravity_alignment_known": gravity and not status.startswith("rejected_"),
@@ -185,7 +237,7 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
     write_json(
         output_dir / "apriltag_detections.json",
         {
-            "schema_version": "0.1.0",
+            "schema_version": "0.2.0",
             "official_repository": "https://github.com/AprilRobotics/apriltag",
             "official_commit": "0e16a12dd380fd607e4afd54712ee9b1ffb9ec8f",
             "detections": [],
@@ -198,7 +250,7 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
     write_json(
         output_dir / "diagnostics.json",
         {
-            "schema_version": "0.1.0",
+            "schema_version": "0.2.0",
             "status": status,
             "metric_evidence_count": int(metric),
             "gravity_evidence_count": int(gravity),
@@ -215,6 +267,12 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
                 "opencv": "not_loaded",
                 "cuda": "not_used",
             },
+            "fiducial_world_derivation_path": (
+                "calibration/apriltag_world_derivation.json" if derivation is not None else None
+            ),
+            "fiducial_world_derivation_sha256": (
+                sha256_file(derivation_path) if derivation is not None else None
+            ),
             "warnings": [],
         },
     )

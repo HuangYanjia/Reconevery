@@ -1,5 +1,208 @@
 {
   "$defs": {
+    "AprilTagSignedAxis": {
+      "enum": [
+        "+X_tag",
+        "-X_tag",
+        "+Y_tag",
+        "-Y_tag",
+        "+Z_tag",
+        "-Z_tag"
+      ],
+      "title": "AprilTagSignedAxis",
+      "type": "string"
+    },
+    "AprilTagWorldContract": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_forward_from_tag_axis": {
+          "$ref": "#/$defs/AprilTagSignedAxis"
+        },
+        "canonical_up_from_tag_axis": {
+          "$ref": "#/$defs/AprilTagSignedAxis"
+        },
+        "mounting_description": {
+          "minLength": 1,
+          "title": "Mounting Description",
+          "type": "string"
+        },
+        "mounting_uncertainty_degrees": {
+          "minimum": 0,
+          "title": "Mounting Uncertainty Degrees",
+          "type": "number"
+        },
+        "origin_uncertainty_m": {
+          "minimum": 0,
+          "title": "Origin Uncertainty M",
+          "type": "number"
+        },
+        "tag_origin_policy": {
+          "const": "tag_center",
+          "default": "tag_center",
+          "title": "Tag Origin Policy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "canonical_up_from_tag_axis",
+        "canonical_forward_from_tag_axis",
+        "mounting_description",
+        "mounting_uncertainty_degrees",
+        "origin_uncertainty_m"
+      ],
+      "title": "AprilTagWorldContract",
+      "type": "object"
+    },
+    "AprilTagWorldDerivation": {
+      "additionalProperties": false,
+      "properties": {
+        "angular_uncertainty_degrees": {
+          "minimum": 0,
+          "title": "Angular Uncertainty Degrees",
+          "type": "number"
+        },
+        "derived_forward_vector_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Derived Forward Vector Colmap",
+          "type": "array"
+        },
+        "derived_origin_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Derived Origin Colmap",
+          "type": "array"
+        },
+        "derived_up_vector_colmap": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Derived Up Vector Colmap",
+          "type": "array"
+        },
+        "fitting_detection_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fitting Detection Frame Ids",
+          "type": "array"
+        },
+        "heldout_detection_frame_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Heldout Detection Frame Ids",
+          "type": "array"
+        },
+        "heldout_orientation_residual_degrees": {
+          "minimum": 0,
+          "title": "Heldout Orientation Residual Degrees",
+          "type": "number"
+        },
+        "heldout_translation_residual_m": {
+          "minimum": 0,
+          "title": "Heldout Translation Residual M",
+          "type": "number"
+        },
+        "matrix_tag_from_colmap": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 16,
+          "minItems": 16,
+          "title": "Matrix Tag From Colmap",
+          "type": "array"
+        },
+        "official_commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "title": "Official Commit",
+          "type": "string"
+        },
+        "origin_uncertainty_m": {
+          "minimum": 0,
+          "title": "Origin Uncertainty M",
+          "type": "number"
+        },
+        "schema_version": {
+          "const": "0.1.0",
+          "default": "0.1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "tag_family": {
+          "minLength": 1,
+          "title": "Tag Family",
+          "type": "string"
+        },
+        "tag_id": {
+          "minimum": 0,
+          "title": "Tag Id",
+          "type": "integer"
+        },
+        "tag_pose_sha256_by_frame": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Tag Pose Sha256 By Frame",
+          "type": "object"
+        },
+        "world_contract": {
+          "$ref": "#/$defs/AprilTagWorldContract"
+        }
+      },
+      "required": [
+        "official_commit",
+        "tag_family",
+        "tag_id",
+        "fitting_detection_frame_ids",
+        "heldout_detection_frame_ids",
+        "tag_pose_sha256_by_frame",
+        "matrix_tag_from_colmap",
+        "world_contract",
+        "derived_up_vector_colmap",
+        "derived_forward_vector_colmap",
+        "derived_origin_colmap",
+        "heldout_translation_residual_m",
+        "heldout_orientation_residual_degrees",
+        "angular_uncertainty_degrees",
+        "origin_uncertainty_m"
+      ],
+      "title": "AprilTagWorldDerivation",
+      "type": "object"
+    },
     "WorldCalibrationCandidate": {
       "additionalProperties": false,
       "properties": {
@@ -60,6 +263,13 @@
     "WorldCalibrationDatasetSplit": {
       "additionalProperties": false,
       "properties": {
+        "diagnostic_evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Diagnostic Evidence Ids",
+          "type": "array"
+        },
         "fitting_evidence_ids": {
           "items": {
             "type": "string"
@@ -124,6 +334,26 @@
     "WorldCalibrationMetrics": {
       "additionalProperties": false,
       "properties": {
+        "fitting_known_distance_residuals": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Fitting Known Distance Residuals",
+          "type": "object"
+        },
+        "fitting_landmark_reprojection_error_px": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fitting Landmark Reprojection Error Px"
+        },
         "fitting_metric_relative_error": {
           "anyOf": [
             {
@@ -176,6 +406,26 @@
           "default": null,
           "title": "Gravity Heldout Error Degrees"
         },
+        "heldout_known_distance_residuals": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Heldout Known Distance Residuals",
+          "type": "object"
+        },
+        "heldout_landmark_reprojection_error_px": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Landmark Reprojection Error Px"
+        },
         "heldout_metric_relative_error": {
           "anyOf": [
             {
@@ -221,12 +471,10 @@
           "default": null,
           "title": "Heldout Tag Translation Error M"
         },
-        "known_distance_residuals": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "title": "Known Distance Residuals",
-          "type": "object"
+        "independent_metric_length_holdout_available": {
+          "default": false,
+          "title": "Independent Metric Length Holdout Available",
+          "type": "boolean"
         },
         "sim3_roundtrip_error": {
           "minimum": 0,
@@ -385,6 +633,17 @@
     "evidence_tier": {
       "$ref": "#/$defs/WorldCalibrationEvidenceTier"
     },
+    "fiducial_world_derivation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AprilTagWorldDerivation"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "full_canonical_world_available": {
       "title": "Full Canonical World Available",
       "type": "boolean"
@@ -410,8 +669,11 @@
       "$ref": "#/$defs/WorldCalibrationMetrics"
     },
     "schema_version": {
-      "const": "0.1.0",
-      "default": "0.1.0",
+      "default": "0.2.0",
+      "enum": [
+        "0.1.0",
+        "0.2.0"
+      ],
       "title": "Schema Version",
       "type": "string"
     },

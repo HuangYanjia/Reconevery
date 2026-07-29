@@ -18,6 +18,31 @@
   },
   "additionalProperties": false,
   "properties": {
+    "fiducial_world_derivation_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fiducial World Derivation Path"
+    },
+    "fiducial_world_derivation_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fiducial World Derivation Sha256"
+    },
     "fitting_evidence_count": {
       "minimum": 0,
       "title": "Fitting Evidence Count",
@@ -69,8 +94,11 @@
       "type": "object"
     },
     "schema_version": {
-      "const": "0.1.0",
-      "default": "0.1.0",
+      "default": "0.2.0",
+      "enum": [
+        "0.1.0",
+        "0.2.0"
+      ],
       "title": "Schema Version",
       "type": "string"
     },

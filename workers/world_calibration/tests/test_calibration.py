@@ -14,6 +14,10 @@ from world_calibration_worker.landmark_triangulation import (
     triangulate,
 )
 from world_calibration_worker.sim3 import matrix, transform_points, umeyama
+from world_calibration_worker.solver import (
+    _known_distance_solution,
+    _tag_world_derivation,
+)
 
 
 def test_known_sim3_and_apriltag_camera_trajectory() -> None:
@@ -146,3 +150,133 @@ def test_official_pose_is_inverted_to_tag_from_camera(
     )
     assert records[0]["camera_center_tag_m"] == pytest.approx((-1.0, -2.0, -3.0))
     assert records[0]["rotation_tag_from_camera"] == pytest.approx(np.eye(3).reshape(-1))
+
+
+def _known_distance_fixture(*, independent_holdout: bool) -> tuple[dict, dict]:
+    intrinsic = np.asarray([[500.0, 0.0, 320.0], [0.0, 500.0, 240.0], [0.0, 0.0, 1.0]])
+    centers = (-0.5, 0.0, 0.5)
+    points = {
+        "a": np.asarray([0.0, 0.0, 3.0]),
+        "b": np.asarray([2.0, 0.0, 3.0]),
+        "c": np.asarray([0.0, 0.0, 4.0]),
+        "d": np.asarray([0.0, 1.0, 4.0]),
+    }
+    poses = []
+    observations = []
+    for index, center_x in enumerate(centers):
+        frame_id = f"frame_{index}"
+        poses.append(
+            {
+                "frame_id": frame_id,
+                "transform_world_from_camera": {
+                    "translation": [center_x, 0.0, 0.0],
+                    "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
+                    "scale": [1.0, 1.0, 1.0],
+                },
+            }
+        )
+        extrinsic = np.column_stack((np.eye(3), np.asarray([-center_x, 0.0, 0.0])))
+        projection = intrinsic @ extrinsic
+        for point_id, point in points.items():
+            projected = projection @ np.append(point, 1.0)
+            observations.append(
+                {
+                    "frame_id": frame_id,
+                    "point_id": point_id,
+                    "pixel_xy": (projected[:2] / projected[2]).tolist(),
+                    "role": "fitting" if index < 2 else "heldout",
+                }
+            )
+    landmarks = [
+        {
+            "landmark_id": "fit_width",
+            "point_a_id": "a",
+            "point_b_id": "b",
+            "known_distance_m": 1.0,
+            "role": "fitting",
+        }
+    ]
+    if independent_holdout:
+        landmarks.append(
+            {
+                "landmark_id": "heldout_height",
+                "point_a_id": "c",
+                "point_b_id": "d",
+                "known_distance_m": 0.5,
+                "role": "heldout",
+            }
+        )
+    manifest = {"known_distance": {"landmarks": landmarks, "observations": observations}}
+    camera = {
+        "intrinsics": {
+            "fx": 500.0,
+            "fy": 500.0,
+            "cx": 320.0,
+            "cy": 240.0,
+        },
+        "poses": poses,
+    }
+    return manifest, camera
+
+
+def test_single_known_distance_uses_image_holdout_without_fake_length_holdout() -> None:
+    manifest, camera = _known_distance_fixture(independent_holdout=False)
+    result = _known_distance_solution(
+        manifest,
+        camera,
+        {"frame_0", "frame_1"},
+        {"frame_2"},
+    )
+    assert result["fitting_scales"] == pytest.approx([0.5])
+    assert result["fitting_error"] == pytest.approx(0.0, abs=1e-10)
+    assert result["heldout_error"] is None
+    assert not result["independent_length_holdout"]
+    assert result["heldout_reprojection_error_px"] == pytest.approx(0.0, abs=1e-8)
+
+
+def test_dual_known_distance_has_independent_frozen_scale_holdout() -> None:
+    manifest, camera = _known_distance_fixture(independent_holdout=True)
+    result = _known_distance_solution(
+        manifest,
+        camera,
+        {"frame_0", "frame_1"},
+        {"frame_2"},
+    )
+    assert result["fitting_scales"] == pytest.approx([0.5])
+    assert result["heldout_error"] == pytest.approx(0.0, abs=1e-10)
+    assert result["independent_length_holdout"]
+    assert result["heldout_residuals"] == pytest.approx({"heldout_height": 0.0}, abs=1e-10)
+
+
+def test_apriltag_world_contract_derives_axes_and_origin_from_fitted_pose() -> None:
+    manifest = {
+        "apriltag": {
+            "official_commit": "0e16a12dd380fd607e4afd54712ee9b1ffb9ec8f",
+            "tag_family": "tagStandard41h12",
+            "tag_id": 0,
+            "world_contract": {
+                "tag_origin_policy": "tag_center",
+                "canonical_up_from_tag_axis": "+Z_tag",
+                "canonical_forward_from_tag_axis": "-Y_tag",
+                "mounting_description": "surveyed vertical board",
+                "mounting_uncertainty_degrees": 0.5,
+                "origin_uncertainty_m": 0.002,
+            },
+        }
+    }
+    detections = [
+        {"frame_id": "fit", "split": "fitting"},
+        {"frame_id": "hold", "split": "heldout"},
+    ]
+    derivation = _tag_world_derivation(
+        manifest,
+        detections,
+        2.0,
+        np.eye(3),
+        np.asarray([1.0, -2.0, 0.5]),
+        {"translation_error": 0.004, "rotation_error": 0.6},
+    )
+    assert derivation is not None
+    assert derivation["derived_up_vector_colmap"] == pytest.approx((0.0, 0.0, 1.0))
+    assert derivation["derived_forward_vector_colmap"] == pytest.approx((0.0, -1.0, 0.0))
+    assert derivation["derived_origin_colmap"] == pytest.approx((-0.5, 1.0, -0.25))

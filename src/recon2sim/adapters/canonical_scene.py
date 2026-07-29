@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import math
+from typing import Literal
 
 from recon2sim.adapters.base import (
     HealthcheckResult,
@@ -11,6 +13,7 @@ from recon2sim.adapters.base import (
 )
 from recon2sim.artifacts import (
     CanonicalAssetMapping,
+    CanonicalPrismaticUnitMapping,
     CanonicalSceneWrapper,
     EndToEndConsistencyCheck,
     Phase6AConsistencyReport,
@@ -20,9 +23,7 @@ from recon2sim.artifacts import (
 )
 from recon2sim.calibration import (
     multiply_matrix4,
-    rotate_vector,
     sha256_file,
-    transform_point,
 )
 from recon2sim.ir import (
     AlignmentStatus,
@@ -33,6 +34,7 @@ from recon2sim.ir import (
     SceneIR,
     Transform,
     TransformDirection,
+    WorldCalibrationSceneReference,
     WorldFrame,
 )
 from recon2sim.storage import atomic_write_json
@@ -143,8 +145,6 @@ def _canonical_scene(source: SceneIR, calibration: WorldCalibrationArtifact) -> 
         return source.model_copy(deep=True)
     world = calibration.accepted_transform
     matrix = world.matrix_canonical_from_colmap
-    rotation = world.rotation_canonical_from_colmap
-    metric_scale = world.scale_m_per_colmap
     scene = source.model_copy(deep=True)
     scene.metadata.coordinate_convention = _canonical_convention()
     for camera in scene.cameras:
@@ -158,33 +158,119 @@ def _canonical_scene(source: SceneIR, calibration: WorldCalibrationArtifact) -> 
         instance.transform = _matrix_transform(
             multiply_matrix4(matrix, _transform_matrix(instance.transform))
         )
-        if instance.articulation is None:
-            continue
-        for joint in instance.articulation.joints:
-            joint.axis_xyz = rotate_vector(rotation, joint.axis_xyz)
-            if joint.origin_xyz is not None:
-                joint.origin_xyz = transform_point(matrix, joint.origin_xyz)
-            if joint.joint_type == "prismatic":
-                if joint.limits is not None and joint.limit_source != "candidate_prior":
-                    joint.limits = (
-                        joint.limits[0] * metric_scale,
-                        joint.limits[1] * metric_scale,
-                    )
-                if joint.observed_position_range is not None:
-                    joint.observed_position_range = (
-                        joint.observed_position_range[0] * metric_scale,
-                        joint.observed_position_range[1] * metric_scale,
-                    )
-                joint.observed_state_positions = {
-                    state: value * metric_scale
-                    for state, value in joint.observed_state_positions.items()
-                }
     return scene
+
+
+def _prismatic_unit_mappings(
+    source: SceneIR,
+    calibration: WorldCalibrationArtifact,
+) -> list[CanonicalPrismaticUnitMapping]:
+    if calibration.accepted_transform is None:
+        return []
+    world_scale = calibration.accepted_transform.scale_m_per_colmap
+    mappings: list[CanonicalPrismaticUnitMapping] = []
+    for instance in source.objects:
+        articulation = instance.articulation
+        if articulation is None:
+            continue
+        if max(instance.transform.scale) - min(instance.transform.scale) > 1e-9:
+            raise ValueError("articulated canonical propagation requires uniform object scale")
+        object_scale = instance.transform.scale[0]
+        for joint in articulation.joints:
+            if joint.joint_type != "prismatic":
+                continue
+            mappings.append(
+                CanonicalPrismaticUnitMapping(
+                    object_id=instance.object_id,
+                    articulation_id=articulation.articulation_id,
+                    joint_id=joint.joint_id,
+                    source_object_scale_colmap_per_local_unit=object_scale,
+                    world_scale_m_per_colmap=world_scale,
+                    prismatic_position_scale_to_m=object_scale * world_scale,
+                )
+            )
+    return mappings
+
+
+def _asset_transform_policy(
+    asset_space: str | None,
+) -> Literal["wrapper_sim3", "hierarchy_root_composition"]:
+    if asset_space in {"candidate_base", "link_local"}:
+        return "hierarchy_root_composition"
+    return "wrapper_sim3"
+
+
+def _requires_direct_world_wrapper(asset_space: str | None, *, full: bool) -> bool:
+    return full and asset_space not in {"candidate_base", "link_local"}
+
+
+def _translation_matrix(value: tuple[float, float, float]) -> tuple[float, ...]:
+    return (
+        1.0,
+        0.0,
+        0.0,
+        value[0],
+        0.0,
+        1.0,
+        0.0,
+        value[1],
+        0.0,
+        0.0,
+        1.0,
+        value[2],
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    )
+
+
+def _joint_motion_matrix(
+    joint_type: str,
+    axis: tuple[float, float, float],
+    origin: tuple[float, float, float] | None,
+    q: float,
+) -> tuple[float, ...]:
+    if joint_type == "prismatic":
+        return _translation_matrix((axis[0] * q, axis[1] * q, axis[2] * q))
+    if joint_type != "revolute":
+        return _translation_matrix((0.0, 0.0, 0.0))
+    x, y, z = axis
+    cosine = math.cos(q)
+    sine = math.sin(q)
+    one_minus = 1.0 - cosine
+    rotation = (
+        cosine + x * x * one_minus,
+        x * y * one_minus - z * sine,
+        x * z * one_minus + y * sine,
+        0.0,
+        y * x * one_minus + z * sine,
+        cosine + y * y * one_minus,
+        y * z * one_minus - x * sine,
+        0.0,
+        z * x * one_minus - y * sine,
+        z * y * one_minus + x * sine,
+        cosine + z * z * one_minus,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    )
+    pivot = origin or (0.0, 0.0, 0.0)
+    return multiply_matrix4(
+        multiply_matrix4(_translation_matrix(pivot), rotation),
+        _translation_matrix((-pivot[0], -pivot[1], -pivot[2])),
+    )
+
+
+def _matrix_error(left: tuple[float, ...], right: tuple[float, ...]) -> float:
+    return max(abs(actual - expected) for actual, expected in zip(left, right, strict=True))
 
 
 class CanonicalSceneAdapter:
     name = "canonical_scene_wrapper"
-    version = "0.1.0"
+    version = "0.2.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         manifest = WorldCalibrationManifest.model_validate_json(
@@ -213,6 +299,18 @@ class CanonicalSceneAdapter:
                 include_producer_signature=False,
             ),
         ]
+        calibration = WorldCalibrationArtifact.model_validate_json(
+            context.canonical_path("calibration", "world_calibration.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        if calibration.fiducial_world_derivation is not None:
+            specs.append(
+                InputSpec(
+                    "calibration/apriltag_world_derivation.json",
+                    "apriltag_world_derivation",
+                )
+            )
         specs.extend(
             InputSpec(
                 asset.uri,
@@ -276,7 +374,7 @@ class CanonicalSceneAdapter:
                     asset_id=asset.asset_id,
                     source_path=asset.uri,
                     source_sha256=digest,
-                    transform_policy="wrapper_sim3",
+                    transform_policy=_asset_transform_policy(asset.articulated_asset_space),
                 )
             )
         wrapper = CanonicalSceneWrapper(
@@ -288,10 +386,55 @@ class CanonicalSceneAdapter:
             calibration_artifact_sha256=sha256_file(calibration_path),
             accepted_transform=calibration.accepted_transform,
             calibration_status=calibration.status,
+            fiducial_world_derivation_path=(
+                "calibration/apriltag_world_derivation.json"
+                if calibration.fiducial_world_derivation is not None
+                else None
+            ),
+            fiducial_world_derivation_sha256=(
+                sha256_file(root / "apriltag_world_derivation.json")
+                if calibration.fiducial_world_derivation is not None
+                else None
+            ),
             asset_mappings=mappings,
+            prismatic_unit_mappings=_prismatic_unit_mappings(source_scene, calibration),
         )
         scene = _canonical_scene(source_scene, calibration)
         atomic_write_json(root / "canonical_scene_wrapper.json", wrapper)
+        wrapper_path = root / "canonical_scene_wrapper.json"
+        wrapper_sha256 = sha256_file(wrapper_path)
+        scene.schema_version = "0.1.7"
+        requires_direct_wrapper = {
+            asset.asset_id: (
+                _requires_direct_world_wrapper(
+                    asset.articulated_asset_space,
+                    full=calibration.full_canonical_world_available,
+                )
+            )
+            for asset in scene.geometry_assets
+        }
+        scene.metadata.world_calibration = WorldCalibrationSceneReference(
+            source_scene_ir_path=manifest.source_scene_ir_path,
+            source_scene_ir_sha256=manifest.source_scene_ir_sha256,
+            world_calibration_artifact_path="calibration/world_calibration.json",
+            world_calibration_artifact_sha256=sha256_file(calibration_path),
+            canonical_scene_wrapper_path="calibration/canonical_scene_wrapper.json",
+            canonical_scene_wrapper_sha256=wrapper_sha256,
+            fiducial_world_derivation_path=wrapper.fiducial_world_derivation_path,
+            fiducial_world_derivation_sha256=wrapper.fiducial_world_derivation_sha256,
+            geometry_requires_world_wrapper=any(requires_direct_wrapper.values()),
+        )
+        for asset in scene.geometry_assets:
+            asset.source_space_geometry = True
+            asset.geometry_requires_world_wrapper = requires_direct_wrapper[asset.asset_id]
+            asset.world_wrapper_path = (
+                "calibration/canonical_scene_wrapper.json"
+                if asset.geometry_requires_world_wrapper
+                else None
+            )
+            asset.world_wrapper_sha256 = (
+                wrapper_sha256 if asset.geometry_requires_world_wrapper else None
+            )
         atomic_write_json(context.path("scene_ir/phase6a_canonical_scene.json"), scene)
         return StageResult(
             metrics={
@@ -304,7 +447,7 @@ class CanonicalSceneAdapter:
 
 class Phase6AConsistencyValidationAdapter:
     name = "phase6a_consistency_validation"
-    version = "0.1.0"
+    version = "0.2.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         manifest = WorldCalibrationManifest.model_validate_json(
@@ -353,6 +496,15 @@ class Phase6AConsistencyValidationAdapter:
                 encoding="utf-8"
             )
         )
+        if wrapper.fiducial_world_derivation_path is not None:
+            specs.append(
+                InputSpec(
+                    wrapper.fiducial_world_derivation_path,
+                    "apriltag_world_derivation",
+                    expected_sha256=wrapper.fiducial_world_derivation_sha256,
+                    include_producer_signature=False,
+                )
+            )
         for mapping in wrapper.asset_mappings:
             if mapping.source_path in seen:
                 continue
@@ -456,30 +608,132 @@ class Phase6AConsistencyValidationAdapter:
             and item.physics.restitution is None
             for item in canonical_scene.objects
         )
+        calibration_sha256 = sha256_file(calibration_path)
+        wrapper_sha256 = sha256_file(wrapper_path)
+        scene_reference = canonical_scene.metadata.world_calibration
+        source_asset_by_id = {asset.asset_id: asset for asset in source_scene.geometry_assets}
+        wrapper_mapping_by_id = {mapping.asset_id: mapping for mapping in wrapper.asset_mappings}
+        directly_wrapped_asset_ids = {
+            asset.asset_id
+            for asset in source_scene.geometry_assets
+            if full and asset.articulated_asset_space not in {"candidate_base", "link_local"}
+        }
+        exact_scene_references = (
+            scene_reference is not None
+            and scene_reference.source_scene_ir_path == manifest.source_scene_ir_path
+            and scene_reference.source_scene_ir_sha256 == manifest.source_scene_ir_sha256
+            and scene_reference.world_calibration_artifact_path
+            == "calibration/world_calibration.json"
+            and scene_reference.world_calibration_artifact_sha256 == calibration_sha256
+            and scene_reference.canonical_scene_wrapper_path
+            == "calibration/canonical_scene_wrapper.json"
+            and scene_reference.canonical_scene_wrapper_sha256 == wrapper_sha256
+            and scene_reference.fiducial_world_derivation_path
+            == wrapper.fiducial_world_derivation_path
+            and scene_reference.fiducial_world_derivation_sha256
+            == wrapper.fiducial_world_derivation_sha256
+            and scene_reference.geometry_requires_world_wrapper == bool(directly_wrapped_asset_ids)
+        )
+        geometry_wrapper_references = all(
+            asset.source_space_geometry
+            and asset.geometry_requires_world_wrapper
+            == (asset.asset_id in directly_wrapped_asset_ids)
+            and (
+                asset.asset_id not in directly_wrapped_asset_ids
+                or (
+                    asset.world_wrapper_path == "calibration/canonical_scene_wrapper.json"
+                    and asset.world_wrapper_sha256 == wrapper_sha256
+                )
+            )
+            and (
+                source_asset_by_id[asset.asset_id].articulated_asset_space
+                not in {"candidate_base", "link_local"}
+                or not asset.geometry_requires_world_wrapper
+            )
+            and wrapper_mapping_by_id[asset.asset_id].transform_policy
+            == _asset_transform_policy(source_asset_by_id[asset.asset_id].articulated_asset_space)
+            for asset in canonical_scene.geometry_assets
+        )
+        derivation_ok = True
+        if manifest.apriltag is not None and manifest.apriltag.world_contract is not None:
+            derivation = calibration.fiducial_world_derivation
+            derivation_path = context.path("calibration/apriltag_world_derivation.json")
+            derivation_ok = (
+                derivation is not None
+                and wrapper.fiducial_world_derivation_path
+                == "calibration/apriltag_world_derivation.json"
+                and wrapper.fiducial_world_derivation_sha256 == sha256_file(derivation_path)
+                and json.loads(derivation_path.read_text(encoding="utf-8"))
+                == derivation.model_dump(mode="json")
+                and derivation.world_contract == manifest.apriltag.world_contract
+                and set(derivation.fitting_detection_frame_ids) <= set(split.fitting_frame_ids)
+                and set(derivation.heldout_detection_frame_ids) <= set(split.heldout_frame_ids)
+                and calibration.metrics.heldout_tag_translation_error_m
+                == derivation.heldout_translation_residual_m
+                and calibration.metrics.heldout_tag_rotation_error_degrees
+                == derivation.heldout_orientation_residual_degrees
+            )
+        role_split_ok = all(
+            record.evidence_id
+            in (
+                split.fitting_evidence_ids
+                if record.role.value == "fitting"
+                else split.heldout_evidence_ids
+                if record.role.value == "heldout"
+                else split.diagnostic_evidence_ids
+            )
+            for record in manifest.evidence
+        )
+        if manifest.known_distance is not None:
+            role_split_ok = role_split_ok and all(
+                f"known_distance:{record.landmark_id}"
+                in (
+                    split.fitting_evidence_ids
+                    if record.role.value == "fitting"
+                    else split.heldout_evidence_ids
+                    if record.role.value == "heldout"
+                    else split.diagnostic_evidence_ids
+                )
+                for record in manifest.known_distance.landmarks
+            )
+        independent_metric_semantics = (
+            calibration.metrics.independent_metric_length_holdout_available
+            or calibration.metrics.heldout_metric_relative_error is None
+        )
+        status_flags_consistent = calibration.full_canonical_world_available == all(
+            (
+                calibration.metric_scale_known,
+                calibration.gravity_alignment_known,
+                calibration.canonical_forward_known,
+                calibration.canonical_origin_known,
+            )
+        )
         rigid_composition = True
         articulation_composition = True
+        local_axes_unchanged = True
+        local_pivots_unchanged = True
+        local_joint_values_unchanged = True
         prismatic_scale_once = True
-        angular_unchanged = True
+        world_link_pose_parity = True
         if full and transform is not None:
-            rotation = transform.rotation_canonical_from_colmap
-            metric_scale = transform.scale_m_per_colmap
             source_by_id = {item.object_id: item for item in source_scene.objects}
+            unit_mapping_by_joint = {
+                (item.object_id, item.joint_id): item for item in wrapper.prismatic_unit_mappings
+            }
             for canonical_object in canonical_scene.objects:
                 source_object = source_by_id[canonical_object.object_id]
+                source_root = _transform_matrix(source_object.transform)
+                canonical_root = _transform_matrix(canonical_object.transform)
                 expected_object = _matrix_transform(
                     multiply_matrix4(
                         transform.matrix_canonical_from_colmap,
-                        _transform_matrix(source_object.transform),
+                        source_root,
                     )
                 )
                 object_match = (
-                    max(
-                        abs(actual - expected)
-                        for actual, expected in zip(
-                            canonical_object.transform.translation,
-                            expected_object.translation,
-                            strict=True,
-                        )
+                    _matrix_error(
+                        canonical_root,
+                        _transform_matrix(expected_object),
                     )
                     <= 1e-6
                 )
@@ -493,34 +747,53 @@ class Phase6AConsistencyValidationAdapter:
                 }
                 for source_joint in source_object.articulation.joints:
                     canonical_joint = canonical_joints[source_joint.joint_id]
-                    expected_axis = rotate_vector(rotation, source_joint.axis_xyz)
-                    axis_match = (
-                        max(
-                            abs(actual - expected)
-                            for actual, expected in zip(
-                                canonical_joint.axis_xyz,
-                                expected_axis,
-                                strict=True,
-                            )
-                        )
-                        <= 1e-6
+                    local_axes_unchanged = (
+                        local_axes_unchanged and canonical_joint.axis_xyz == source_joint.axis_xyz
                     )
-                    articulation_composition = articulation_composition and axis_match
-                    if source_joint.joint_type == "prismatic":
-                        positions_match = all(
-                            abs(
-                                canonical_joint.observed_state_positions[state]
-                                - value * metric_scale
-                            )
-                            <= 1e-6
-                            for state, value in source_joint.observed_state_positions.items()
+                    local_pivots_unchanged = (
+                        local_pivots_unchanged
+                        and canonical_joint.origin_xyz == source_joint.origin_xyz
+                    )
+                    local_joint_values_unchanged = local_joint_values_unchanged and (
+                        canonical_joint.observed_state_positions
+                        == source_joint.observed_state_positions
+                        and canonical_joint.observed_position_range
+                        == source_joint.observed_position_range
+                        and canonical_joint.limits == source_joint.limits
+                    )
+                    q_values = {
+                        -0.25,
+                        0.25,
+                        *source_joint.observed_state_positions.values(),
+                    }
+                    for q in q_values:
+                        local_motion = _joint_motion_matrix(
+                            source_joint.joint_type,
+                            source_joint.axis_xyz,
+                            source_joint.origin_xyz,
+                            q,
                         )
-                        prismatic_scale_once = prismatic_scale_once and positions_match
-                    else:
-                        angular_unchanged = angular_unchanged and (
-                            canonical_joint.observed_state_positions
-                            == source_joint.observed_state_positions
-                            and canonical_joint.limits == source_joint.limits
+                        expected_world = multiply_matrix4(
+                            transform.matrix_canonical_from_colmap,
+                            multiply_matrix4(source_root, local_motion),
+                        )
+                        canonical_world = multiply_matrix4(canonical_root, local_motion)
+                        world_link_pose_parity = (
+                            world_link_pose_parity
+                            and _matrix_error(expected_world, canonical_world) <= 1e-6
+                        )
+                    if source_joint.joint_type == "prismatic":
+                        mapping = unit_mapping_by_joint.get(
+                            (source_object.object_id, source_joint.joint_id)
+                        )
+                        expected_scale = (
+                            source_object.transform.scale[0] * transform.scale_m_per_colmap
+                        )
+                        prismatic_scale_once = prismatic_scale_once and (
+                            mapping is not None
+                            and abs(mapping.prismatic_position_scale_to_m - expected_scale)
+                            <= 1e-9 * max(1.0, expected_scale)
+                            and mapping.raw_joint_values_unchanged
                         )
         checks = [
             check("source_scene_hash", source_hash_ok, "source Scene IR hash matches"),
@@ -534,6 +807,8 @@ class Phase6AConsistencyValidationAdapter:
                 "heldout_split_disjoint",
                 not (
                     set(split.fitting_evidence_ids) & set(split.heldout_evidence_ids)
+                    or set(split.fitting_evidence_ids) & set(split.diagnostic_evidence_ids)
+                    or set(split.heldout_evidence_ids) & set(split.diagnostic_evidence_ids)
                     or set(split.fitting_frame_ids) & set(split.heldout_frame_ids)
                 ),
                 "fitting and held-out calibration evidence are disjoint",
@@ -582,7 +857,11 @@ class Phase6AConsistencyValidationAdapter:
             ),
             check(
                 "forward_origin_policy",
-                not full or (manifest.forward is not None and manifest.origin is not None),
+                not full
+                or (
+                    (manifest.forward is not None and manifest.origin is not None)
+                    or calibration.fiducial_world_derivation is not None
+                ),
                 "forward and origin policies are explicit",
             ),
             check(
@@ -606,14 +885,29 @@ class Phase6AConsistencyValidationAdapter:
                 "articulated bases use the world wrapper",
             ),
             check(
-                "prismatic_scale_once",
-                prismatic_scale_once,
-                "prismatic quantities scale exactly once",
+                "articulated_local_axes_unchanged",
+                local_axes_unchanged,
+                "object-local joint axes are not rotated a second time",
             ),
             check(
-                "angular_quantities_unchanged",
-                angular_unchanged,
-                "angular quantities remain radians",
+                "articulated_local_pivots_unchanged",
+                local_pivots_unchanged,
+                "object-local joint pivots are not transformed a second time",
+            ),
+            check(
+                "articulated_local_q_unchanged",
+                local_joint_values_unchanged,
+                "object-local prismatic q and revolute radians remain unchanged",
+            ),
+            check(
+                "prismatic_scale_once",
+                prismatic_scale_once,
+                "typed prismatic mapping contains root and calibration scale exactly once",
+            ),
+            check(
+                "world_space_link_pose_parity",
+                world_link_pose_parity,
+                "canonical articulated hierarchy matches world-space wrapper composition",
             ),
             check(
                 "measured_assets_not_double_transformed",
@@ -634,6 +928,36 @@ class Phase6AConsistencyValidationAdapter:
                 "upstream_immutable",
                 source_hash_ok and camera_hash_ok and evidence_hashes and source_geometry_hashes,
                 "upstream inputs remain immutable",
+            ),
+            check(
+                "fiducial_world_contract_derivation",
+                derivation_ok,
+                "fiducial axes and origin are bound to exact fitting and held-out tag poses",
+            ),
+            check(
+                "typed_evidence_roles",
+                role_split_ok,
+                "dataset split derives only from typed evidence roles",
+            ),
+            check(
+                "independent_metric_holdout_semantics",
+                independent_metric_semantics,
+                "fitting metric residual is not duplicated as held-out length evidence",
+            ),
+            check(
+                "canonical_scene_exact_references",
+                exact_scene_references,
+                "canonical Scene IR references exact source, calibration, and wrapper bytes",
+            ),
+            check(
+                "source_geometry_wrapper_contract",
+                geometry_wrapper_references,
+                "source-space geometry declares whether the canonical wrapper is required",
+            ),
+            check(
+                "status_flag_invariants",
+                status_flags_consistent,
+                "calibration status and component flags are mutually consistent",
             ),
         ]
         report = Phase6AConsistencyReport(

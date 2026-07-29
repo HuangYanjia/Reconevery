@@ -35,6 +35,8 @@ class WorldCalibrationConfig(CompletionWorkerConfig):
     maximum_heldout_tag_rotation_error_degrees: float = 3.0
     minimum_known_distance_anchors: int = 1
     maximum_known_distance_relative_error: float = 0.02
+    maximum_heldout_landmark_reprojection_error_px: float = 2.0
+    allow_single_metric_anchor_without_length_holdout: bool = True
     maximum_gravity_heldout_error_degrees: float = 3.0
     minimum_floor_point_count: int = 1000
     minimum_floor_spatial_extent_colmap: float = 0.25
@@ -59,47 +61,54 @@ def _dataset_split(manifest: WorldCalibrationManifest) -> WorldCalibrationDatase
             item.frame_id for item in manifest.apriltag.detections if item.split == "heldout"
         )
     if manifest.known_distance is not None:
-        all_frames = sorted({item.frame_id for item in manifest.known_distance.observations})
-        if not fitting_frames and not heldout_frames:
-            split_index = max(2, (2 * len(all_frames) + 2) // 3)
-            fitting_frames.extend(all_frames[:split_index])
-            heldout_frames.extend(all_frames[split_index:])
-    if not fitting_frames and not heldout_frames:
-        supporting = sorted(
-            {
-                item
-                for gravity in manifest.gravity
-                for item in gravity.supporting_ids
-                if item.startswith("frame_")
-            }
+        fitting_frames.extend(
+            item.frame_id
+            for item in manifest.known_distance.observations
+            if item.role.value == "fitting"
         )
-        fitting_frames.extend(supporting[::2])
-        heldout_frames.extend(supporting[1::2])
+        heldout_frames.extend(
+            item.frame_id
+            for item in manifest.known_distance.observations
+            if item.role.value == "heldout"
+        )
     fitting_ids = [
-        record.evidence_id
-        for record in manifest.evidence
-        if "heldout" not in record.evidence_id.lower()
+        record.evidence_id for record in manifest.evidence if record.role.value == "fitting"
     ]
     heldout_ids = [
-        record.evidence_id
-        for record in manifest.evidence
-        if "heldout" in record.evidence_id.lower()
+        record.evidence_id for record in manifest.evidence if record.role.value == "heldout"
+    ]
+    diagnostic_ids = [
+        record.evidence_id for record in manifest.evidence if record.role.value == "diagnostic"
     ]
     if manifest.known_distance is not None:
-        fitting_ids.append("known_distance:fitting")
-        heldout_ids.append("known_distance:heldout")
+        fitting_ids.extend(
+            f"known_distance:{item.landmark_id}"
+            for item in manifest.known_distance.landmarks
+            if item.role.value == "fitting"
+        )
+        heldout_ids.extend(
+            f"known_distance:{item.landmark_id}"
+            for item in manifest.known_distance.landmarks
+            if item.role.value == "heldout"
+        )
+        diagnostic_ids.extend(
+            f"known_distance:{item.landmark_id}"
+            for item in manifest.known_distance.landmarks
+            if item.role.value == "diagnostic"
+        )
     return WorldCalibrationDatasetSplit(
         fitting_evidence_ids=sorted(set(fitting_ids)),
         heldout_evidence_ids=sorted(set(heldout_ids)),
+        diagnostic_evidence_ids=sorted(set(diagnostic_ids)),
         fitting_frame_ids=sorted(set(fitting_frames)),
         heldout_frame_ids=sorted(set(heldout_frames)),
-        split_policy="declared_tag_split_else_deterministic_frame_order_v1",
+        split_policy="explicit_typed_evidence_and_observation_roles_v2",
     )
 
 
 class WorldCalibrationAdapter:
     name = "world_calibration"
-    version = "0.1.0"
+    version = "0.2.0"
 
     def required_inputs(self, context: StageContext) -> list[InputSpec]:
         manifest = WorldCalibrationManifest.model_validate_json(
@@ -192,6 +201,13 @@ class WorldCalibrationAdapter:
                 self.name,
                 validation="json",
             ),
+            OutputSpec(
+                "calibration/apriltag_world_derivation.json",
+                "apriltag_world_derivation",
+                "application/json",
+                self.name,
+                validation="json",
+            ),
         ]
         outputs.extend(
             OutputSpec(
@@ -252,6 +268,12 @@ class WorldCalibrationAdapter:
                 "minimum_known_distance_anchors": config.minimum_known_distance_anchors,
                 "maximum_known_distance_relative_error": (
                     config.maximum_known_distance_relative_error
+                ),
+                "maximum_heldout_landmark_reprojection_error_px": (
+                    config.maximum_heldout_landmark_reprojection_error_px
+                ),
+                "allow_single_metric_anchor_without_length_holdout": (
+                    config.allow_single_metric_anchor_without_length_holdout
                 ),
                 "maximum_gravity_heldout_error_degrees": (
                     config.maximum_gravity_heldout_error_degrees

@@ -98,10 +98,12 @@ Calibration is represented as:
 immutable source artifact + accepted world transform
 ```
 
-Cameras and object transforms compose with the accepted transform. Normals and
-axes rotate only. Linear positions, prismatic positions, and verified linear
-limits scale once. Revolute positions and angular limits remain radians.
-Measured reference-world assets are not rewritten or double transformed.
+Cameras and object roots compose with the accepted transform. Object/link-local
+geometry, joint axes, pivots, and q remain unchanged. The wrapper records the
+product of source object scale and world scale for future prismatic conversion;
+revolute positions remain radians. Reference-world assets use the world wrapper,
+while candidate/link-local assets use root hierarchy composition. Neither is
+transformed twice.
 
 ## Acceptance sequence
 

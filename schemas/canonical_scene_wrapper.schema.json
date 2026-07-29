@@ -20,6 +20,7 @@
         "transform_policy": {
           "enum": [
             "wrapper_sim3",
+            "hierarchy_root_composition",
             "rotation_only",
             "scale_once",
             "angular_unchanged"
@@ -35,6 +36,63 @@
         "transform_policy"
       ],
       "title": "CanonicalAssetMapping",
+      "type": "object"
+    },
+    "CanonicalPrismaticUnitMapping": {
+      "additionalProperties": false,
+      "properties": {
+        "articulation_id": {
+          "minLength": 1,
+          "title": "Articulation Id",
+          "type": "string"
+        },
+        "joint_id": {
+          "minLength": 1,
+          "title": "Joint Id",
+          "type": "string"
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        },
+        "prismatic_position_scale_to_m": {
+          "exclusiveMinimum": 0,
+          "title": "Prismatic Position Scale To M",
+          "type": "number"
+        },
+        "prismatic_position_space": {
+          "const": "object_local",
+          "default": "object_local",
+          "title": "Prismatic Position Space",
+          "type": "string"
+        },
+        "raw_joint_values_unchanged": {
+          "const": true,
+          "default": true,
+          "title": "Raw Joint Values Unchanged",
+          "type": "boolean"
+        },
+        "source_object_scale_colmap_per_local_unit": {
+          "exclusiveMinimum": 0,
+          "title": "Source Object Scale Colmap Per Local Unit",
+          "type": "number"
+        },
+        "world_scale_m_per_colmap": {
+          "exclusiveMinimum": 0,
+          "title": "World Scale M Per Colmap",
+          "type": "number"
+        }
+      },
+      "required": [
+        "object_id",
+        "articulation_id",
+        "joint_id",
+        "source_object_scale_colmap_per_local_unit",
+        "world_scale_m_per_colmap",
+        "prismatic_position_scale_to_m"
+      ],
+      "title": "CanonicalPrismaticUnitMapping",
       "type": "object"
     },
     "WorldCalibrationStatus": {
@@ -161,6 +219,12 @@
       ],
       "default": null
     },
+    "articulation_quantity_policy": {
+      "const": "root_wrapper_local_quantities_unchanged",
+      "default": "root_wrapper_local_quantities_unchanged",
+      "title": "Articulation Quantity Policy",
+      "type": "string"
+    },
     "asset_mappings": {
       "items": {
         "$ref": "#/$defs/CanonicalAssetMapping"
@@ -186,21 +250,44 @@
       "title": "Camera Transform Policy",
       "type": "string"
     },
-    "prismatic_quantity_policy": {
-      "const": "scale_once",
-      "default": "scale_once",
-      "title": "Prismatic Quantity Policy",
-      "type": "string"
+    "fiducial_world_derivation_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fiducial World Derivation Path"
     },
-    "revolute_quantity_policy": {
-      "const": "radians_unchanged",
-      "default": "radians_unchanged",
-      "title": "Revolute Quantity Policy",
-      "type": "string"
+    "fiducial_world_derivation_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fiducial World Derivation Sha256"
+    },
+    "prismatic_unit_mappings": {
+      "items": {
+        "$ref": "#/$defs/CanonicalPrismaticUnitMapping"
+      },
+      "title": "Prismatic Unit Mappings",
+      "type": "array"
     },
     "schema_version": {
-      "const": "0.1.0",
-      "default": "0.1.0",
+      "default": "0.2.0",
+      "enum": [
+        "0.1.0",
+        "0.2.0"
+      ],
       "title": "Schema Version",
       "type": "string"
     },

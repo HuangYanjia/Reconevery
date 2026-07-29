@@ -12,6 +12,8 @@ maximum_heldout_tag_translation_error_m: 0.02
 maximum_heldout_tag_rotation_error_degrees: 3.0
 minimum_known_distance_anchors: 1
 maximum_known_distance_relative_error: 0.02
+maximum_heldout_landmark_reprojection_error_px: 2.0
+allow_single_metric_anchor_without_length_holdout: true
 maximum_gravity_heldout_error_degrees: 3.0
 minimum_floor_point_count: 1000
 minimum_floor_spatial_extent_colmap: 0.25

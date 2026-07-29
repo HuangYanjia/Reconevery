@@ -7,7 +7,15 @@ import pytest
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
-from recon2sim.adapters.canonical_scene import _canonical_scene
+from recon2sim.adapters.canonical_scene import (
+    _asset_transform_policy,
+    _canonical_scene,
+    _joint_motion_matrix,
+    _prismatic_unit_mappings,
+    _requires_direct_world_wrapper,
+    _transform_matrix,
+)
+from recon2sim.adapters.world_calibration import _dataset_split
 from recon2sim.artifacts import (
     CanonicalSceneWrapper,
     Phase6AConsistencyReport,
@@ -20,7 +28,9 @@ from recon2sim.calibration import (
     canonical_rotation,
     invert_sim3,
     maximum_roundtrip_error,
+    multiply_matrix4,
     rotation_determinant,
+    sha256_file,
     transform_point,
 )
 from recon2sim.cli import app
@@ -165,8 +175,13 @@ def _articulated_scene() -> SceneIR:
                     "asset_type": "articulated",
                     "transform": {
                         "translation": [1.0, 0.0, 0.0],
-                        "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
-                        "scale": [1.0, 1.0, 1.0],
+                        "rotation_xyzw": [
+                            0.0,
+                            0.0,
+                            0.7071067811865475,
+                            0.7071067811865476,
+                        ],
+                        "scale": [1.7, 1.7, 1.7],
                     },
                     "physics": {"is_static": True},
                     "articulation": {
@@ -185,7 +200,11 @@ def _articulated_scene() -> SceneIR:
                                 "axis_xyz": [1.0, 0.0, 0.0],
                                 "limits": [0.0, 0.5],
                                 "observed_position_range": [0.0, 0.4],
-                                "observed_state_positions": {"open": 0.4},
+                                "observed_state_positions": {
+                                    "closed": 0.0,
+                                    "open": 0.4 / 1.7,
+                                    "negative": -0.2 / 1.7,
+                                },
                             },
                             {
                                 "joint_id": "door_joint",
@@ -234,7 +253,7 @@ def test_world_transform_rejects_negative_scale_and_improper_rotation() -> None:
         WorldCalibrationTransform.model_validate(payload)
 
 
-def test_articulated_metric_propagation_scales_linear_quantities_once() -> None:
+def test_articulated_metric_propagation_preserves_local_joint_quantities() -> None:
     source = _articulated_scene()
     calibrated = _canonical_scene(source, _artifact())
     instance = calibrated.objects[0]
@@ -242,12 +261,71 @@ def test_articulated_metric_propagation_scales_linear_quantities_once() -> None:
     assert instance.articulation is not None
     drawer, door = instance.articulation.joints
     assert drawer.axis_xyz == pytest.approx((1.0, 0.0, 0.0))
-    assert drawer.limits == pytest.approx((0.0, 1.0))
-    assert drawer.observed_state_positions["open"] == pytest.approx(0.8)
+    assert drawer.limits == pytest.approx((0.0, 0.5))
+    assert drawer.observed_state_positions["open"] == pytest.approx(0.4 / 1.7)
     assert door.limits == pytest.approx((0.0, 1.57))
     assert door.observed_state_positions["open"] == pytest.approx(1.0)
-    assert door.origin_xyz == pytest.approx((3.0, 2.0, 6.5))
+    assert door.origin_xyz == pytest.approx((1.0, 2.0, 3.0))
     assert source.objects[0].transform.translation == (1.0, 0.0, 0.0)
+
+
+def test_articulated_world_space_pose_parity_with_non_unit_root_scale() -> None:
+    source = _articulated_scene()
+    rotation = (0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+    matrix = build_sim3(2.0, rotation, (1.0, -2.0, 0.5))
+    inverse = invert_sim3(matrix)
+    transform = {
+        "scale_m_per_colmap": 2.0,
+        "rotation_canonical_from_colmap": rotation,
+        "translation_canonical_m": [1.0, -2.0, 0.5],
+        "matrix_canonical_from_colmap": matrix,
+        "matrix_colmap_from_canonical": inverse,
+        "rotation_determinant": 1.0,
+        "orthonormal_error": 0.0,
+        "inverse_roundtrip_error": maximum_roundtrip_error(matrix, inverse),
+        "covariance_diagonal": None,
+    }
+    payload = _artifact().model_dump(mode="json")
+    payload["accepted_transform"] = transform
+    payload["candidates"][0]["transform"] = transform
+    calibration = WorldCalibrationArtifact.model_validate(payload)
+    calibrated = _canonical_scene(source, calibration)
+    source_object = source.objects[0]
+    canonical_object = calibrated.objects[0]
+    assert source_object.articulation is not None
+    transform = calibration.accepted_transform
+    assert transform is not None
+    source_root = _transform_matrix(source_object.transform)
+    canonical_root = _transform_matrix(canonical_object.transform)
+    for joint in source_object.articulation.joints:
+        for q in (-0.4, 0.0, 0.3, 1.1):
+            local_motion = _joint_motion_matrix(
+                joint.joint_type,
+                joint.axis_xyz,
+                joint.origin_xyz,
+                q,
+            )
+            expected = multiply_matrix4(
+                transform.matrix_canonical_from_colmap,
+                multiply_matrix4(source_root, local_motion),
+            )
+            actual = multiply_matrix4(canonical_root, local_motion)
+            assert actual == pytest.approx(expected, abs=1e-9)
+    mappings = _prismatic_unit_mappings(source, calibration)
+    assert len(mappings) == 1
+    assert mappings[0].prismatic_position_space == "object_local"
+    assert mappings[0].source_object_scale_colmap_per_local_unit == pytest.approx(1.7)
+    assert mappings[0].prismatic_position_scale_to_m == pytest.approx(3.4)
+    assert mappings[0].raw_joint_values_unchanged
+
+
+def test_asset_space_chooses_direct_wrapper_or_hierarchy_but_never_both() -> None:
+    assert _asset_transform_policy("reference_world") == "wrapper_sim3"
+    assert _requires_direct_world_wrapper("reference_world", full=True)
+    for asset_space in ("candidate_base", "link_local"):
+        assert _asset_transform_policy(asset_space) == "hierarchy_root_composition"
+        assert not _requires_direct_world_wrapper(asset_space, full=True)
+    assert not _requires_direct_world_wrapper("reference_world", full=False)
 
 
 def test_calibration_split_rejects_heldout_leakage() -> None:
@@ -273,7 +351,7 @@ def test_fake_phase6a_pipeline_resume_cli_and_source_immutability(tmp_path: Path
         (run_dir / "calibration/canonical_scene_wrapper.json").read_text(encoding="utf-8")
     )
     assert report.passed
-    assert len(report.checks) == 24
+    assert len(report.checks) == 33
     assert report.full_canonical_world_available
     assert not report.camera_poses_rewritten
     assert not report.source_geometry_rewritten
@@ -281,6 +359,24 @@ def test_fake_phase6a_pipeline_resume_cli_and_source_immutability(tmp_path: Path
     assert not report.physics_identification_implemented
     assert wrapper.source_camera_reconstruction_path == manifest.camera_reconstruction_path
     assert wrapper.source_camera_reconstruction_sha256 == manifest.camera_reconstruction_sha256
+    assert wrapper.fiducial_world_derivation_path == ("calibration/apriltag_world_derivation.json")
+    assert wrapper.fiducial_world_derivation_sha256 == sha256_file(
+        run_dir / "calibration/apriltag_world_derivation.json"
+    )
+    canonical_scene = SceneIR.model_validate_json(
+        (run_dir / "scene_ir/phase6a_canonical_scene.json").read_text(encoding="utf-8")
+    )
+    scene_reference = canonical_scene.metadata.world_calibration
+    assert scene_reference is not None
+    assert scene_reference.source_scene_ir_sha256 == sha256_file(
+        run_dir / manifest.source_scene_ir_path
+    )
+    assert scene_reference.world_calibration_artifact_sha256 == sha256_file(
+        run_dir / "calibration/world_calibration.json"
+    )
+    assert scene_reference.canonical_scene_wrapper_sha256 == sha256_file(
+        run_dir / "calibration/canonical_scene_wrapper.json"
+    )
     resumed = runner.run(resume=True)
     assert all(item["last_execution"] == "cache_hit" for item in resumed["stages"].values())
     assert (run_dir / manifest.camera_reconstruction_path).read_bytes() == camera_before
@@ -296,7 +392,7 @@ def test_fake_phase6a_pipeline_resume_cli_and_source_immutability(tmp_path: Path
 
 
 def test_landmark_manifest_requires_two_frames_per_point() -> None:
-    with pytest.raises(ValidationError, match="at least two frames"):
+    with pytest.raises(ValidationError, match="at least two"):
         WorldCalibrationManifest.model_validate(
             {
                 "run_id": "invalid",
@@ -313,13 +409,34 @@ def test_landmark_manifest_requires_two_frames_per_point() -> None:
                             "point_a_id": "a",
                             "point_b_id": "b",
                             "known_distance_m": 1.0,
+                            "role": "fitting",
                         }
                     ],
                     "observations": [
-                        {"frame_id": "f0", "point_id": "a", "pixel_xy": [0.0, 0.0]},
-                        {"frame_id": "f0", "point_id": "b", "pixel_xy": [1.0, 0.0]},
-                        {"frame_id": "f0", "point_id": "a", "pixel_xy": [0.0, 0.0]},
-                        {"frame_id": "f0", "point_id": "b", "pixel_xy": [1.0, 0.0]},
+                        {
+                            "frame_id": "f0",
+                            "point_id": "a",
+                            "pixel_xy": [0.0, 0.0],
+                            "role": "fitting",
+                        },
+                        {
+                            "frame_id": "f0",
+                            "point_id": "b",
+                            "pixel_xy": [1.0, 0.0],
+                            "role": "fitting",
+                        },
+                        {
+                            "frame_id": "f1",
+                            "point_id": "a",
+                            "pixel_xy": [0.0, 0.0],
+                            "role": "heldout",
+                        },
+                        {
+                            "frame_id": "f1",
+                            "point_id": "b",
+                            "pixel_xy": [1.0, 0.0],
+                            "role": "heldout",
+                        },
                     ],
                 },
                 "evidence_tier": "scale_only",
@@ -340,6 +457,7 @@ def test_apriltag_image_source_requires_exact_evidence_reference() -> None:
                 "evidence_id": "tag_fit",
                 "evidence_type": "apriltag",
                 "trust": "metric_fiducial",
+                "role": "fitting",
                 "source_files": [
                     {
                         "relative_path": "images/tag.png",
@@ -376,3 +494,81 @@ def test_apriltag_image_source_requires_exact_evidence_reference() -> None:
     payload["apriltag"]["image_sources"][0]["image_sha256"] = "4" * 64
     with pytest.raises(ValidationError, match="exact matching"):
         WorldCalibrationManifest.model_validate(payload)
+
+
+def test_dataset_split_uses_typed_roles_not_misleading_evidence_ids() -> None:
+    manifest = WorldCalibrationManifest.model_validate(
+        {
+            "run_id": "roles",
+            "frame_sequence_digest": "0" * 64,
+            "camera_reconstruction_path": "camera.json",
+            "camera_reconstruction_sha256": "1" * 64,
+            "source_scene_ir_path": "scene.json",
+            "source_scene_ir_sha256": "2" * 64,
+            "evidence": [
+                {
+                    "evidence_id": "heldout_in_name_but_fit",
+                    "evidence_type": "external_metric",
+                    "trust": "surveyed",
+                    "role": "fitting",
+                    "supports_metric_scale": True,
+                },
+                {
+                    "evidence_id": "fitting_in_name_but_hold",
+                    "evidence_type": "external_metric",
+                    "trust": "surveyed",
+                    "role": "heldout",
+                    "supports_metric_scale": True,
+                },
+            ],
+            "evidence_tier": "scale_only",
+        }
+    )
+    split = _dataset_split(manifest)
+    assert split.fitting_evidence_ids == ["heldout_in_name_but_fit"]
+    assert split.heldout_evidence_ids == ["fitting_in_name_but_hold"]
+
+
+def test_world_calibration_status_flags_are_mutually_consistent() -> None:
+    payload = _artifact().model_dump(mode="json")
+    payload["status"] = "accepted_metric_only"
+    payload["evidence_tier"] = "scale_only"
+    payload["candidates"][0]["evidence_tier"] = "scale_only"
+    payload["gravity_alignment_known"] = False
+    payload["canonical_forward_known"] = False
+    payload["canonical_origin_known"] = False
+    payload["full_canonical_world_available"] = False
+    artifact = WorldCalibrationArtifact.model_validate(payload)
+    assert artifact.metric_scale_known
+    payload["gravity_alignment_known"] = True
+    with pytest.raises(ValidationError, match="metric-only"):
+        WorldCalibrationArtifact.model_validate(payload)
+
+
+def test_fiducial_orientation_cannot_bypass_pose_bound_world_contract() -> None:
+    with pytest.raises(ValidationError, match="world_contract"):
+        WorldCalibrationManifest.model_validate(
+            {
+                "run_id": "unbound_fiducial",
+                "frame_sequence_digest": "0" * 64,
+                "camera_reconstruction_path": "camera.json",
+                "camera_reconstruction_sha256": "1" * 64,
+                "source_scene_ir_path": "scene.json",
+                "source_scene_ir_sha256": "2" * 64,
+                "evidence": [],
+                "gravity": [
+                    {
+                        "evidence_id": "unbound",
+                        "source": "fiducial_orientation",
+                        "trust": "surveyed",
+                        "up_vector_colmap": [0.0, 0.0, 1.0],
+                        "sign_evidence": "manually pasted vector",
+                        "fitting_residual_degrees": 0.0,
+                        "heldout_residual_degrees": 0.0,
+                        "angular_uncertainty_degrees": 0.0,
+                        "supporting_ids": ["not_pose_bound"],
+                    }
+                ],
+                "evidence_tier": "gravity_only",
+            }
+        )

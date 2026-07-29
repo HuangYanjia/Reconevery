@@ -319,6 +319,12 @@ gravity, forward, and origin evidence. Fitting and held-out evidence are disjoin
 Only `accepted_full_canonical` creates metric `+X`-forward, `+Y`-left, `+Z`-up
 Scene IR metadata.
 
+Articulated roots receive the accepted world Sim(3); local link geometry, axes,
+pivots, and q remain unchanged. The canonical wrapper records the effective
+object-local prismatic-to-meter scale and exact Scene IR/calibration/wrapper
+hashes. Reference-world assets require the wrapper, while candidate/link-local
+assets use the already-composed object root and never receive it twice.
+
 Official AprilTag is pinned to commit
 `0e16a12dd380fd607e4afd54712ee9b1ffb9ec8f` under BSD-2-Clause. NumPy,
 SciPy, OpenCV, and the detector remain in `workers/world_calibration`.

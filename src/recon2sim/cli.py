@@ -2519,7 +2519,7 @@ def create_apriltag_manifest(
     tag_size_m: Annotated[float, typer.Option("--tag-size-m", min=1e-9)] = 0.1,
 ) -> None:
     payload: dict[str, object] = {
-        "schema_version": "0.1.0",
+        "schema_version": "0.2.0",
         "run_id": "replace_with_run_id",
         "frame_sequence_digest": "0" * 64,
         "camera_reconstruction_path": "calibration/source/camera_reconstruction.json",
@@ -2531,6 +2531,7 @@ def create_apriltag_manifest(
                 "evidence_id": "apriltag_fitting",
                 "evidence_type": "apriltag",
                 "trust": "metric_fiducial",
+                "role": "fitting",
                 "source_files": [
                     {
                         "relative_path": "calibration/source/tag_frame_fitting.png",
@@ -2582,7 +2583,7 @@ def create_landmark_template(
     output: Annotated[Path, typer.Option("--output")],
 ) -> None:
     payload = {
-        "schema_version": "0.1.0",
+        "schema_version": "0.2.0",
         "landmarks": [
             {
                 "landmark_id": "known_distance_0001",
@@ -2590,13 +2591,46 @@ def create_landmark_template(
                 "point_b_id": "point_b",
                 "known_distance_m": 1.0,
                 "measurement_uncertainty_m": 0.001,
+                "role": "fitting",
             }
         ],
         "observations": [
-            {"frame_id": "frame_000000", "point_id": "point_a", "pixel_xy": [0.0, 0.0]},
-            {"frame_id": "frame_000001", "point_id": "point_a", "pixel_xy": [0.0, 0.0]},
-            {"frame_id": "frame_000000", "point_id": "point_b", "pixel_xy": [0.0, 0.0]},
-            {"frame_id": "frame_000001", "point_id": "point_b", "pixel_xy": [0.0, 0.0]},
+            {
+                "frame_id": "frame_000000",
+                "point_id": "point_a",
+                "pixel_xy": [0.0, 0.0],
+                "role": "fitting",
+            },
+            {
+                "frame_id": "frame_000001",
+                "point_id": "point_a",
+                "pixel_xy": [0.0, 0.0],
+                "role": "fitting",
+            },
+            {
+                "frame_id": "frame_000002",
+                "point_id": "point_a",
+                "pixel_xy": [0.0, 0.0],
+                "role": "heldout",
+            },
+            {
+                "frame_id": "frame_000000",
+                "point_id": "point_b",
+                "pixel_xy": [0.0, 0.0],
+                "role": "fitting",
+            },
+            {
+                "frame_id": "frame_000001",
+                "point_id": "point_b",
+                "pixel_xy": [0.0, 0.0],
+                "role": "fitting",
+            },
+            {
+                "frame_id": "frame_000002",
+                "point_id": "point_b",
+                "pixel_xy": [0.0, 0.0],
+                "role": "heldout",
+            },
         ],
     }
     output.parent.mkdir(parents=True, exist_ok=True)

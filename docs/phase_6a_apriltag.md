@@ -17,7 +17,10 @@ own dimensions, pinhole intrinsics, fitting/held-out role, and exact evidence
 file hash. The worker rejects changed bytes or dimensions and writes the
 official results to `calibration/apriltag_detections.json`.
 
-The official pose is `camera_from_tag`. Reconevery explicitly inverts it to
+At the pinned commit, the pose object points are ordered
+`(-s,+s,0), (+s,+s,0), (+s,-s,0), (-s,-s,0)` in tag coordinates, and the
+official Python detection exposes corners as `lb-rb-rt-lt`. The official pose is
+`camera_from_tag`. Reconevery explicitly inverts it to
 `tag_from_camera`; camera centers used by the Sim(3) fit are
 `-R_tag_from_camera * t_camera_from_tag`. It does not reinterpret pose error as
 an angular residual. Held-out angular error is calculated from the registered
@@ -31,7 +34,12 @@ the Sim(3); held-out detections test camera-center translation and orientation.
 Held-out evidence never selects or changes the fitted transform.
 
 A tag supplies gravity, forward, or origin only when an explicit surveyed
-mounting contract declares those axes. An arbitrarily mounted tag supplies
+`world_contract` declares signed tag-frame up/forward axes, tag-center origin,
+mounting description, angular uncertainty, and origin uncertainty. The worker
+derives COLMAP-frame axes and origin from the fitting tag solution, then writes
+`calibration/apriltag_world_derivation.json` with exact fitting/held-out pose
+hashes and held-out translation/orientation residuals. Users do not paste
+fiducial-derived COLMAP vectors manually. An arbitrarily mounted tag supplies
 metric evidence but not a canonical world.
 
 No checkpoint or token is used.

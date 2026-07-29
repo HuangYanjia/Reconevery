@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import platform
 import resource
 import time
@@ -112,15 +113,96 @@ def _rotation_error_degrees(left: np.ndarray, right: np.ndarray) -> float:
     return float(np.degrees(np.arccos(cosine)))
 
 
+def _signed_tag_axis(value: str) -> np.ndarray:
+    axes = {
+        "+X_tag": np.asarray([1.0, 0.0, 0.0]),
+        "-X_tag": np.asarray([-1.0, 0.0, 0.0]),
+        "+Y_tag": np.asarray([0.0, 1.0, 0.0]),
+        "-Y_tag": np.asarray([0.0, -1.0, 0.0]),
+        "+Z_tag": np.asarray([0.0, 0.0, 1.0]),
+        "-Z_tag": np.asarray([0.0, 0.0, -1.0]),
+    }
+    return axes[value]
+
+
+def _stable_record_sha256(value: dict[str, Any]) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _tag_world_derivation(
+    manifest: dict[str, Any],
+    detections: list[dict[str, Any]],
+    scale: float | None,
+    rotation_tag_from_colmap: np.ndarray | None,
+    translation_tag_m: np.ndarray | None,
+    metrics: dict[str, float | int | None],
+) -> dict[str, Any] | None:
+    tag = manifest.get("apriltag")
+    if (
+        not isinstance(tag, dict)
+        or not isinstance(tag.get("world_contract"), dict)
+        or scale is None
+        or rotation_tag_from_colmap is None
+        or translation_tag_m is None
+        or metrics["translation_error"] is None
+        or metrics["rotation_error"] is None
+    ):
+        return None
+    contract = tag["world_contract"]
+    up_tag = _signed_tag_axis(str(contract["canonical_up_from_tag_axis"]))
+    forward_tag = _signed_tag_axis(str(contract["canonical_forward_from_tag_axis"]))
+    up_colmap = rotation_tag_from_colmap.T @ up_tag
+    forward_colmap = rotation_tag_from_colmap.T @ forward_tag
+    up_colmap /= np.linalg.norm(up_colmap)
+    forward_colmap /= np.linalg.norm(forward_colmap)
+    origin_colmap = (
+        -rotation_tag_from_colmap.T @ np.asarray(translation_tag_m, dtype=np.float64)
+    ) / scale
+    fitting = [item for item in detections if item["split"] == "fitting"]
+    heldout = [item for item in detections if item["split"] == "heldout"]
+    pose_hashes = {str(item["frame_id"]): _stable_record_sha256(item) for item in detections}
+    return {
+        "schema_version": "0.1.0",
+        "official_commit": tag["official_commit"],
+        "tag_family": tag["tag_family"],
+        "tag_id": tag["tag_id"],
+        "fitting_detection_frame_ids": sorted(str(item["frame_id"]) for item in fitting),
+        "heldout_detection_frame_ids": sorted(str(item["frame_id"]) for item in heldout),
+        "tag_pose_sha256_by_frame": pose_hashes,
+        "matrix_tag_from_colmap": _flatten(
+            matrix(scale, rotation_tag_from_colmap, translation_tag_m)
+        ),
+        "world_contract": contract,
+        "derived_up_vector_colmap": up_colmap.tolist(),
+        "derived_forward_vector_colmap": forward_colmap.tolist(),
+        "derived_origin_colmap": origin_colmap.tolist(),
+        "heldout_translation_residual_m": float(metrics["translation_error"]),
+        "heldout_orientation_residual_degrees": float(metrics["rotation_error"]),
+        "angular_uncertainty_degrees": float(contract["mounting_uncertainty_degrees"]),
+        "origin_uncertainty_m": float(contract["origin_uncertainty_m"]),
+    }
+
+
 def _known_distance_solution(
     manifest: dict[str, Any],
     camera: dict[str, Any],
     fitting_frames: set[str],
     heldout_frames: set[str],
-) -> tuple[list[float], list[dict[str, Any]], dict[str, float], float | None]:
+) -> dict[str, Any]:
     known = manifest.get("known_distance")
     if not isinstance(known, dict):
-        return [], [], {}, None
+        return {
+            "fitting_scales": [],
+            "landmarks": [],
+            "fitting_residuals": {},
+            "heldout_residuals": {},
+            "fitting_error": None,
+            "heldout_error": None,
+            "fitting_reprojection_error_px": None,
+            "heldout_reprojection_error_px": None,
+            "independent_length_holdout": False,
+        }
     projections = projection_by_frame(camera)
     by_point: dict[str, list[dict[str, Any]]] = {}
     for observation in known["observations"]:
@@ -128,8 +210,16 @@ def _known_distance_solution(
     triangulated: dict[str, np.ndarray] = {}
     records = []
     for point_id, observations in sorted(by_point.items()):
-        fitting = [item for item in observations if str(item["frame_id"]) in fitting_frames]
-        heldout = [item for item in observations if str(item["frame_id"]) in heldout_frames]
+        fitting = [
+            item
+            for item in observations
+            if item["role"] == "fitting" and str(item["frame_id"]) in fitting_frames
+        ]
+        heldout = [
+            item
+            for item in observations
+            if item["role"] == "heldout" and str(item["frame_id"]) in heldout_frames
+        ]
         if len(fitting) < 2:
             raise ValueError(f"landmark {point_id!r} has fewer than two fitting observations")
         point = triangulate(fitting, projections)
@@ -149,8 +239,9 @@ def _known_distance_solution(
                 "covariance_diagonal": None,
             }
         )
-    scales = []
+    fitting_scales = []
     anchor_values: dict[str, tuple[float, float]] = {}
+    anchor_roles: dict[str, str] = {}
     for landmark in known["landmarks"]:
         point_a = triangulated[str(landmark["point_a_id"])]
         point_b = triangulated[str(landmark["point_b_id"])]
@@ -158,19 +249,43 @@ def _known_distance_solution(
         if distance <= np.finfo(np.float64).eps:
             raise ValueError("known-distance landmark triangulated to zero length")
         scale = float(landmark["known_distance_m"]) / distance
-        scales.append(scale)
+        if landmark["role"] == "fitting":
+            fitting_scales.append(scale)
         anchor_values[str(landmark["landmark_id"])] = (
             distance,
             float(landmark["known_distance_m"]),
         )
-    if not scales:
-        return [], records, {}, None
-    robust_scale = _median(scales)
-    residuals = {
+        anchor_roles[str(landmark["landmark_id"])] = str(landmark["role"])
+    if not fitting_scales:
+        raise ValueError("known-distance calibration has no fitting anchor")
+    robust_scale = _median(fitting_scales)
+    fitting_residuals = {
         landmark_id: abs(distance * robust_scale - known_m) / known_m
         for landmark_id, (distance, known_m) in anchor_values.items()
+        if anchor_roles[landmark_id] == "fitting"
     }
-    return scales, records, residuals, max(residuals.values(), default=None)
+    heldout_residuals = {
+        landmark_id: abs(distance * robust_scale - known_m) / known_m
+        for landmark_id, (distance, known_m) in anchor_values.items()
+        if anchor_roles[landmark_id] == "heldout"
+    }
+    fitting_reprojection = [float(item["fitting_reprojection_error_px"]) for item in records]
+    heldout_reprojection = [
+        float(item["heldout_reprojection_error_px"])
+        for item in records
+        if item["heldout_reprojection_error_px"] is not None
+    ]
+    return {
+        "fitting_scales": fitting_scales,
+        "landmarks": records,
+        "fitting_residuals": fitting_residuals,
+        "heldout_residuals": heldout_residuals,
+        "fitting_error": max(fitting_residuals.values(), default=None),
+        "heldout_error": max(heldout_residuals.values(), default=None),
+        "fitting_reprojection_error_px": max(fitting_reprojection, default=None),
+        "heldout_reprojection_error_px": max(heldout_reprojection, default=None),
+        "independent_length_holdout": bool(heldout_residuals),
+    }
 
 
 def _tag_solution(
@@ -268,7 +383,7 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
     gates = request["acceptance_gates"]
     tag_detections = _tag_detections(manifest, input_root)
 
-    landmark_scales, landmarks, distance_residuals, distance_error = _known_distance_solution(
+    known_distance = _known_distance_solution(
         manifest,
         camera,
         fitting_frames,
@@ -279,7 +394,18 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
         camera,
         tag_detections,
     )
-    scale_values = [*landmark_scales, *([tag_scale] if tag_scale is not None else [])]
+    tag_derivation = _tag_world_derivation(
+        manifest,
+        tag_detections,
+        tag_scale,
+        tag_rotation,
+        tag_translation,
+        tag_metrics,
+    )
+    scale_values = [
+        *known_distance["fitting_scales"],
+        *([tag_scale] if tag_scale is not None else []),
+    ]
     metric_scale = _median(scale_values) if scale_values else None
     inconsistent_metric = bool(
         scale_values
@@ -311,6 +437,38 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
         }
         for item in accepted_floor_planes
     )
+    forward_record = manifest.get("forward")
+    origin_record = manifest.get("origin")
+    if tag_derivation is not None:
+        contract = tag_derivation["world_contract"]
+        tag_angular_error = float(tag_derivation["heldout_orientation_residual_degrees"])
+        mounting_uncertainty = float(contract["mounting_uncertainty_degrees"])
+        gravity_records.append(
+            {
+                "evidence_id": "apriltag_world_contract",
+                "source": "fiducial_orientation",
+                "trust": "surveyed",
+                "up_vector_colmap": tag_derivation["derived_up_vector_colmap"],
+                "sign_evidence": contract["mounting_description"],
+                "fitting_residual_degrees": mounting_uncertainty,
+                "heldout_residual_degrees": tag_angular_error + mounting_uncertainty,
+                "angular_uncertainty_degrees": mounting_uncertainty,
+                "supporting_ids": tag_derivation["fitting_detection_frame_ids"],
+            }
+        )
+        forward_record = {
+            "source": "fiducial_orientation",
+            "policy": f"tag world contract {contract['canonical_forward_from_tag_axis']}",
+            "forward_vector_colmap": tag_derivation["derived_forward_vector_colmap"],
+            "uncertainty_degrees": tag_angular_error + mounting_uncertainty,
+            "supporting_ids": tag_derivation["fitting_detection_frame_ids"],
+        }
+        origin_record = {
+            "source": "fiducial_origin",
+            "policy": contract["tag_origin_policy"],
+            "origin_colmap": tag_derivation["derived_origin_colmap"],
+            "supporting_ids": tag_derivation["fitting_detection_frame_ids"],
+        }
     gravity_vector = None
     gravity_error = None
     inconsistent_gravity = False
@@ -319,8 +477,6 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
             gravity_vector, gravity_error = combine_up_vectors(gravity_records)
         except ValueError:
             inconsistent_gravity = True
-    forward_record = manifest.get("forward")
-    origin_record = manifest.get("origin")
 
     rotation = None
     if gravity_vector is not None and isinstance(forward_record, dict):
@@ -328,17 +484,13 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
             gravity_vector,
             np.asarray(forward_record["forward_vector_colmap"], dtype=np.float64),
         )
-    elif tag_rotation is not None and metric_scale is not None:
-        rotation = tag_rotation
 
     transform = None
     if metric_scale is not None:
         selected_rotation = rotation if rotation is not None else np.eye(3)
-        if isinstance(origin_record, dict):
+        if rotation is not None and isinstance(origin_record, dict):
             origin = np.asarray(origin_record["origin_colmap"], dtype=np.float64)
             translation = -metric_scale * selected_rotation @ origin
-        elif tag_translation is not None and rotation is tag_rotation:
-            translation = tag_translation
         else:
             translation = np.zeros(3)
         transform = matrix(metric_scale, selected_rotation, translation)
@@ -359,6 +511,7 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
             "covariance_diagonal": None,
         }
 
+    warnings: list[str] = []
     metric_evidence_count = sum(
         bool(item.get("supports_metric_scale")) for item in manifest["evidence"]
     )
@@ -367,14 +520,30 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
         and not inconsistent_metric
         and metric_evidence_count >= int(gates.get("minimum_metric_evidence_records", 1))
     )
-    if distance_error is not None:
-        metric_valid = metric_valid and distance_error <= float(
-            gates.get("maximum_known_distance_relative_error", 0.02)
-        )
     if manifest.get("known_distance") is not None:
-        metric_valid = metric_valid and len(landmark_scales) >= int(
+        metric_valid = metric_valid and len(known_distance["fitting_scales"]) >= int(
             gates.get("minimum_known_distance_anchors", 1)
         )
+        metric_valid = (
+            metric_valid
+            and known_distance["fitting_error"] is not None
+            and float(known_distance["fitting_error"])
+            <= float(gates.get("maximum_known_distance_relative_error", 0.02))
+            and known_distance["heldout_reprojection_error_px"] is not None
+            and float(known_distance["heldout_reprojection_error_px"])
+            <= float(gates.get("maximum_heldout_landmark_reprojection_error_px", 2.0))
+        )
+        if known_distance["independent_length_holdout"]:
+            metric_valid = (
+                metric_valid
+                and known_distance["heldout_error"] is not None
+                and float(known_distance["heldout_error"])
+                <= float(gates.get("maximum_known_distance_relative_error", 0.02))
+            )
+        elif bool(gates.get("allow_single_metric_anchor_without_length_holdout", True)):
+            warnings.append("single_metric_anchor_no_independent_length_holdout")
+        else:
+            metric_valid = False
     if manifest.get("apriltag") is not None:
         metric_valid = metric_valid and int(tag_metrics["heldout_count"] or 0) >= int(
             gates.get("minimum_heldout_tag_detections", 3)
@@ -437,13 +606,22 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
         "evidence_tier": evidence_tier,
         "selected_by_fitting_only": True,
         "transform": transform_record,
-        "fitting_objective": float(distance_error or gravity_error or 0.0),
+        "fitting_objective": float(
+            known_distance["fitting_error"]
+            if known_distance["fitting_error"] is not None
+            else gravity_error or 0.0
+        ),
         "evidence_ids": list(split["fitting_evidence_ids"]),
-        "warnings": [],
+        "warnings": warnings,
     }
     metrics = {
-        "fitting_metric_relative_error": distance_error,
-        "heldout_metric_relative_error": distance_error,
+        "fitting_metric_relative_error": known_distance["fitting_error"],
+        "heldout_metric_relative_error": known_distance["heldout_error"],
+        "fitting_landmark_reprojection_error_px": (known_distance["fitting_reprojection_error_px"]),
+        "heldout_landmark_reprojection_error_px": (known_distance["heldout_reprojection_error_px"]),
+        "independent_metric_length_holdout_available": (
+            known_distance["independent_length_holdout"]
+        ),
         "heldout_tag_detection_count": int(tag_metrics["heldout_count"] or 0),
         "heldout_tag_translation_error_m": tag_metrics["translation_error"],
         "heldout_tag_rotation_error_degrees": tag_metrics["rotation_error"],
@@ -464,14 +642,43 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
             else None
         ),
         "sim3_roundtrip_error": roundtrip,
-        "known_distance_residuals": distance_residuals,
+        "fitting_known_distance_residuals": known_distance["fitting_residuals"],
+        "heldout_known_distance_residuals": known_distance["heldout_residuals"],
     }
-    accepted_transform = transform_record if status.startswith("accepted_") else None
+    if status == "accepted_full_canonical":
+        output_metric = output_gravity = output_forward = output_origin = True
+    elif status == "accepted_metric_only":
+        output_metric, output_gravity, output_forward, output_origin = True, False, False, False
+    elif status == "accepted_gravity_only":
+        output_metric, output_gravity, output_forward, output_origin = False, True, False, False
+    else:
+        output_metric = metric_valid
+        output_gravity = gravity_valid
+        output_forward = forward_valid
+        output_origin = origin_valid
+    accepted_transform = (
+        transform_record if status in {"accepted_full_canonical", "accepted_metric_only"} else None
+    )
     selected_candidate_id = candidate_id if accepted_transform is not None else None
+    derivation_path = output_dir / "apriltag_world_derivation.json"
+    write_json(
+        derivation_path,
+        tag_derivation
+        if tag_derivation is not None
+        else {
+            "schema_version": "0.1.0",
+            "available": False,
+            "reason": "no explicit AprilTag world contract derivation",
+        },
+    )
+    derivation_relative_path = (
+        "calibration/apriltag_world_derivation.json" if tag_derivation is not None else None
+    )
+    derivation_sha256 = _sha256(derivation_path) if tag_derivation is not None else None
     write_json(
         output_dir / "world_calibration.json",
         {
-            "schema_version": "0.1.0",
+            "schema_version": "0.2.0",
             "status": status,
             "evidence_tier": evidence_tier,
             "manifest_path": request["manifest_path"],
@@ -480,15 +687,16 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
             "candidates": [candidate],
             "selected_candidate_id": selected_candidate_id,
             "accepted_transform": accepted_transform,
+            "fiducial_world_derivation": tag_derivation,
             "metrics": metrics,
-            "metric_scale_known": metric_valid,
-            "gravity_alignment_known": gravity_valid,
-            "canonical_forward_known": forward_valid,
-            "canonical_origin_known": origin_valid,
+            "metric_scale_known": output_metric,
+            "gravity_alignment_known": output_gravity,
+            "canonical_forward_known": output_forward,
+            "canonical_origin_known": output_origin,
             "full_canonical_world_available": full,
             "source_cameras_unchanged": True,
             "source_geometry_unchanged": True,
-            "warnings": [],
+            "warnings": warnings,
         },
     )
     write_json(
@@ -512,13 +720,13 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
         output_dir / "triangulated_landmarks.json",
         {
             "schema_version": "0.1.0",
-            "landmarks": landmarks,
+            "landmarks": known_distance["landmarks"],
         },
     )
     write_json(
         output_dir / "diagnostics.json",
         {
-            "schema_version": "0.1.0",
+            "schema_version": "0.2.0",
             "status": status,
             "metric_evidence_count": metric_evidence_count,
             "gravity_evidence_count": len(gravity_records),
@@ -535,7 +743,9 @@ def solve(request_path: Path, input_root: Path, output_dir: Path) -> None:
                 "opencv": cv2.__version__,
                 "cuda": "not_used",
             },
-            "warnings": [],
+            "fiducial_world_derivation_path": derivation_relative_path,
+            "fiducial_world_derivation_sha256": derivation_sha256,
+            "warnings": warnings,
         },
     )
     render_previews(

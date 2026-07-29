@@ -231,6 +231,7 @@ acceptance-only.
 
 The canonical scene is a derived wrapper. Source COLMAP cameras, dense geometry,
 measured assets, completion assets, and articulation artifacts retain their bytes.
-Metric scale applies to linear quantities once; normals and axes rotate only;
-angular quantities remain radians. Partial or rejected calibration leaves the source
-coordinate convention unchanged.
+Articulated object roots receive the world composition; link-local geometry and
+joint-local axes, pivots, and q remain unchanged. A typed per-joint scale maps
+object-local prismatic q to meters exactly once. Partial or rejected calibration
+leaves the source coordinate convention unchanged.
