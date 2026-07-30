@@ -25,26 +25,6 @@
       "title": "GeometrySourceType",
       "type": "string"
     },
-    "SceneAssemblyArtifactReference": {
-      "additionalProperties": false,
-      "properties": {
-        "path": {
-          "title": "Path",
-          "type": "string"
-        },
-        "sha256": {
-          "pattern": "^[0-9a-f]{64}$",
-          "title": "Sha256",
-          "type": "string"
-        }
-      },
-      "required": [
-        "path",
-        "sha256"
-      ],
-      "title": "SceneAssemblyArtifactReference",
-      "type": "object"
-    },
     "SceneAssemblyAssetRecord": {
       "additionalProperties": false,
       "properties": {
@@ -123,7 +103,18 @@
         "candidate_evaluation": {
           "anyOf": [
             {
-              "$ref": "#/$defs/SceneAssemblyArtifactReference"
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "candidate_generation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
             },
             {
               "type": "null"
@@ -143,6 +134,17 @@
           "default": null,
           "title": "Candidate Id"
         },
+        "candidate_selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "collision_ready": {
           "const": false,
           "default": false,
@@ -161,7 +163,7 @@
         "kinematic_bundle": {
           "anyOf": [
             {
-              "$ref": "#/$defs/SceneAssemblyArtifactReference"
+              "$ref": "#/$defs/SceneAssemblySourceReference"
             },
             {
               "type": "null"
@@ -171,6 +173,17 @@
         },
         "license": {
           "$ref": "#/$defs/SceneAssemblyLicenseRecord"
+        },
+        "license_source_record": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "lineage_id": {
           "minLength": 1,
@@ -188,6 +201,17 @@
           ],
           "default": null,
           "title": "Link Id"
+        },
+        "measured_geometry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "object_id": {
           "anyOf": [
@@ -214,6 +238,18 @@
           "default": false,
           "title": "Observation Validation Passed",
           "type": "boolean"
+        },
+        "part_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Part Id"
         },
         "physical_validation": {
           "const": "not_implemented",
@@ -255,6 +291,18 @@
           "default": true,
           "title": "Source Asset Immutable",
           "type": "boolean"
+        },
+        "source_native_asset_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Native Asset Path"
         },
         "visual_only": {
           "const": true,
@@ -350,7 +398,7 @@
         "source_record": {
           "anyOf": [
             {
-              "$ref": "#/$defs/SceneAssemblyArtifactReference"
+              "$ref": "#/$defs/SceneAssemblySourceReference"
             },
             {
               "type": "null"
@@ -375,7 +423,7 @@
         "accepted_alignment": {
           "anyOf": [
             {
-              "$ref": "#/$defs/SceneAssemblyArtifactReference"
+              "$ref": "#/$defs/SceneAssemblySourceReference"
             },
             {
               "type": "null"
@@ -383,8 +431,20 @@
           ],
           "default": null
         },
+        "alignment_state_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alignment State Id"
+        },
         "camera_reconstruction": {
-          "$ref": "#/$defs/SceneAssemblyArtifactReference"
+          "$ref": "#/$defs/SceneAssemblySourceReference"
         },
         "connected_to_lineage_id": {
           "anyOf": [
@@ -409,7 +469,20 @@
           "type": "string"
         },
         "source_scene_ir": {
-          "$ref": "#/$defs/SceneAssemblyArtifactReference"
+          "$ref": "#/$defs/SceneAssemblySourceReference"
+        },
+        "source_state_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source State Id"
         },
         "transform_connected_from_lineage": {
           "anyOf": [
@@ -443,6 +516,61 @@
     "SceneAssemblyObjectInput": {
       "additionalProperties": false,
       "properties": {
+        "articulated_candidate_manifest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "articulated_evaluation_artifact": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "articulated_fitting_artifact": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "articulated_link_assignment_artifact": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "articulated_selection_artifact": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "asset_type": {
           "$ref": "#/$defs/AssetType"
         },
@@ -468,7 +596,7 @@
         "kinematic_bundle": {
           "anyOf": [
             {
-              "$ref": "#/$defs/SceneAssemblyArtifactReference"
+              "$ref": "#/$defs/SceneAssemblySourceReference"
             },
             {
               "type": "null"
@@ -491,7 +619,7 @@
         "measured_motion": {
           "anyOf": [
             {
-              "$ref": "#/$defs/SceneAssemblyArtifactReference"
+              "$ref": "#/$defs/SceneAssemblySourceReference"
             },
             {
               "type": "null"
@@ -528,6 +656,64 @@
           "default": null,
           "title": "Preferred Research Candidate Id"
         },
+        "representation_parity_artifacts": {
+          "items": {
+            "$ref": "#/$defs/SceneAssemblySourceReference"
+          },
+          "title": "Representation Parity Artifacts",
+          "type": "array"
+        },
+        "rigid_evaluation_artifact": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rigid_generation_artifacts": {
+          "items": {
+            "$ref": "#/$defs/SceneAssemblySourceReference"
+          },
+          "title": "Rigid Generation Artifacts",
+          "type": "array"
+        },
+        "rigid_registration_artifact": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rigid_selection_artifact": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "selected_identity_manifest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "upstream_status": {
           "minLength": 1,
           "title": "Upstream Status",
@@ -541,6 +727,57 @@
         "upstream_status"
       ],
       "title": "SceneAssemblyObjectInput",
+      "type": "object"
+    },
+    "SceneAssemblySourceArtifactType": {
+      "enum": [
+        "camera_reconstruction",
+        "source_scene_ir",
+        "measured_geometry",
+        "rigid_selection",
+        "rigid_evaluation",
+        "rigid_registration",
+        "rigid_generation",
+        "representation_parity",
+        "articulated_selection",
+        "articulated_candidate_manifest",
+        "articulated_evaluation",
+        "articulated_fitting",
+        "articulated_link_assignment",
+        "selected_identity_manifest",
+        "kinematic_bundle",
+        "license_record",
+        "world_calibration",
+        "canonical_wrapper",
+        "state_alignment",
+        "measured_motion",
+        "global_context_manifest"
+      ],
+      "title": "SceneAssemblySourceArtifactType",
+      "type": "string"
+    },
+    "SceneAssemblySourceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_type": {
+          "$ref": "#/$defs/SceneAssemblySourceArtifactType"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "artifact_type"
+      ],
+      "title": "SceneAssemblySourceReference",
       "type": "object"
     },
     "WorldCalibrationStatus": {
@@ -584,7 +821,7 @@
     "calibration_artifact": {
       "anyOf": [
         {
-          "$ref": "#/$defs/SceneAssemblyArtifactReference"
+          "$ref": "#/$defs/SceneAssemblySourceReference"
         },
         {
           "type": "null"
@@ -610,7 +847,7 @@
     "canonical_wrapper": {
       "anyOf": [
         {
-          "$ref": "#/$defs/SceneAssemblyArtifactReference"
+          "$ref": "#/$defs/SceneAssemblySourceReference"
         },
         {
           "type": "null"
@@ -645,8 +882,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "0.1.0",
-      "default": "0.1.0",
+      "const": "0.2.0",
+      "default": "0.2.0",
       "title": "Schema Version",
       "type": "string"
     },
@@ -657,7 +894,7 @@
       "type": "boolean"
     },
     "source_scene_ir": {
-      "$ref": "#/$defs/SceneAssemblyArtifactReference"
+      "$ref": "#/$defs/SceneAssemblySourceReference"
     },
     "source_world_to_assembly_world": {
       "anyOf": [

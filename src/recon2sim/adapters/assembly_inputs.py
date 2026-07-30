@@ -15,6 +15,7 @@ from recon2sim.adapters.base import (
 )
 from recon2sim.artifacts import SceneAssemblyInputManifest
 from recon2sim.assembly import IDENTITY_MATRIX4, stable_digest
+from recon2sim.assembly_sources import normalize_assembly_manifest
 from recon2sim.calibration import sha256_file
 from recon2sim.ir import SceneIR, StrictModel
 from recon2sim.storage import atomic_write_json
@@ -37,6 +38,7 @@ FakeAssemblyMode = Literal[
     "double_articulated_transform",
     "preview_material_loss",
     "deployment_bundle_excluding_research_asset",
+    "different_bundle_candidates",
     "empty_global_context",
     "no_selected_candidates",
     "path_escape",
@@ -226,6 +228,11 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
     camera_path, scene_path = _fake_scene(context)
     measured_path = context.path("assembly/source/assets/cup_measured.ply")
     _write_ascii_ply(measured_path, offset=0.0)
+    measured_geometry_path = context.path("assembly/source/measured_geometry.json")
+    atomic_write_json(
+        measured_geometry_path,
+        {"object_id": "cup_0001", "path": "assembly/source/assets/cup_measured.ply"},
+    )
     global_path = context.path("assembly/source/assets/global_context.ply")
     _write_ascii_ply(global_path, offset=-0.25)
     candidate_path = context.path("assembly/source/assets/cup_candidate.ply")
@@ -261,6 +268,7 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
     reference = {
         "path": "assembly/source/scene_ir.json",
         "sha256": sha256_file(scene_path),
+        "artifact_type": "source_scene_ir",
     }
     lineage: dict[str, object] = {
         "lineage_id": "fake_lineage",
@@ -268,6 +276,7 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
         "camera_reconstruction": {
             "path": "assembly/source/camera_reconstruction.json",
             "sha256": sha256_file(camera_path),
+            "artifact_type": "camera_reconstruction",
         },
         "source_scene_ir": reference,
         "world_frame": "colmap_arbitrary",
@@ -295,7 +304,9 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
                 "accepted_alignment": {
                     "path": "assembly/source/state_alignment.json",
                     "sha256": sha256_file(alignment_path),
+                    "artifact_type": "state_alignment",
                 },
+                "alignment_state_id": "state_001",
                 "transform_connected_from_lineage": list(IDENTITY_MATRIX4),
             }
         )
@@ -330,12 +341,18 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
             "source": "measured",
             "asset_path": "assembly/source/assets/cup_measured.ply",
             "asset_sha256": sha256_file(measured_path),
+            "source_native_asset_path": "assembly/source/assets/cup_measured.ply",
             "format": "ply",
             "asset_native_space": "reference_world",
             "asset_to_object": identity,
             "object_to_source_world": measured_object_transform,
             "bounds_native": [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
             "license": _license(production=True),
+            "measured_geometry": {
+                "path": "assembly/source/measured_geometry.json",
+                "sha256": sha256_file(measured_geometry_path),
+                "artifact_type": "measured_geometry",
+            },
         }
     ]
     global_modes = {
@@ -346,6 +363,7 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
         "accepted_rigid_candidate",
         "license_blocked_rigid_candidate",
         "deployment_bundle_excluding_research_asset",
+        "different_bundle_candidates",
         "preview_material_loss",
     }
     if mode in global_modes:
@@ -375,6 +393,7 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
         "rejected_articulated_candidate",
         "double_articulated_transform",
         "deployment_bundle_excluding_research_asset",
+        "different_bundle_candidates",
         "no_selected_candidates",
         "preview_material_loss",
     }
@@ -447,7 +466,7 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
             }
             else "visual_completion"
         )
-        production = mode == "accepted_rigid_candidate"
+        production = mode in {"accepted_rigid_candidate", "different_bundle_candidates"}
         selected = mode not in {"rejected_articulated_candidate", "no_selected_candidates"}
         validated = mode not in {"rejected_articulated_candidate", "no_selected_candidates"}
         assets.append(
@@ -459,6 +478,7 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
                 "source": "generated",
                 "asset_path": "assembly/source/assets/cup_candidate.ply",
                 "asset_sha256": sha256_file(candidate_path),
+                "source_native_asset_path": "assembly/source/assets/cup_candidate.ply",
                 "format": "ply",
                 "asset_native_space": (
                     "reference_world"
@@ -476,6 +496,29 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
                 "candidate_evaluation": {
                     "path": "assembly/source/evaluations/cup_candidate.json",
                     "sha256": sha256_file(evaluation_path),
+                    "artifact_type": (
+                        "articulated_evaluation"
+                        if candidate_role == "articulated_visual"
+                        else "rigid_evaluation"
+                    ),
+                },
+                "candidate_selection": {
+                    "path": "assembly/source/evaluations/cup_candidate.json",
+                    "sha256": sha256_file(evaluation_path),
+                    "artifact_type": (
+                        "articulated_selection"
+                        if candidate_role == "articulated_visual"
+                        else "rigid_selection"
+                    ),
+                },
+                "candidate_generation": {
+                    "path": "assembly/source/evaluations/cup_candidate.json",
+                    "sha256": sha256_file(evaluation_path),
+                    "artifact_type": (
+                        "articulated_candidate_manifest"
+                        if candidate_role == "articulated_visual"
+                        else "rigid_generation"
+                    ),
                 },
                 "representation_id": "visual_ply",
                 "articulation_id": (
@@ -486,6 +529,7 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
                     {
                         "path": "assembly/source/articulation/kinematic_bundle.json",
                         "sha256": sha256_file(kinematic_path),
+                        "artifact_type": "kinematic_bundle",
                     }
                     if candidate_role == "articulated_visual"
                     else None
@@ -496,6 +540,36 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
                 ),
             }
         )
+        if mode == "different_bundle_candidates":
+            assets[-1]["asset_id"] = "production_candidate_B_visual"
+            assets[-1]["candidate_id"] = "production_candidate_B"
+            research_path = context.path("assembly/source/assets/research_candidate_A.ply")
+            _write_ascii_ply(research_path, offset=0.1)
+            research_asset = dict(assets[-1])
+            research_asset.update(
+                {
+                    "asset_id": "research_candidate_A_visual",
+                    "candidate_id": "research_candidate_A",
+                    "asset_path": "assembly/source/assets/research_candidate_A.ply",
+                    "source_native_asset_path": "assembly/source/assets/research_candidate_A.ply",
+                    "asset_sha256": sha256_file(research_path),
+                    "license": _license(production=False),
+                }
+            )
+            assets.append(research_asset)
+            measured_part_path = context.path("assembly/source/assets/cup_measured_part2.ply")
+            _write_ascii_ply(measured_part_path, offset=1.0)
+            measured_part = dict(assets[0])
+            measured_part.update(
+                {
+                    "asset_id": "cup_measured_part2",
+                    "asset_path": "assembly/source/assets/cup_measured_part2.ply",
+                    "source_native_asset_path": ("assembly/source/assets/cup_measured_part2.ply"),
+                    "asset_sha256": sha256_file(measured_part_path),
+                    "bounds_native": [1.0, 0.0, 0.0, 2.0, 1.0, 1.0],
+                }
+            )
+            assets.append(measured_part)
     calibration_status: str | None = None
     world_transform: list[float] | None = None
     if mode == "full_canonical_scene":
@@ -549,6 +623,7 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
     measured_motion = {
         "path": "assembly/source/articulation/measured_motion.json",
         "sha256": sha256_file(measured_motion_path),
+        "artifact_type": "measured_motion",
     }
     object_record: dict[str, object] = {
         "object_id": "cup_0001",
@@ -558,7 +633,11 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
             if mode in {"accepted_articulated_candidate", "rejected_articulated_candidate"}
             else "rigid"
         ),
-        "measured_anchor_asset_ids": ["cup_measured"],
+        "measured_anchor_asset_ids": (
+            ["cup_measured", "cup_measured_part2"]
+            if mode == "different_bundle_candidates"
+            else ["cup_measured"]
+        ),
         "global_context_asset_ids": (
             ["global_context"]
             if any(item["asset_id"] == "global_context" for item in assets)
@@ -566,13 +645,17 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
         ),
         "candidate_asset_ids": candidate_ids,
         "preferred_research_candidate_id": (
-            "cup_candidate"
+            ("research_candidate_A" if mode == "different_bundle_candidates" else "cup_candidate")
             if candidate_ids
             and mode not in {"rejected_articulated_candidate", "no_selected_candidates"}
             else None
         ),
         "preferred_deployment_candidate_id": (
-            "cup_candidate" if mode == "accepted_rigid_candidate" else None
+            "production_candidate_B"
+            if mode == "different_bundle_candidates"
+            else "cup_candidate"
+            if mode == "accepted_rigid_candidate"
+            else None
         ),
         "upstream_status": (
             "rejected_heldout_state"
@@ -590,13 +673,14 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
             {
                 "path": "assembly/source/articulation/kinematic_bundle.json",
                 "sha256": sha256_file(kinematic_path),
+                "artifact_type": "kinematic_bundle",
             }
             if mode == "accepted_articulated_candidate"
             else None
         ),
     }
     raw = {
-        "schema_version": "0.1.0",
+        "schema_version": "0.2.0",
         "assembly_id": f"phase6b_fake_{mode}",
         "calibration_policy": "use_full_canonical_if_available",
         "primary_lineage_id": "fake_lineage",
@@ -686,7 +770,7 @@ class AssemblyInputsAdapter:
             raw = _load_mapping(context.path("assembly/source/input_manifest.yaml"))
             normalized = _normalized_manifest(raw, context.run_dir)
             assert isinstance(normalized, dict)
-            manifest = SceneAssemblyInputManifest.model_validate(normalized)
+            manifest = normalize_assembly_manifest(normalized, context.run_dir)
         outputs: list[OutputSpec] = []
         for reference in [
             manifest.source_scene_ir,
@@ -695,9 +779,68 @@ class AssemblyInputsAdapter:
             *(item.accepted_alignment for item in manifest.lineages if item.accepted_alignment),
             manifest.calibration_artifact,
             manifest.canonical_wrapper,
+            *(item.candidate_selection for item in manifest.assets if item.candidate_selection),
             *(item.candidate_evaluation for item in manifest.assets if item.candidate_evaluation),
+            *(item.candidate_generation for item in manifest.assets if item.candidate_generation),
+            *(item.measured_geometry for item in manifest.assets if item.measured_geometry),
             *(item.kinematic_bundle for item in manifest.assets if item.kinematic_bundle),
+            *(item.license_source_record for item in manifest.assets if item.license_source_record),
             *(item.license.source_record for item in manifest.assets if item.license.source_record),
+            *(
+                item.rigid_selection_artifact
+                for item in manifest.objects
+                if item.rigid_selection_artifact
+            ),
+            *(
+                item.rigid_evaluation_artifact
+                for item in manifest.objects
+                if item.rigid_evaluation_artifact
+            ),
+            *(
+                item.rigid_registration_artifact
+                for item in manifest.objects
+                if item.rigid_registration_artifact
+            ),
+            *(
+                reference
+                for item in manifest.objects
+                for reference in item.rigid_generation_artifacts
+            ),
+            *(
+                reference
+                for item in manifest.objects
+                for reference in item.representation_parity_artifacts
+            ),
+            *(
+                item.articulated_selection_artifact
+                for item in manifest.objects
+                if item.articulated_selection_artifact
+            ),
+            *(
+                item.articulated_candidate_manifest
+                for item in manifest.objects
+                if item.articulated_candidate_manifest
+            ),
+            *(
+                item.articulated_evaluation_artifact
+                for item in manifest.objects
+                if item.articulated_evaluation_artifact
+            ),
+            *(
+                item.articulated_fitting_artifact
+                for item in manifest.objects
+                if item.articulated_fitting_artifact
+            ),
+            *(
+                item.articulated_link_assignment_artifact
+                for item in manifest.objects
+                if item.articulated_link_assignment_artifact
+            ),
+            *(
+                item.selected_identity_manifest
+                for item in manifest.objects
+                if item.selected_identity_manifest
+            ),
             *(item.measured_motion for item in manifest.objects if item.measured_motion),
             *(item.kinematic_bundle for item in manifest.objects if item.kinematic_bundle),
         ]:

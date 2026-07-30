@@ -235,15 +235,18 @@ The core adapters import no NumPy, SciPy, OpenCV, AprilTag, Open3D, or trimesh.
 ## Phase 6B adapters
 
 `scene_assembly_inputs` selectively materializes declared typed inputs, verifies
-exact hashes, and strips machine-local paths from the canonical manifest.
+exact hashes, strips machine-local paths from the canonical manifest, and derives
+selection, evaluation, representation, license, lineage, and calibration semantics
+from promoted Phase 5B/5C/6A artifacts.
 `scene_assembly_plan` enforces connected lineage, resolves the calibration policy,
-chooses one explainable primary decision per object, and writes explicit transform
-chains without loading geometry.
+chooses independent explainable research and deployment decisions per object, and
+writes explicit transform chains without loading geometry.
 
 `layered_scene_bundle` emits research and deployment-eligible bundles, overlap
 diagnostics, a compiler input manifest, and `scene_ir/phase6b_layered_scene.json`.
-Research-only decisions are downgraded to measured-only or license-blocked in the
-deployment bundle. `assembly_previews` invokes the isolated scene-assembly worker
-for diagnostic PNG and GLB output. `phase6b_consistency_validation` verifies exact
-identities, world claims, lineage, license separation, anchor retention,
-transform ownership, source immutability, and the no-collision/no-physics boundary.
+The compiler manifest has distinct research/deployment object and articulated
+hierarchy views. `assembly_previews` invokes the isolated scene-assembly worker for
+diagnostic PNG and GLB output. `phase6b_consistency_validation` rederives bundle
+decisions and verifies exact identities, world claims, lineage, license separation,
+anchor retention, transform ownership, source immutability, and the
+no-collision/no-physics boundary.

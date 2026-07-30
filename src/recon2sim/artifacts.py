@@ -6421,6 +6421,30 @@ class SceneAssemblyBundleKind(StrEnum):
     DEPLOYMENT_ELIGIBLE = "deployment_eligible"
 
 
+class SceneAssemblySourceArtifactType(StrEnum):
+    CAMERA_RECONSTRUCTION = "camera_reconstruction"
+    SOURCE_SCENE_IR = "source_scene_ir"
+    MEASURED_GEOMETRY = "measured_geometry"
+    RIGID_SELECTION = "rigid_selection"
+    RIGID_EVALUATION = "rigid_evaluation"
+    RIGID_REGISTRATION = "rigid_registration"
+    RIGID_GENERATION = "rigid_generation"
+    REPRESENTATION_PARITY = "representation_parity"
+    ARTICULATED_SELECTION = "articulated_selection"
+    ARTICULATED_CANDIDATE_MANIFEST = "articulated_candidate_manifest"
+    ARTICULATED_EVALUATION = "articulated_evaluation"
+    ARTICULATED_FITTING = "articulated_fitting"
+    ARTICULATED_LINK_ASSIGNMENT = "articulated_link_assignment"
+    SELECTED_IDENTITY_MANIFEST = "selected_identity_manifest"
+    KINEMATIC_BUNDLE = "kinematic_bundle"
+    LICENSE_RECORD = "license_record"
+    WORLD_CALIBRATION = "world_calibration"
+    CANONICAL_WRAPPER = "canonical_wrapper"
+    STATE_ALIGNMENT = "state_alignment"
+    MEASURED_MOTION = "measured_motion"
+    GLOBAL_CONTEXT_MANIFEST = "global_context_manifest"
+
+
 def _matrix4(value: tuple[float, ...]) -> tuple[float, ...]:
     if len(value) != 16 or any(not math.isfinite(component) for component in value):
         raise ValueError("assembly transforms must contain 16 finite values")
@@ -6446,6 +6470,10 @@ class SceneAssemblyArtifactReference(StrictModel):
         return _relative_artifact_path(value)
 
 
+class SceneAssemblySourceReference(SceneAssemblyArtifactReference):
+    artifact_type: SceneAssemblySourceArtifactType
+
+
 class SceneAssemblyLicenseRecord(StrictModel):
     license_id: str = Field(min_length=1)
     license_name: str = Field(min_length=1)
@@ -6458,7 +6486,7 @@ class SceneAssemblyLicenseRecord(StrictModel):
         "blocked",
     ]
     restrictions: list[str] = Field(default_factory=list)
-    source_record: SceneAssemblyArtifactReference | None = None
+    source_record: SceneAssemblySourceReference | None = None
 
     @model_validator(mode="after")
     def production_requires_approval(self) -> Self:
@@ -6469,12 +6497,14 @@ class SceneAssemblyLicenseRecord(StrictModel):
 
 class SceneAssemblyLineageRecord(StrictModel):
     lineage_id: str = Field(min_length=1)
+    source_state_id: str | None = Field(default=None, min_length=1)
     frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
-    camera_reconstruction: SceneAssemblyArtifactReference
-    source_scene_ir: SceneAssemblyArtifactReference
+    camera_reconstruction: SceneAssemblySourceReference
+    source_scene_ir: SceneAssemblySourceReference
     world_frame: WorldFrame
     connected_to_lineage_id: str | None = None
-    accepted_alignment: SceneAssemblyArtifactReference | None = None
+    accepted_alignment: SceneAssemblySourceReference | None = None
+    alignment_state_id: str | None = None
     transform_connected_from_lineage: tuple[float, ...] | None = None
 
     @field_validator("transform_connected_from_lineage")
@@ -6487,9 +6517,22 @@ class SceneAssemblyLineageRecord(StrictModel):
 
     @model_validator(mode="after")
     def connection_is_complete(self) -> Self:
+        if (
+            self.camera_reconstruction.artifact_type
+            is not SceneAssemblySourceArtifactType.CAMERA_RECONSTRUCTION
+            or self.source_scene_ir.artifact_type
+            is not SceneAssemblySourceArtifactType.SOURCE_SCENE_IR
+        ):
+            raise ValueError("lineage camera and Scene IR references have incorrect types")
+        if self.accepted_alignment is not None and (
+            self.accepted_alignment.artifact_type
+            is not SceneAssemblySourceArtifactType.STATE_ALIGNMENT
+        ):
+            raise ValueError("lineage connection requires a typed state-alignment artifact")
         values = (
             self.connected_to_lineage_id,
             self.accepted_alignment,
+            self.alignment_state_id,
             self.transform_connected_from_lineage,
         )
         if any(value is not None for value in values) and any(value is None for value in values):
@@ -6502,11 +6545,13 @@ class SceneAssemblyLineageRecord(StrictModel):
 class SceneAssemblyAssetRecord(StrictModel):
     asset_id: str = Field(min_length=1)
     object_id: str | None = None
+    part_id: str | None = None
     lineage_id: str = Field(min_length=1)
     role: SceneAssemblyAssetRole
     source: GeometrySourceType
     asset_path: str
     asset_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    source_native_asset_path: str | None = None
     format: Literal["obj", "glb", "ply"]
     asset_native_space: SceneAssemblyAssetSpace
     asset_to_object: Annotated[tuple[float, ...], Field(min_length=16, max_length=16)]
@@ -6518,11 +6563,15 @@ class SceneAssemblyAssetRecord(StrictModel):
     selected_upstream: bool = False
     observation_validation_passed: bool = False
     candidate_id: str | None = None
-    candidate_evaluation: SceneAssemblyArtifactReference | None = None
+    candidate_selection: SceneAssemblySourceReference | None = None
+    candidate_evaluation: SceneAssemblySourceReference | None = None
+    candidate_generation: SceneAssemblySourceReference | None = None
+    measured_geometry: SceneAssemblySourceReference | None = None
     representation_id: str | None = None
     articulation_id: str | None = None
     link_id: str | None = None
-    kinematic_bundle: SceneAssemblyArtifactReference | None = None
+    kinematic_bundle: SceneAssemblySourceReference | None = None
+    license_source_record: SceneAssemblySourceReference | None = None
     license: SceneAssemblyLicenseRecord
     source_asset_immutable: Literal[True] = True
     visual_only: Literal[True] = True
@@ -6530,10 +6579,10 @@ class SceneAssemblyAssetRecord(StrictModel):
     physical_validation: Literal["not_implemented"] = "not_implemented"
     sim_ready: Literal[False] = False
 
-    @field_validator("asset_path")
+    @field_validator("asset_path", "source_native_asset_path")
     @classmethod
-    def relative_assembly_asset(cls, value: str) -> str:
-        return _relative_artifact_path(value)
+    def relative_assembly_asset(cls, value: str | None) -> str | None:
+        return _relative_artifact_path(value) if value is not None else None
 
     @field_validator("asset_to_object", "object_to_source_world")
     @classmethod
@@ -6550,7 +6599,9 @@ class SceneAssemblyAssetRecord(StrictModel):
             if (
                 self.object_id is None
                 or self.candidate_id is None
+                or self.candidate_selection is None
                 or self.candidate_evaluation is None
+                or self.candidate_generation is None
                 or self.representation_id is None
             ):
                 raise ValueError(
@@ -6558,11 +6609,39 @@ class SceneAssemblyAssetRecord(StrictModel):
                 )
             if self.asset_native_space is SceneAssemblyAssetSpace.REFERENCE_WORLD:
                 raise ValueError("candidate visual assets cannot declare reference-world space")
+            assert self.candidate_selection is not None
+            assert self.candidate_evaluation is not None
+            assert self.candidate_generation is not None
+            if self.role is SceneAssemblyAssetRole.VISUAL_COMPLETION:
+                expected = (
+                    SceneAssemblySourceArtifactType.RIGID_SELECTION,
+                    SceneAssemblySourceArtifactType.RIGID_EVALUATION,
+                    SceneAssemblySourceArtifactType.RIGID_GENERATION,
+                )
+            else:
+                expected = (
+                    SceneAssemblySourceArtifactType.ARTICULATED_SELECTION,
+                    SceneAssemblySourceArtifactType.ARTICULATED_EVALUATION,
+                    SceneAssemblySourceArtifactType.ARTICULATED_CANDIDATE_MANIFEST,
+                )
+            if (
+                self.candidate_selection.artifact_type,
+                self.candidate_evaluation.artifact_type,
+                self.candidate_generation.artifact_type,
+            ) != expected:
+                raise ValueError("candidate source references have incorrect artifact types")
         if self.role is SceneAssemblyAssetRole.MEASURED_ANCHOR:
             if self.asset_native_space is not SceneAssemblyAssetSpace.REFERENCE_WORLD:
                 raise ValueError("measured anchors must declare reference-world space")
             if self.object_id is None:
                 raise ValueError("measured anchors require an object ID")
+            if self.measured_geometry is None:
+                raise ValueError("measured anchors require a typed measured-geometry source")
+            if (
+                self.measured_geometry.artifact_type
+                is not SceneAssemblySourceArtifactType.MEASURED_GEOMETRY
+            ):
+                raise ValueError("measured anchor source has an incorrect artifact type")
         if self.asset_native_space is SceneAssemblyAssetSpace.LINK_LOCAL and (
             self.articulation_id is None or self.link_id is None
         ):
@@ -6580,23 +6659,36 @@ class SceneAssemblyObjectInput(StrictModel):
     preferred_research_candidate_id: str | None = None
     preferred_deployment_candidate_id: str | None = None
     upstream_status: str = Field(min_length=1)
-    measured_motion: SceneAssemblyArtifactReference | None = None
-    kinematic_bundle: SceneAssemblyArtifactReference | None = None
+    rigid_selection_artifact: SceneAssemblySourceReference | None = None
+    rigid_evaluation_artifact: SceneAssemblySourceReference | None = None
+    rigid_registration_artifact: SceneAssemblySourceReference | None = None
+    rigid_generation_artifacts: list[SceneAssemblySourceReference] = Field(default_factory=list)
+    representation_parity_artifacts: list[SceneAssemblySourceReference] = Field(
+        default_factory=list
+    )
+    articulated_selection_artifact: SceneAssemblySourceReference | None = None
+    articulated_candidate_manifest: SceneAssemblySourceReference | None = None
+    articulated_evaluation_artifact: SceneAssemblySourceReference | None = None
+    articulated_fitting_artifact: SceneAssemblySourceReference | None = None
+    articulated_link_assignment_artifact: SceneAssemblySourceReference | None = None
+    selected_identity_manifest: SceneAssemblySourceReference | None = None
+    measured_motion: SceneAssemblySourceReference | None = None
+    kinematic_bundle: SceneAssemblySourceReference | None = None
     ignored: bool = False
 
 
 class SceneAssemblyInputManifest(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.2.0"] = "0.2.0"
     assembly_id: str = Field(min_length=1)
     calibration_policy: SceneAssemblyCalibrationPolicy = (
         SceneAssemblyCalibrationPolicy.USE_FULL_CANONICAL_IF_AVAILABLE
     )
     primary_lineage_id: str = Field(min_length=1)
     lineages: Annotated[list[SceneAssemblyLineageRecord], Field(min_length=1)]
-    source_scene_ir: SceneAssemblyArtifactReference
+    source_scene_ir: SceneAssemblySourceReference
     calibration_status: WorldCalibrationStatus | None = None
-    calibration_artifact: SceneAssemblyArtifactReference | None = None
-    canonical_wrapper: SceneAssemblyArtifactReference | None = None
+    calibration_artifact: SceneAssemblySourceReference | None = None
+    canonical_wrapper: SceneAssemblySourceReference | None = None
     source_world_to_assembly_world: tuple[float, ...] | None = None
     assets: list[SceneAssemblyAssetRecord]
     objects: list[SceneAssemblyObjectInput]
@@ -6626,6 +6718,29 @@ class SceneAssemblyInputManifest(StrictModel):
             raise ValueError("assembly object IDs must be unique")
         known_assets = set(asset_ids)
         known_lineages = set(lineage_ids)
+        lineage_neighbors: dict[str, set[str]] = {
+            lineage_id: set() for lineage_id in lineage_ids
+        }
+        for lineage in self.lineages:
+            if lineage.connected_to_lineage_id is not None:
+                lineage_neighbors[lineage.lineage_id].add(lineage.connected_to_lineage_id)
+                lineage_neighbors[lineage.connected_to_lineage_id].add(lineage.lineage_id)
+
+        def lineages_connected(left: str, right: str) -> bool:
+            if left == right:
+                return True
+            visited = {left}
+            pending = [left]
+            while pending:
+                current = pending.pop()
+                for neighbor in lineage_neighbors[current]:
+                    if neighbor == right:
+                        return True
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        pending.append(neighbor)
+            return False
+
         for asset in self.assets:
             if asset.lineage_id not in known_lineages:
                 raise ValueError(f"asset {asset.asset_id!r} has an unknown lineage")
@@ -6642,9 +6757,31 @@ class SceneAssemblyInputManifest(StrictModel):
                 raise ValueError(
                     f"object {item.object_id!r} references unknown assets: {sorted(missing)}"
                 )
+            for asset_id in item.measured_anchor_asset_ids + item.candidate_asset_ids:
+                asset = self.assets[asset_ids.index(asset_id)]
+                if asset.object_id != item.object_id:
+                    raise ValueError(
+                        f"asset {asset_id!r} belongs to {asset.object_id!r}, "
+                        f"not object {item.object_id!r}"
+                    )
+                if not lineages_connected(asset.lineage_id, item.lineage_id):
+                    raise ValueError(
+                        f"asset {asset_id!r} and object {item.object_id!r} "
+                        "must share a lineage or an accepted typed lineage connection"
+                    )
         calibration_refs = (self.calibration_artifact, self.canonical_wrapper)
         if self.calibration_status is None and any(item is not None for item in calibration_refs):
             raise ValueError("calibration references require an explicit calibration status")
+        if self.calibration_artifact is not None and (
+            self.calibration_artifact.artifact_type
+            is not SceneAssemblySourceArtifactType.WORLD_CALIBRATION
+        ):
+            raise ValueError("calibration artifact reference has an incorrect type")
+        if self.canonical_wrapper is not None and (
+            self.canonical_wrapper.artifact_type
+            is not SceneAssemblySourceArtifactType.CANONICAL_WRAPPER
+        ):
+            raise ValueError("canonical wrapper reference has an incorrect type")
         return self
 
 
@@ -6706,14 +6843,11 @@ class PlannedAssemblyAsset(StrictModel):
         return _matrix4(value)
 
 
-class ObjectAssemblyDecision(StrictModel):
-    object_id: str = Field(min_length=1)
+class BundleObjectAssemblyDecision(StrictModel):
     status: ObjectAssemblyDecisionStatus
-    measured_anchor_asset_ids: list[str]
     selected_candidate_id: str | None = None
     selected_visual_asset_ids: list[str] = Field(default_factory=list)
-    articulated_kinematic_bundle: SceneAssemblyArtifactReference | None = None
-    measured_motion: SceneAssemblyArtifactReference | None = None
+    articulated_model_source: SceneAssemblySourceReference | None = None
     rationale: Annotated[list[str], Field(min_length=1)]
 
     @model_validator(mode="after")
@@ -6725,6 +6859,21 @@ class ObjectAssemblyDecision(StrictModel):
         if selected != bool(self.selected_candidate_id and self.selected_visual_asset_ids):
             raise ValueError("selected object decisions require candidate and visual asset IDs")
         return self
+
+
+class ObjectAssemblyDecisionSet(StrictModel):
+    object_id: str = Field(min_length=1)
+    measured_anchor_asset_ids: list[str]
+    research_decision: BundleObjectAssemblyDecision
+    deployment_decision: BundleObjectAssemblyDecision
+    measured_motion: SceneAssemblySourceReference | None = None
+
+
+class ObjectAssemblyDecision(StrictModel):
+    object_id: str = Field(min_length=1)
+    measured_anchor_asset_ids: list[str]
+    decision: BundleObjectAssemblyDecision
+    measured_motion: SceneAssemblySourceReference | None = None
 
 
 class SceneAssemblyLayer(StrictModel):
@@ -6745,11 +6894,11 @@ class SceneAssemblyLineageReport(StrictModel):
 
 
 class SceneAssemblyPlan(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.2.0"] = "0.2.0"
     input_manifest: SceneAssemblyArtifactReference
     world: SceneAssemblyWorldRecord
     lineage_report: SceneAssemblyArtifactReference
-    decisions: list[ObjectAssemblyDecision]
+    decisions: list[ObjectAssemblyDecisionSet]
     assets: list[PlannedAssemblyAsset]
     layers: list[SceneAssemblyLayer]
     global_scene_policy: Literal["layered_no_carve_v1"] = "layered_no_carve_v1"
@@ -6767,7 +6916,7 @@ class SceneAssemblyLicenseSummary(StrictModel):
 
 
 class SceneAssemblyBundle(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.2.0"] = "0.2.0"
     bundle_id: str = Field(min_length=1)
     bundle_kind: SceneAssemblyBundleKind
     assembly_plan: SceneAssemblyArtifactReference
@@ -6786,12 +6935,11 @@ class SceneAssemblyBundle(StrictModel):
     @model_validator(mode="after")
     def selected_assets_belong_to_bundle(self) -> Self:
         asset_ids = set(self.asset_ids)
-        for decision in self.object_decisions:
-            missing = set(decision.selected_visual_asset_ids) - asset_ids
+        for item in self.object_decisions:
+            missing = set(item.decision.selected_visual_asset_ids) - asset_ids
             if missing:
                 raise ValueError(
-                    f"object {decision.object_id} selects assets absent from bundle: "
-                    f"{sorted(missing)}"
+                    f"object {item.object_id} selects assets absent from bundle: {sorted(missing)}"
                 )
         return self
 
@@ -6799,6 +6947,7 @@ class SceneAssemblyBundle(StrictModel):
 class SceneAssemblyOverlapDiagnostic(StrictModel):
     object_id: str = Field(min_length=1)
     candidate_asset_id: str | None = None
+    candidate_asset_ids: list[str] = Field(default_factory=list)
     measured_anchor_asset_ids: list[str]
     candidate_bounds_assembly: tuple[float, float, float, float, float, float] | None = None
     measured_bounds_assembly: tuple[float, float, float, float, float, float] | None = None
@@ -6808,6 +6957,8 @@ class SceneAssemblyOverlapDiagnostic(StrictModel):
     measured_candidate_distance: float | None = Field(default=None, ge=0)
     units: Literal["meters", "object_relative", "scene_relative"]
     warning: str | None = None
+    per_asset_overlap: dict[str, float | None] = Field(default_factory=dict)
+    unresolved_part_asset_ids: list[str] = Field(default_factory=list)
 
 
 class SceneAssemblyOverlapReport(StrictModel):
@@ -6817,13 +6968,15 @@ class SceneAssemblyOverlapReport(StrictModel):
 
 
 class SceneAssemblyCompilerManifest(StrictModel):
-    schema_version: Literal["0.1.0"] = "0.1.0"
+    schema_version: Literal["0.2.0"] = "0.2.0"
     world: SceneAssemblyWorldRecord
     research_bundle: SceneAssemblyArtifactReference
     deployment_bundle: SceneAssemblyArtifactReference
     assets: list[PlannedAssemblyAsset]
-    object_instances: list[ObjectAssemblyDecision]
-    articulated_hierarchies: dict[str, SceneAssemblyArtifactReference]
+    research_object_instances: list[ObjectAssemblyDecision]
+    deployment_object_instances: list[ObjectAssemblyDecision]
+    research_articulated_hierarchies: dict[str, SceneAssemblySourceReference]
+    deployment_articulated_hierarchies: dict[str, SceneAssemblySourceReference]
     unresolved_objects: list[str]
     missing_collision_assets: list[str]
     missing_physical_properties: list[str]

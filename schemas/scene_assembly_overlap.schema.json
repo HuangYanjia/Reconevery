@@ -15,6 +15,13 @@
           "default": null,
           "title": "Candidate Asset Id"
         },
+        "candidate_asset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Candidate Asset Ids",
+          "type": "array"
+        },
         "candidate_bounds_assembly": {
           "anyOf": [
             {
@@ -136,6 +143,20 @@
           "title": "Object Id",
           "type": "string"
         },
+        "per_asset_overlap": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Per Asset Overlap",
+          "type": "object"
+        },
         "potential_duplicate_geometry_ratio": {
           "anyOf": [
             {
@@ -158,6 +179,13 @@
           ],
           "title": "Units",
           "type": "string"
+        },
+        "unresolved_part_asset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unresolved Part Asset Ids",
+          "type": "array"
         },
         "warning": {
           "anyOf": [

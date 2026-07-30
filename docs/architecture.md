@@ -249,15 +249,16 @@ scene_assembly_inputs
 ```
 
 `scene_assembly_inputs` promotes only typed Scene IR, calibration, geometry,
-selection, evaluation, license, camera, and lineage records. The plan rejects
-unconnected lineages and resolves one of four world modes: canonical metric,
-metric unoriented, gravity-aligned arbitrary scale, or source arbitrary. It
-constructs explicit asset-native, object, source-world, and assembly-world
-transforms.
+selection, evaluation, license, camera, and lineage records. Its source adapter
+derives candidate, representation, validation, license, calibration, and alignment
+semantics from the exact upstream files; local assertions cannot override them. The
+plan rejects unconnected lineages, resolves one of four world modes, and constructs
+explicit asset-native, object, source-world, and assembly-world transforms.
 
 The bundle stage retains source geometry and measured anchors under
 `layered_no_carve_v1`. It emits separate research and deployment-eligible JSON
-bundles, a simulator-neutral compiler input manifest, overlap diagnostics, and a
-derived Scene IR. Heavy geometry loading and diagnostic GLB rendering remain in
-`workers/scene_assembly`; preview changes do not invalidate the deterministic
-assembly plan.
+bundles with independent object decisions, a simulator-neutral compiler input
+manifest with separate research/deployment views, aggregate per-object overlap
+diagnostics, and a derived Scene IR. Heavy geometry loading and diagnostic GLB
+rendering remain in `workers/scene_assembly`; preview changes do not invalidate the
+deterministic assembly plan.

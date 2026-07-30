@@ -11,8 +11,10 @@ from recon2sim.adapters.base import (
     StageResult,
 )
 from recon2sim.artifacts import (
+    BundleObjectAssemblyDecision,
     EndToEndConsistencyCheck,
     ObjectAssemblyDecision,
+    ObjectAssemblyDecisionSet,
     ObjectAssemblyDecisionStatus,
     Phase6BConsistencyReport,
     PlannedAssemblyAsset,
@@ -31,6 +33,7 @@ from recon2sim.artifacts import (
     SceneAssemblyOverlapReport,
     SceneAssemblyPlan,
     SceneAssemblyPreviewManifest,
+    SceneAssemblySourceReference,
 )
 from recon2sim.assembly import (
     IDENTITY_MATRIX4,
@@ -121,80 +124,132 @@ def _candidate_assets(
 def _object_decision(
     item: SceneAssemblyObjectInput,
     assets: dict[str, SceneAssemblyAssetRecord],
-) -> ObjectAssemblyDecision:
+) -> ObjectAssemblyDecisionSet:
     measured_ids = sorted(item.measured_anchor_asset_ids)
+
+    def articulated_source(
+        values: list[SceneAssemblyAssetRecord],
+    ) -> SceneAssemblySourceReference | None:
+        references = [asset.kinematic_bundle for asset in values if asset.kinematic_bundle]
+        identities = {(reference.path, reference.sha256) for reference in references}
+        if len(identities) > 1:
+            raise ValueError("candidate visual links disagree on their kinematic source")
+        return references[0] if references else None
+
+    def unresolved(*, deployment: bool) -> BundleObjectAssemblyDecision:
+        named_candidate_id = (
+            item.preferred_deployment_candidate_id
+            if deployment
+            else item.preferred_research_candidate_id
+        )
+        named_candidates = _candidate_assets(item, assets, named_candidate_id)
+        if named_candidates and any(
+            not (
+                asset.license.production_selectable
+                if deployment
+                else asset.license.research_evaluation_allowed
+            )
+            for asset in named_candidates
+        ):
+            status = ObjectAssemblyDecisionStatus.DEFERRED_LICENSE_BLOCKED
+            reason = "candidate license blocks the requested bundle"
+        elif item.asset_type.value == "articulated":
+            status = ObjectAssemblyDecisionStatus.DEFERRED_ARTICULATED_UNRESOLVED
+            reason = "no articulated visual candidate passed frozen held-out validation"
+        elif measured_ids:
+            status = ObjectAssemblyDecisionStatus.MEASURED_ONLY
+            reason = "measured observation anchor retained without a valid visual completion"
+        elif item.global_context_asset_ids:
+            status = ObjectAssemblyDecisionStatus.GLOBAL_CONTEXT_ONLY
+            reason = "object is represented only by immutable global context"
+        else:
+            status = ObjectAssemblyDecisionStatus.DEFERRED_NO_VALID_CANDIDATE
+            reason = "no validated visual candidate or measured anchor is available"
+        return BundleObjectAssemblyDecision(
+            status=status,
+            rationale=[reason, f"upstream status: {item.upstream_status}"],
+        )
+
     if item.ignored:
-        return ObjectAssemblyDecision(
-            object_id=item.object_id,
+        ignored = BundleObjectAssemblyDecision(
             status=ObjectAssemblyDecisionStatus.IGNORED,
-            measured_anchor_asset_ids=measured_ids,
             rationale=["object is explicitly ignored by the promoted assembly input"],
         )
+        return ObjectAssemblyDecisionSet(
+            object_id=item.object_id,
+            measured_anchor_asset_ids=measured_ids,
+            research_decision=ignored,
+            deployment_decision=ignored,
+            measured_motion=item.measured_motion,
+        )
+
     deployment = _candidate_assets(item, assets, item.preferred_deployment_candidate_id)
+    deployment_decision = unresolved(deployment=True)
     if deployment and all(
         asset.selected_upstream
         and asset.observation_validation_passed
         and asset.license.production_selectable
         for asset in deployment
     ):
-        return ObjectAssemblyDecision(
-            object_id=item.object_id,
+        deployment_decision = BundleObjectAssemblyDecision(
             status=ObjectAssemblyDecisionStatus.SELECTED_DEPLOYMENT_CANDIDATE,
-            measured_anchor_asset_ids=measured_ids,
             selected_candidate_id=item.preferred_deployment_candidate_id,
             selected_visual_asset_ids=[asset.asset_id for asset in deployment],
-            articulated_kinematic_bundle=item.kinematic_bundle,
-            measured_motion=item.measured_motion,
+            articulated_model_source=articulated_source(deployment),
             rationale=[
                 "upstream observation validation passed",
                 "all selected representations are production-selectable",
             ],
         )
+
     research = _candidate_assets(item, assets, item.preferred_research_candidate_id)
+    research_decision = unresolved(deployment=False)
     if research and all(
         asset.selected_upstream
         and asset.observation_validation_passed
         and asset.license.research_evaluation_allowed
         for asset in research
     ):
-        return ObjectAssemblyDecision(
-            object_id=item.object_id,
+        research_decision = BundleObjectAssemblyDecision(
             status=ObjectAssemblyDecisionStatus.SELECTED_RESEARCH_CANDIDATE,
-            measured_anchor_asset_ids=measured_ids,
             selected_candidate_id=item.preferred_research_candidate_id,
             selected_visual_asset_ids=[asset.asset_id for asset in research],
-            articulated_kinematic_bundle=item.kinematic_bundle,
-            measured_motion=item.measured_motion,
+            articulated_model_source=articulated_source(research),
             rationale=[
                 "upstream observation validation passed",
-                "candidate is restricted to the research visual bundle",
+                "candidate is selected independently for the research visual bundle",
             ],
         )
-    named_candidates = deployment or research
-    if named_candidates and any(
-        not asset.license.research_evaluation_allowed for asset in named_candidates
+
+    # A production candidate is valid in research when the upstream research selector
+    # did not nominate a different candidate and research use is permitted.
+    if (
+        item.preferred_research_candidate_id is None
+        and not research
+        and deployment
+        and all(
+            asset.selected_upstream
+            and asset.observation_validation_passed
+            and asset.license.research_evaluation_allowed
+            for asset in deployment
+        )
     ):
-        status = ObjectAssemblyDecisionStatus.DEFERRED_LICENSE_BLOCKED
-        reason = "candidate license blocks the requested visual use"
-    elif item.asset_type.value == "articulated":
-        status = ObjectAssemblyDecisionStatus.DEFERRED_ARTICULATED_UNRESOLVED
-        reason = "no articulated visual candidate passed frozen held-out validation"
-    elif measured_ids:
-        status = ObjectAssemblyDecisionStatus.MEASURED_ONLY
-        reason = "measured observation anchor retained without a valid visual completion"
-    elif item.global_context_asset_ids:
-        status = ObjectAssemblyDecisionStatus.GLOBAL_CONTEXT_ONLY
-        reason = "object is represented only by immutable global context"
-    else:
-        status = ObjectAssemblyDecisionStatus.DEFERRED_NO_VALID_CANDIDATE
-        reason = "no validated visual candidate or measured anchor is available"
-    return ObjectAssemblyDecision(
+        research_decision = BundleObjectAssemblyDecision(
+            status=ObjectAssemblyDecisionStatus.SELECTED_RESEARCH_CANDIDATE,
+            selected_candidate_id=item.preferred_deployment_candidate_id,
+            selected_visual_asset_ids=[asset.asset_id for asset in deployment],
+            articulated_model_source=articulated_source(deployment),
+            rationale=[
+                "upstream production candidate also permits research evaluation",
+            ],
+        )
+
+    return ObjectAssemblyDecisionSet(
         object_id=item.object_id,
-        status=status,
         measured_anchor_asset_ids=measured_ids,
-        articulated_kinematic_bundle=item.kinematic_bundle,
+        research_decision=research_decision,
+        deployment_decision=deployment_decision,
         measured_motion=item.measured_motion,
-        rationale=[reason, f"upstream status: {item.upstream_status}"],
     )
 
 
@@ -300,9 +355,17 @@ class SceneAssemblyPlanAdapter:
                 key=lambda value: value.object_id,
             )
         ]
-        selected_ids = {
-            asset_id for decision in decisions for asset_id in decision.selected_visual_asset_ids
+        research_selected_ids = {
+            asset_id
+            for decision in decisions
+            for asset_id in decision.research_decision.selected_visual_asset_ids
         }
+        deployment_selected_ids = {
+            asset_id
+            for decision in decisions
+            for asset_id in decision.deployment_decision.selected_visual_asset_ids
+        }
+        selected_ids = research_selected_ids | deployment_selected_ids
         measured_assets = {
             asset.asset_id
             for asset in manifest.assets
@@ -337,12 +400,18 @@ class SceneAssemblyPlanAdapter:
             included_research = (
                 asset.asset_id in measured_assets
                 or (asset.asset_id in global_assets and asset.license.research_evaluation_allowed)
-                or (asset.asset_id in selected_ids and asset.license.research_evaluation_allowed)
+                or (
+                    asset.asset_id in research_selected_ids
+                    and asset.license.research_evaluation_allowed
+                )
             )
             included_deployment = (
                 asset.asset_id in measured_assets
                 or (asset.asset_id in global_assets and asset.license.production_selectable)
-                or (asset.asset_id in selected_ids and asset.license.production_selectable)
+                or (
+                    asset.asset_id in deployment_selected_ids
+                    and asset.license.production_selectable
+                )
             )
             reasons: list[str] = []
             if (
@@ -389,7 +458,7 @@ class SceneAssemblyPlanAdapter:
             },
         )
         plan_payload = {
-            "schema_version": "0.1.0",
+            "schema_version": "0.2.0",
             "input_manifest": _artifact_reference(
                 context,
                 "assembly/input_manifest.json",
@@ -480,35 +549,19 @@ def _bundle(
         for layer in plan.layers
         if any(asset_id in selected_ids for asset_id in layer.asset_ids)
     ]
-    decisions = []
-    for decision in plan.decisions:
-        if (
-            deployment
-            and decision.status is ObjectAssemblyDecisionStatus.SELECTED_RESEARCH_CANDIDATE
-        ):
-            decisions.append(
-                decision.model_copy(
-                    update={
-                        "status": (
-                            ObjectAssemblyDecisionStatus.MEASURED_ONLY
-                            if decision.measured_anchor_asset_ids
-                            else ObjectAssemblyDecisionStatus.DEFERRED_LICENSE_BLOCKED
-                        ),
-                        "selected_candidate_id": None,
-                        "selected_visual_asset_ids": [],
-                        "rationale": [
-                            *decision.rationale,
-                            "research candidate excluded from deployment-eligible bundle",
-                        ],
-                    }
-                )
-            )
-        else:
-            decisions.append(decision)
+    decisions = [
+        ObjectAssemblyDecision(
+            object_id=item.object_id,
+            measured_anchor_asset_ids=item.measured_anchor_asset_ids,
+            decision=(item.deployment_decision if deployment else item.research_decision),
+            measured_motion=item.measured_motion,
+        )
+        for item in plan.decisions
+    ]
     unresolved = [
         item.object_id
         for item in decisions
-        if item.status
+        if item.decision.status
         in {
             ObjectAssemblyDecisionStatus.DEFERRED_NO_VALID_CANDIDATE,
             ObjectAssemblyDecisionStatus.DEFERRED_LICENSE_BLOCKED,
@@ -556,28 +609,55 @@ def _overlap_report(plan: SceneAssemblyPlan) -> SceneAssemblyOverlapReport:
     units: Literal["meters", "object_relative", "scene_relative"] = (
         "meters" if plan.world.metric_scale_known else "object_relative"
     )
-    for decision in plan.decisions:
-        items = by_object[decision.object_id]
+
+    def union_bounds(
+        values: list[tuple[float, float, float, float, float, float]],
+    ) -> tuple[float, float, float, float, float, float] | None:
+        if not values:
+            return None
+        return (
+            min(value[0] for value in values),
+            min(value[1] for value in values),
+            min(value[2] for value in values),
+            max(value[3] for value in values),
+            max(value[4] for value in values),
+            max(value[5] for value in values),
+        )
+
+    for decision_set in plan.decisions:
+        items = by_object[decision_set.object_id]
         anchors = [
             item for item in items if item.asset.role is SceneAssemblyAssetRole.MEASURED_ANCHOR
         ]
-        candidate = next(
-            (item for item in items if item.asset.asset_id in decision.selected_visual_asset_ids),
-            None,
+        selected_visual_ids = sorted(
+            set(decision_set.research_decision.selected_visual_asset_ids)
+            | set(decision_set.deployment_decision.selected_visual_asset_ids)
         )
-        measured_bounds = (
-            transformed_bounds(anchors[0].asset.bounds_native, anchors[0].asset_to_assembly_world)
-            if anchors
-            else None
-        )
-        candidate_bounds = (
-            transformed_bounds(
-                candidate.asset.bounds_native,
-                candidate.asset_to_assembly_world,
+        candidates = [item for item in items if item.asset.asset_id in set(selected_visual_ids)]
+        anchor_bounds = [
+            value
+            for item in anchors
+            if (
+                value := transformed_bounds(
+                    item.asset.bounds_native,
+                    item.asset_to_assembly_world,
+                )
             )
-            if candidate
-            else None
-        )
+            is not None
+        ]
+        candidate_asset_bounds = {
+            item.asset.asset_id: value
+            for item in candidates
+            if (
+                value := transformed_bounds(
+                    item.asset.bounds_native,
+                    item.asset_to_assembly_world,
+                )
+            )
+            is not None
+        }
+        measured_bounds = union_bounds(anchor_bounds)
+        candidate_bounds = union_bounds(list(candidate_asset_bounds.values()))
         overlap = bounds_overlap_ratio(candidate_bounds, measured_bounds)
         global_overlap = bounds_overlap_ratio(candidate_bounds, global_bounds)
         distance = bounds_center_distance(candidate_bounds, measured_bounds)
@@ -591,8 +671,11 @@ def _overlap_report(plan: SceneAssemblyPlan) -> SceneAssemblyOverlapReport:
             distance = distance / diagonal if diagonal > 0 else None
         diagnostics.append(
             SceneAssemblyOverlapDiagnostic(
-                object_id=decision.object_id,
-                candidate_asset_id=candidate.asset.asset_id if candidate else None,
+                object_id=decision_set.object_id,
+                candidate_asset_id=selected_visual_ids[0]
+                if len(selected_visual_ids) == 1
+                else None,
+                candidate_asset_ids=selected_visual_ids,
                 measured_anchor_asset_ids=[item.asset.asset_id for item in anchors],
                 candidate_bounds_assembly=candidate_bounds,
                 measured_bounds_assembly=measured_bounds,
@@ -607,9 +690,18 @@ def _overlap_report(plan: SceneAssemblyPlan) -> SceneAssemblyOverlapReport:
                 units=units,
                 warning=(
                     "layered_no_carve_v1 retains possible duplicate global/object geometry"
-                    if candidate is not None
+                    if candidates
                     else None
                 ),
+                per_asset_overlap={
+                    asset_id: bounds_overlap_ratio(bounds, measured_bounds)
+                    for asset_id, bounds in sorted(candidate_asset_bounds.items())
+                },
+                unresolved_part_asset_ids=[
+                    asset_id
+                    for asset_id in selected_visual_ids
+                    if asset_id not in candidate_asset_bounds
+                ],
             )
         )
     return SceneAssemblyOverlapReport(diagnostics=diagnostics)
@@ -724,10 +816,15 @@ class LayeredSceneBundleAdapter:
             context.path("assembly/deployment_eligible_visual_bundle.json"),
             deployment,
         )
-        articulated = {
-            decision.object_id: decision.articulated_kinematic_bundle
+        research_articulated = {
+            decision.object_id: decision.research_decision.articulated_model_source
             for decision in plan.decisions
-            if decision.articulated_kinematic_bundle is not None
+            if decision.research_decision.articulated_model_source is not None
+        }
+        deployment_articulated = {
+            decision.object_id: decision.deployment_decision.articulated_model_source
+            for decision in plan.decisions
+            if decision.deployment_decision.articulated_model_source is not None
         }
         unresolved = sorted(
             set(research.unresolved_object_ids) | set(deployment.unresolved_object_ids)
@@ -747,8 +844,10 @@ class LayeredSceneBundleAdapter:
                 for item in plan.assets
                 if item.included_in_research or item.included_in_deployment
             ],
-            object_instances=plan.decisions,
-            articulated_hierarchies=articulated,
+            research_object_instances=research.object_decisions,
+            deployment_object_instances=deployment.object_decisions,
+            research_articulated_hierarchies=research_articulated,
+            deployment_articulated_hierarchies=deployment_articulated,
             unresolved_objects=unresolved,
             missing_collision_assets=sorted(item.object_id for item in plan.decisions),
             missing_physical_properties=sorted(item.object_id for item in plan.decisions),
@@ -895,8 +994,12 @@ class Phase6BConsistencyValidationAdapter:
                 reference
                 for asset in manifest.assets
                 for reference in (
+                    asset.candidate_selection,
                     asset.candidate_evaluation,
+                    asset.candidate_generation,
+                    asset.measured_geometry,
                     asset.kinematic_bundle,
+                    asset.license_source_record,
                     asset.license.source_record,
                 )
             ),
@@ -904,6 +1007,17 @@ class Phase6BConsistencyValidationAdapter:
                 reference
                 for item in manifest.objects
                 for reference in (
+                    item.rigid_selection_artifact,
+                    item.rigid_evaluation_artifact,
+                    item.rigid_registration_artifact,
+                    *item.rigid_generation_artifacts,
+                    *item.representation_parity_artifacts,
+                    item.articulated_selection_artifact,
+                    item.articulated_candidate_manifest,
+                    item.articulated_evaluation_artifact,
+                    item.articulated_fitting_artifact,
+                    item.articulated_link_assignment_artifact,
+                    item.selected_identity_manifest,
                     item.measured_motion,
                     item.kinematic_bundle,
                 )
@@ -993,8 +1107,12 @@ class Phase6BConsistencyValidationAdapter:
                 reference
                 for asset in manifest.assets
                 for reference in (
+                    asset.candidate_selection,
                     asset.candidate_evaluation,
+                    asset.candidate_generation,
+                    asset.measured_geometry,
                     asset.kinematic_bundle,
+                    asset.license_source_record,
                     asset.license.source_record,
                 )
             ),
@@ -1002,6 +1120,17 @@ class Phase6BConsistencyValidationAdapter:
                 reference
                 for object_input in manifest.objects
                 for reference in (
+                    object_input.rigid_selection_artifact,
+                    object_input.rigid_evaluation_artifact,
+                    object_input.rigid_registration_artifact,
+                    *object_input.rigid_generation_artifacts,
+                    *object_input.representation_parity_artifacts,
+                    object_input.articulated_selection_artifact,
+                    object_input.articulated_candidate_manifest,
+                    object_input.articulated_evaluation_artifact,
+                    object_input.articulated_fitting_artifact,
+                    object_input.articulated_link_assignment_artifact,
+                    object_input.selected_identity_manifest,
                     object_input.measured_motion,
                     object_input.kinematic_bundle,
                 )
@@ -1034,7 +1163,10 @@ class Phase6BConsistencyValidationAdapter:
         selected_assets = {
             asset_id
             for decision in plan.decisions
-            for asset_id in decision.selected_visual_asset_ids
+            for asset_id in (
+                decision.research_decision.selected_visual_asset_ids
+                + decision.deployment_decision.selected_visual_asset_ids
+            )
         }
         by_id = {item.asset.asset_id: item for item in plan.assets}
         selected_valid = all(
@@ -1058,7 +1190,80 @@ class Phase6BConsistencyValidationAdapter:
             or by_id[asset_id].asset.role is SceneAssemblyAssetRole.MEASURED_ANCHOR
             for asset_id in deployment.asset_ids
         )
-        bundle_subset = set(deployment.asset_ids) <= set(research.asset_ids)
+        research_decisions_match = compiler.research_object_instances == research.object_decisions
+        deployment_decisions_match = (
+            compiler.deployment_object_instances == deployment.object_decisions
+        )
+        manifest_assets = {item.asset_id: item for item in manifest.assets}
+        source_derived_decisions = [
+            _object_decision(item, manifest_assets)
+            for item in sorted(manifest.objects, key=lambda value: value.object_id)
+        ]
+        plan_decisions_source_bound = plan.decisions == source_derived_decisions
+        expected_research_articulated = {
+            item.object_id: item.research_decision.articulated_model_source
+            for item in source_derived_decisions
+            if item.research_decision.articulated_model_source is not None
+        }
+        expected_deployment_articulated = {
+            item.object_id: item.deployment_decision.articulated_model_source
+            for item in source_derived_decisions
+            if item.deployment_decision.articulated_model_source is not None
+        }
+        compiler_articulated_sources_match = (
+            compiler.research_articulated_hierarchies == expected_research_articulated
+            and compiler.deployment_articulated_hierarchies == expected_deployment_articulated
+        )
+        objects_by_id = {item.object_id: item for item in manifest.objects}
+        object_asset_binding = all(
+            asset.object_id is None
+            or (
+                asset.object_id in objects_by_id
+                and asset.lineage_id in connected
+                and objects_by_id[asset.object_id].lineage_id in connected
+            )
+            for asset in manifest.assets
+        )
+        candidate_source_binding = all(
+            (
+                asset.candidate_selection is not None
+                and asset.candidate_evaluation is not None
+                and asset.candidate_generation is not None
+                and asset.representation_id is not None
+            )
+            if asset.role
+            in {
+                SceneAssemblyAssetRole.VISUAL_COMPLETION,
+                SceneAssemblyAssetRole.ARTICULATED_VISUAL,
+            }
+            else True
+            for asset in manifest.assets
+        )
+        license_source_binding = all(
+            asset.license.source_record == asset.license_source_record
+            for asset in manifest.assets
+            if asset.license_source_record is not None
+        )
+        overlap_by_object = {item.object_id: item for item in overlap.diagnostics}
+        derived_by_object = {item.object_id: item for item in source_derived_decisions}
+        overlap_aggregation_complete = all(
+            item.object_id in overlap_by_object
+            and overlap_by_object[item.object_id].measured_anchor_asset_ids
+            == sorted(item.measured_anchor_asset_ids)
+            and overlap_by_object[item.object_id].candidate_asset_ids
+            == sorted(
+                set(derived_by_object[item.object_id].research_decision.selected_visual_asset_ids)
+                | set(
+                    derived_by_object[item.object_id].deployment_decision.selected_visual_asset_ids
+                )
+            )
+            and (
+                set(overlap_by_object[item.object_id].per_asset_overlap)
+                | set(overlap_by_object[item.object_id].unresolved_part_asset_ids)
+            )
+            == set(overlap_by_object[item.object_id].candidate_asset_ids)
+            for item in manifest.objects
+        )
         transforms_ok = True
         no_double_transform = True
         for item in plan.assets:
@@ -1073,15 +1278,16 @@ class Phase6BConsistencyValidationAdapter:
                     and _is_identity(item.asset.object_to_source_world)
                 )
         articulation_ok = all(
-            decision.articulated_kinematic_bundle is None
+            reference is None
             or (
-                context.path(*decision.articulated_kinematic_bundle.path.split("/")).is_file()
-                and sha256_file(
-                    context.path(*decision.articulated_kinematic_bundle.path.split("/"))
-                )
-                == decision.articulated_kinematic_bundle.sha256
+                context.path(*reference.path.split("/")).is_file()
+                and sha256_file(context.path(*reference.path.split("/"))) == reference.sha256
             )
             for decision in plan.decisions
+            for reference in (
+                decision.research_decision.articulated_model_source,
+                decision.deployment_decision.articulated_model_source,
+            )
         )
         compiler_refs = (
             compiler.research_bundle.sha256
@@ -1096,6 +1302,8 @@ class Phase6BConsistencyValidationAdapter:
                 for item in compiler.assets
                 if not item.included_in_deployment
             )
+            and research_decisions_match
+            and deployment_decisions_match
         )
         assembly_references_ok = (
             plan.input_manifest.sha256 == sha256_file(context.path(plan.input_manifest.path))
@@ -1183,9 +1391,39 @@ class Phase6BConsistencyValidationAdapter:
                 "deployment bundle contains no unapproved candidate assets",
             ),
             _check(
-                "bundle_license_split",
-                bundle_subset,
-                "deployment assets are a policy-constrained subset of research assets",
+                "source_derived_bundle_decisions",
+                plan_decisions_source_bound,
+                "research and deployment choices are independently rederived from source inputs",
+            ),
+            _check(
+                "compiler_research_decisions",
+                research_decisions_match,
+                "compiler research decisions exactly match the research bundle",
+            ),
+            _check(
+                "compiler_deployment_decisions",
+                deployment_decisions_match,
+                "compiler deployment decisions exactly match the deployment bundle",
+            ),
+            _check(
+                "compiler_articulated_sources",
+                compiler_articulated_sources_match,
+                "compiler articulated hierarchies use each bundle's exact fitted source",
+            ),
+            _check(
+                "object_asset_source_binding",
+                object_asset_binding,
+                "object assets match their normalized object and lineage identities",
+            ),
+            _check(
+                "candidate_source_binding",
+                candidate_source_binding,
+                "candidate validation and representation identities have typed source references",
+            ),
+            _check(
+                "license_source_binding",
+                license_source_binding,
+                "normalized license policy matches its exact source record",
             ),
             _check(
                 "global_mesh_immutable",
@@ -1214,8 +1452,8 @@ class Phase6BConsistencyValidationAdapter:
             ),
             _check(
                 "overlap_diagnostics",
-                len(overlap.diagnostics) == len(plan.decisions),
-                "every object has a non-destructive overlap diagnostic",
+                overlap_aggregation_complete,
+                "every object's overlap diagnostic covers all anchors and selected visual parts",
             ),
             _check(
                 "compiler_manifest_identity",

@@ -165,6 +165,9 @@ Full, partial, rejected, and absent Phase 6A calibration must map to distinct wo
 modes without false metric or canonical claims. Keep global context immutable under
 `layered_no_carve_v1`; retain measured anchors even when a validated visual
 candidate is layered. Research-only and unreviewed assets must be absent from the
-deployment-eligible bundle. Never insert rejected candidates, double-apply world or
-articulated transforms, generate collision/physics data, run SceneSmith, or mark a
-Phase 6B bundle simulation-ready.
+deployment-eligible bundle. Derive separate research and deployment decisions from
+exact upstream selection, evaluation, representation, license, camera, alignment,
+and calibration artifacts; local manifests may only point to or redundantly assert
+those values. Never insert rejected candidates, double-apply world or articulated
+transforms, generate collision/physics data, run SceneSmith, or mark a Phase 6B
+bundle simulation-ready.

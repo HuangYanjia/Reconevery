@@ -189,3 +189,9 @@ The Scene IR is visual-only. It records unresolved objects, candidate evaluation
 and license exclusions while keeping `collision_ready=false`,
 `physical_validation=not_implemented`, and `sim_ready=false`. Diagnostic preview
 GLBs are not canonical geometry or future collision inputs.
+
+The referenced plan and compiler manifest preserve independent research and
+deployment object decisions. Candidate identity, representation, license, fitted
+articulation, lineage, and calibration values are normalized from exact upstream
+typed artifacts. Scene IR references never promote a local manifest assertion into
+selection or calibration evidence.

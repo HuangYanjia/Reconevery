@@ -353,8 +353,12 @@ semantics.
 
 Two canonical JSON bundles are emitted: a research visual bundle and a stricter
 deployment-eligible bundle. Research-only or unreviewed assets never enter the
-deployment bundle. Preview GLBs are diagnostics; the compiler input manifest is
-simulator-neutral and contains no collisions or physical properties.
+deployment bundle. Each bundle has its own source-derived object decision, so a
+validated research candidate may differ from the validated production candidate.
+Rigid and articulated candidates, licenses, representations, calibration, and
+lineage transforms are resolved from exact upstream typed artifacts rather than
+local Boolean assertions. Preview GLBs are diagnostics; the compiler input manifest
+is simulator-neutral and contains no collisions or physical properties.
 
 ```bash
 uv run recon2sim run \

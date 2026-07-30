@@ -2741,7 +2741,11 @@ def inspect_assembly_object(
     decision = next((item for item in plan.decisions if item.object_id == object_id), None)
     if decision is None:
         raise typer.BadParameter(f"assembly has no object {object_id!r}")
-    asset_ids = set(decision.measured_anchor_asset_ids + decision.selected_visual_asset_ids)
+    asset_ids = set(
+        decision.measured_anchor_asset_ids
+        + decision.research_decision.selected_visual_asset_ids
+        + decision.deployment_decision.selected_visual_asset_ids
+    )
     assets = [
         item.model_dump(mode="json") for item in plan.assets if item.asset.asset_id in asset_ids
     ]
@@ -2771,9 +2775,8 @@ def explain_assembly_object(
         json.dumps(
             {
                 "object_id": decision.object_id,
-                "status": decision.status,
-                "rationale": decision.rationale,
-                "selected_candidate_id": decision.selected_candidate_id,
+                "research_decision": decision.research_decision.model_dump(mode="json"),
+                "deployment_decision": decision.deployment_decision.model_dump(mode="json"),
                 "measured_anchor_asset_ids": decision.measured_anchor_asset_ids,
             },
             indent=2,

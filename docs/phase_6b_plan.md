@@ -41,10 +41,15 @@ scene_assembly_inputs
 ```
 
 `scene_assembly_inputs` selectively materializes only declared typed artifacts and
-visual assets. Machine-local paths are removed from the canonical manifest.
+visual assets. Machine-local paths are removed from the canonical manifest. A
+source normalization pass parses exact Phase 5B rigid selection/evaluation/native
+representation records, Phase 5C selected/fitted/evaluated articulation records,
+license sources, cameras, accepted alignments, and Phase 6A calibration/wrapper
+records. Duplicated local semantic flags are rejected on disagreement.
 
 `scene_assembly_plan` validates one coherent lineage, resolves the optional
-calibration policy, chooses one primary visual decision per object, and composes:
+calibration policy, chooses independent research and deployment visual decisions
+per object, and composes:
 
 ```text
 asset_to_assembly_world =
@@ -81,7 +86,8 @@ root is not lineage evidence.
 
 ## Object Decisions
 
-Each object receives exactly one deterministic decision:
+Each object receives a decision set with one deterministic research decision and
+one deterministic deployment decision:
 
 ```text
 selected_deployment_candidate
@@ -96,7 +102,14 @@ ignored
 
 Measured anchors are retained even when a visual completion is selected. A research
 candidate must have passed its observation-validation gates and permit research
-evaluation. A deployment candidate must additionally be production-selectable.
+evaluation. A deployment candidate must additionally be production-selectable. The
+two selected candidate IDs may differ. The compiler manifest repeats the two
+bundle-local decision and articulated hierarchy views explicitly.
+
+Measured reconstruction assets use the explicit project-owned
+`user_measured_evidence` rights policy unless a future promoted measured-rights
+record replaces it. Candidate and global-context rights are always derived from
+their exact upstream license-bearing artifact.
 
 ## Outputs
 

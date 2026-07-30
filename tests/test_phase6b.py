@@ -15,7 +15,8 @@ from recon2sim.artifacts import (
     SceneAssemblyOverlapReport,
     SceneAssemblyPlan,
 )
-from recon2sim.assembly import multiply_matrix4, transform_point
+from recon2sim.assembly import IDENTITY_MATRIX4, multiply_matrix4, transform_point
+from recon2sim.assembly_sources import normalize_assembly_manifest
 from recon2sim.calibration import sha256_file
 from recon2sim.cli import app
 from recon2sim.config import PipelineConfig, load_config
@@ -25,6 +26,9 @@ from recon2sim.pipeline import PipelineRunner
 ROOT = Path(__file__).resolve().parents[1]
 INPUT = ROOT / "examples/tabletop"
 CONFIG = ROOT / "configs/phase6b_e2e_fake.yaml"
+PHASE5B_CONFIG = ROOT / "configs/phase5b_e2e_fake.yaml"
+PHASE5C_CONFIG = ROOT / "configs/phase5c_e2e_fake.yaml"
+PHASE6A_CONFIG = ROOT / "configs/phase6a_e2e_fake.yaml"
 
 
 def _config(
@@ -42,6 +46,371 @@ def _run(tmp_path: Path, mode: str, *, preview_mode: str = "success") -> Path:
     run_dir = tmp_path / mode
     PipelineRunner(_config(mode, preview_mode=preview_mode), INPUT, run_dir).run()
     return run_dir
+
+
+@pytest.fixture(scope="module")
+def phase5b_source_run(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    run_dir = tmp_path_factory.mktemp("phase6b-source-binding")
+    PipelineRunner(load_config(PHASE5B_CONFIG), INPUT, run_dir).run()
+    return run_dir
+
+
+@pytest.fixture(scope="module")
+def phase6a_source_run(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    run_dir = tmp_path_factory.mktemp("phase6b-calibration-binding")
+    PipelineRunner(load_config(PHASE6A_CONFIG), INPUT, run_dir).run()
+    return run_dir
+
+
+@pytest.fixture(scope="module")
+def phase5c_source_run(
+    tmp_path_factory: pytest.TempPathFactory,
+    phase5b_source_run: Path,
+) -> Path:
+    run_dir = tmp_path_factory.mktemp("phase6b-articulated-source-binding")
+    PipelineRunner(load_config(PHASE5C_CONFIG), INPUT, run_dir).run()
+    _materialize_phase5c_camera(run_dir, phase5b_source_run)
+    return run_dir
+
+
+@pytest.fixture(scope="module")
+def phase5c_rejected_source_run(
+    tmp_path_factory: pytest.TempPathFactory,
+    phase5b_source_run: Path,
+) -> Path:
+    config = load_config(PHASE5C_CONFIG)
+    stage = config.stages["articulation_evaluation"]
+    adapter = stage.adapter.model_copy(
+        update={"config": {**stage.adapter.config, "fake_mode": "missing_heldout_views"}}
+    )
+    config = config.model_copy(
+        update={
+            "stages": {
+                **config.stages,
+                "articulation_evaluation": stage.model_copy(update={"adapter": adapter}),
+            }
+        }
+    )
+    run_dir = tmp_path_factory.mktemp("phase6b-articulated-rejected-binding")
+    PipelineRunner(config, INPUT, run_dir).run()
+    _materialize_phase5c_camera(run_dir, phase5b_source_run)
+    return run_dir
+
+
+def _source_ref(
+    root: Path,
+    path: str,
+    artifact_type: str,
+) -> dict[str, str]:
+    return {
+        "path": path,
+        "sha256": sha256_file(root / path),
+        "artifact_type": artifact_type,
+    }
+
+
+def _materialize_phase5c_camera(root: Path, template_root: Path) -> None:
+    capture = json.loads(
+        (root / "reconstruction/articulation/capture_manifest.json").read_text(encoding="utf-8")
+    )
+    template = json.loads(
+        (template_root / "camera/reconstruction.json").read_text(encoding="utf-8")
+    )
+    for state in capture["states"]:
+        camera = json.loads(json.dumps(template, sort_keys=True))
+        frame_ids = state["registered_frame_ids"]
+        template_pose = camera["poses"][0]
+        camera["poses"] = [json.loads(json.dumps(template_pose, sort_keys=True)) for _ in frame_ids]
+        for pose, frame_id in zip(camera["poses"], frame_ids, strict=True):
+            pose["frame_id"] = frame_id
+        camera["registered_frame_ids"] = frame_ids
+        camera["unregistered_frame_ids"] = []
+        camera["frame_sequence_digest"] = state["frame_sequence_digest"]
+        path = root / f"assembly_binding/{state['state_id']}_camera_reconstruction.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(camera, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+
+
+def _rigid_source_manifest(root: Path) -> dict[str, object]:
+    selection_path = "reconstruction/completion/selection.json"
+    evaluation_path = "reconstruction/completion/evaluation_manifest.json"
+    registration_path = "reconstruction/completion/registration_manifest.json"
+    generation_paths = [
+        "reconstruction/completion/sam3d_generation_manifest.json",
+        "reconstruction/completion/trellis2_generation_manifest.json",
+        "reconstruction/completion/measured_generation_manifest.json",
+    ]
+    selection = json.loads((root / selection_path).read_text(encoding="utf-8"))
+    selected = next(
+        item for item in selection["objects"] if item["best_research_candidate"] is not None
+    )
+    candidate_id = selected["best_research_candidate"]
+    evaluation = json.loads((root / evaluation_path).read_text(encoding="utf-8"))
+    evaluated = next(
+        item for item in evaluation["evaluations"] if item["candidate_id"] == candidate_id
+    )
+    generation_path = next(
+        path
+        for path in generation_paths
+        if any(
+            item["candidate_id"] == candidate_id
+            for item in json.loads((root / path).read_text(encoding="utf-8"))["candidates"]
+        )
+    )
+    generation = json.loads((root / generation_path).read_text(encoding="utf-8"))
+    candidate = next(
+        item for item in generation["candidates"] if item["candidate_id"] == candidate_id
+    )
+    native = next(
+        item
+        for item in candidate["native_assets"]
+        if item["asset_id"] == evaluated["selection_asset_id"]
+    )
+    measured_path = "reconstruction/measured_objects/geometry_manifest.json"
+    measured = json.loads((root / measured_path).read_text(encoding="utf-8"))
+    hypothesis = next(
+        item for item in measured["hypotheses"] if item["object_id"] == selected["object_id"]
+    )
+    point_cloud = hypothesis["point_cloud"]
+    assert point_cloud is not None
+    identity = list(
+        (
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        )
+    )
+    camera_ref = _source_ref(root, "camera/reconstruction.json", "camera_reconstruction")
+    scene_ref = _source_ref(root, "scene_ir/phase5b_scene.json", "source_scene_ir")
+    selection_ref = _source_ref(root, selection_path, "rigid_selection")
+    evaluation_ref = _source_ref(root, evaluation_path, "rigid_evaluation")
+    registration_ref = _source_ref(root, registration_path, "rigid_registration")
+    generation_refs = [_source_ref(root, path, "rigid_generation") for path in generation_paths]
+    return {
+        "schema_version": "0.2.0",
+        "assembly_id": "source_binding",
+        "primary_lineage_id": "lineage",
+        "lineages": [
+            {
+                "lineage_id": "lineage",
+                "camera_reconstruction": camera_ref,
+                "source_scene_ir": scene_ref,
+            }
+        ],
+        "source_scene_ir": scene_ref,
+        "assets": [
+            {
+                "asset_id": "measured",
+                "object_id": selected["object_id"],
+                "lineage_id": "lineage",
+                "role": "measured_anchor",
+                "asset_path": point_cloud["relative_path"],
+                "source_native_asset_path": point_cloud["relative_path"],
+                "asset_sha256": point_cloud["sha256"],
+                "format": "ply",
+                "asset_to_object": identity,
+                "object_to_source_world": identity,
+                "measured_geometry": _source_ref(
+                    root,
+                    measured_path,
+                    "measured_geometry",
+                ),
+            },
+            {
+                "asset_id": "candidate",
+                "object_id": selected["object_id"],
+                "lineage_id": "lineage",
+                "role": "visual_completion",
+                "asset_path": native["relative_path"],
+                "asset_sha256": native["sha256"],
+                "format": "glb" if native["relative_path"].endswith(".glb") else "ply",
+                "candidate_id": candidate_id,
+            },
+        ],
+        "objects": [
+            {
+                "object_id": selected["object_id"],
+                "lineage_id": "lineage",
+                "asset_type": "rigid",
+                "measured_anchor_asset_ids": ["measured"],
+                "candidate_asset_ids": ["candidate"],
+                "rigid_selection_artifact": selection_ref,
+                "rigid_evaluation_artifact": evaluation_ref,
+                "rigid_registration_artifact": registration_ref,
+                "rigid_generation_artifacts": generation_refs,
+            }
+        ],
+    }
+
+
+def _articulated_source_manifest(root: Path) -> dict[str, object]:
+    articulation_root = Path("reconstruction/articulation")
+    selection_path = str(articulation_root / "selection.json")
+    candidate_path = str(articulation_root / "candidate_manifest.json")
+    evaluation_path = str(articulation_root / "evaluation_manifest.json")
+    fitting_path = str(articulation_root / "fitting_manifest.json")
+    assignment_path = str(articulation_root / "link_assignments.json")
+    measured_path = str(articulation_root / "measured_states/manifest.json")
+    motion_path = str(articulation_root / "measured_motion.json")
+    selection = json.loads((root / selection_path).read_text(encoding="utf-8"))
+    selected = selection["objects"][0]
+    candidate_manifest = json.loads((root / candidate_path).read_text(encoding="utf-8"))
+    candidate_id = selected["best_research_articulated_candidate"]
+    if candidate_id is None:
+        candidate_id = next(
+            item["candidate_id"]
+            for item in candidate_manifest["candidates"]
+            if item["source_family"] == "artvip"
+        )
+    candidate = next(
+        item for item in candidate_manifest["candidates"] if item["candidate_id"] == candidate_id
+    )
+    measured_manifest = json.loads((root / measured_path).read_text(encoding="utf-8"))
+    measured = next(
+        item
+        for item in measured_manifest["geometries"]
+        if item["articulated_object_id"] == selected["articulated_object_id"]
+        and item["state_id"] == "state_000"
+        and item["part_id"] == "cabinet_body"
+    )
+    camera_path = "assembly_binding/state_000_camera_reconstruction.json"
+    camera_ref = _source_ref(root, camera_path, "camera_reconstruction")
+    scene_ref = _source_ref(root, "scene_ir/phase5c_scene.json", "source_scene_ir")
+    assets: list[dict[str, object]] = [
+        {
+            "asset_id": "cabinet_body_measured",
+            "object_id": selected["articulated_object_id"],
+            "part_id": "cabinet_body",
+            "lineage_id": "lineage",
+            "role": "measured_anchor",
+            "asset_path": measured["measured_point_cloud_path"],
+            "source_native_asset_path": measured["measured_point_cloud_path"],
+            "asset_sha256": measured["measured_point_cloud_sha256"],
+            "format": "ply",
+            "asset_to_object": list(IDENTITY_MATRIX4),
+            "object_to_source_world": list(IDENTITY_MATRIX4),
+            "measured_geometry": _source_ref(root, measured_path, "measured_geometry"),
+        }
+    ]
+    candidate_asset_ids: list[str] = []
+    for link in candidate["links"]:
+        for index, path in enumerate(link["visual_asset_paths"]):
+            asset_id = f"candidate_{link['link_id']}_{index}"
+            candidate_asset_ids.append(asset_id)
+            assets.append(
+                {
+                    "asset_id": asset_id,
+                    "object_id": selected["articulated_object_id"],
+                    "lineage_id": "lineage",
+                    "role": "articulated_visual",
+                    "asset_path": path,
+                    "asset_sha256": link["visual_asset_hashes"][path],
+                    "format": "glb" if path.endswith(".glb") else "ply",
+                    "candidate_id": candidate_id,
+                    "link_id": link["link_id"],
+                }
+            )
+    object_input: dict[str, object] = {
+        "object_id": selected["articulated_object_id"],
+        "lineage_id": "lineage",
+        "asset_type": "articulated",
+        "measured_anchor_asset_ids": ["cabinet_body_measured"],
+        "candidate_asset_ids": candidate_asset_ids,
+        "articulated_selection_artifact": _source_ref(
+            root, selection_path, "articulated_selection"
+        ),
+        "articulated_candidate_manifest": _source_ref(
+            root, candidate_path, "articulated_candidate_manifest"
+        ),
+        "articulated_evaluation_artifact": _source_ref(
+            root, evaluation_path, "articulated_evaluation"
+        ),
+        "articulated_fitting_artifact": _source_ref(root, fitting_path, "articulated_fitting"),
+        "articulated_link_assignment_artifact": _source_ref(
+            root, assignment_path, "articulated_link_assignment"
+        ),
+        "measured_motion": _source_ref(root, motion_path, "measured_motion"),
+    }
+    if selected["selected_candidate_id"] is not None:
+        object_input["selected_identity_manifest"] = _source_ref(
+            root,
+            selected["selected_identity_manifest_path"],
+            "selected_identity_manifest",
+        )
+        object_input["kinematic_bundle"] = _source_ref(
+            root,
+            selected["kinematic_bundle_path"],
+            "kinematic_bundle",
+        )
+    return {
+        "schema_version": "0.2.0",
+        "assembly_id": "articulated_source_binding",
+        "primary_lineage_id": "lineage",
+        "lineages": [
+            {
+                "lineage_id": "lineage",
+                "camera_reconstruction": camera_ref,
+                "source_scene_ir": scene_ref,
+            }
+        ],
+        "source_scene_ir": scene_ref,
+        "assets": assets,
+        "objects": [object_input],
+    }
+
+
+def _calibration_source_manifest(root: Path) -> dict[str, object]:
+    camera_ref = _source_ref(
+        root,
+        "calibration/source/camera_reconstruction.json",
+        "camera_reconstruction",
+    )
+    scene_ref = _source_ref(
+        root,
+        "calibration/source/scene_ir.json",
+        "source_scene_ir",
+    )
+    return {
+        "schema_version": "0.2.0",
+        "assembly_id": "calibration_binding",
+        "primary_lineage_id": "lineage",
+        "lineages": [
+            {
+                "lineage_id": "lineage",
+                "camera_reconstruction": camera_ref,
+                "source_scene_ir": scene_ref,
+            }
+        ],
+        "source_scene_ir": scene_ref,
+        "calibration_artifact": _source_ref(
+            root,
+            "calibration/world_calibration.json",
+            "world_calibration",
+        ),
+        "canonical_wrapper": _source_ref(
+            root,
+            "calibration/canonical_scene_wrapper.json",
+            "canonical_wrapper",
+        ),
+        "assets": [],
+        "objects": [],
+    }
 
 
 @pytest.mark.parametrize(
@@ -92,14 +461,14 @@ def test_fake_phase6b_dag_dual_bundle_resume_and_cli(tmp_path: Path) -> None:
     deployment_decision = next(
         item for item in deployment.object_decisions if item.object_id == "cup_0001"
     )
-    assert deployment_decision.status.value == "measured_only"
-    assert deployment_decision.selected_candidate_id is None
-    assert deployment_decision.selected_visual_asset_ids == []
+    assert deployment_decision.decision.status.value == "measured_only"
+    assert deployment_decision.decision.selected_candidate_id is None
+    assert deployment_decision.decision.selected_visual_asset_ids == []
     report = Phase6BConsistencyReport.model_validate_json(
         (run_dir / "validation/phase6b_layered_scene_assembly.json").read_text(encoding="utf-8")
     )
     assert report.passed
-    assert len(report.checks) == 25
+    assert len(report.checks) == 31
     assert report.visual_scene_assembled
     assert not report.collision_generation_implemented
     assert not report.physics_identification_implemented
@@ -111,7 +480,9 @@ def test_fake_phase6b_dag_dual_bundle_resume_and_cli(tmp_path: Path) -> None:
     assert verify.exit_code == 0, verify.output
     inspect = cli.invoke(app, ["assembly", "inspect-object", str(run_dir), "cup_0001"])
     assert inspect.exit_code == 0, inspect.output
-    assert json.loads(inspect.output)["decision"]["selected_candidate_id"] == "cup_candidate"
+    inspected = json.loads(inspect.output)["decision"]
+    assert inspected["research_decision"]["selected_candidate_id"] == "cup_candidate"
+    assert inspected["deployment_decision"]["selected_candidate_id"] is None
     previews = cli.invoke(app, ["assembly", "render-previews", str(run_dir)])
     assert previews.exit_code == 0, previews.output
 
@@ -143,9 +514,9 @@ def test_measured_anchor_retained_when_articulated_candidate_rejected(
         (run_dir / "assembly/assembly_plan.json").read_text(encoding="utf-8")
     )
     decision = plan.decisions[0]
-    assert decision.status.value == "deferred_articulated_unresolved"
+    assert decision.research_decision.status.value == "deferred_articulated_unresolved"
     assert decision.measured_motion is not None
-    assert decision.selected_visual_asset_ids == []
+    assert decision.research_decision.selected_visual_asset_ids == []
     for name in ("research_visual_bundle.json", "deployment_eligible_visual_bundle.json"):
         bundle = SceneAssemblyBundle.model_validate_json(
             (run_dir / "assembly" / name).read_text(encoding="utf-8")
@@ -192,9 +563,10 @@ def test_link_local_transform_and_articulation_are_preserved(tmp_path: Path) -> 
     assert candidate.asset_to_assembly_world == expected
     assert transform_point(expected, (0.0, 0.0, 0.0)) == (2.0, 3.25, 4.0)
     decision = plan.decisions[0]
-    assert decision.articulated_kinematic_bundle is not None
-    kinematic_path = run_dir / decision.articulated_kinematic_bundle.path
-    assert sha256_file(kinematic_path) == decision.articulated_kinematic_bundle.sha256
+    source = decision.research_decision.articulated_model_source
+    assert source is not None
+    kinematic_path = run_dir / source.path
+    assert sha256_file(kinematic_path) == source.sha256
     kinematic = json.loads(kinematic_path.read_text(encoding="utf-8"))
     assert kinematic["joints"] == [{"joint_id": "drawer_joint", "joint_type": "prismatic"}]
     assert kinematic["prismatic_position_scale_to_m"] == 2.0
@@ -219,8 +591,8 @@ def test_license_blocked_candidate_is_not_inserted(tmp_path: Path) -> None:
     plan = SceneAssemblyPlan.model_validate_json(
         (run_dir / "assembly/assembly_plan.json").read_text(encoding="utf-8")
     )
-    assert plan.decisions[0].status.value == "deferred_license_blocked"
-    assert not plan.decisions[0].selected_visual_asset_ids
+    assert plan.decisions[0].research_decision.status.value == "deferred_license_blocked"
+    assert not plan.decisions[0].research_decision.selected_visual_asset_ids
 
 
 def test_overlap_diagnostics_are_non_destructive(tmp_path: Path) -> None:
@@ -257,7 +629,7 @@ def test_empty_or_unselected_inputs_remain_measured_only(tmp_path: Path, mode: s
     plan = SceneAssemblyPlan.model_validate_json(
         (run_dir / "assembly/assembly_plan.json").read_text(encoding="utf-8")
     )
-    assert plan.decisions[0].status.value == "measured_only"
+    assert plan.decisions[0].research_decision.status.value == "measured_only"
     assert all(layer.role.value != "global_context" for layer in plan.layers)
 
 
@@ -266,7 +638,290 @@ def test_accepted_state_alignment_connects_lineages(tmp_path: Path) -> None:
     plan = SceneAssemblyPlan.model_validate_json(
         (run_dir / "assembly/assembly_plan.json").read_text(encoding="utf-8")
     )
-    assert plan.decisions[0].status.value == "measured_only"
+    assert plan.decisions[0].research_decision.status.value == "measured_only"
+
+
+def test_research_and_deployment_choose_different_candidates(tmp_path: Path) -> None:
+    run_dir = _run(tmp_path, "different_bundle_candidates")
+    plan = SceneAssemblyPlan.model_validate_json(
+        (run_dir / "assembly/assembly_plan.json").read_text(encoding="utf-8")
+    )
+    decision = plan.decisions[0]
+    assert decision.research_decision.selected_candidate_id == "research_candidate_A"
+    assert decision.research_decision.selected_visual_asset_ids == ["research_candidate_A_visual"]
+    assert decision.deployment_decision.selected_candidate_id == "production_candidate_B"
+    assert decision.deployment_decision.selected_visual_asset_ids == [
+        "production_candidate_B_visual"
+    ]
+    compiler = json.loads(
+        (run_dir / "assembly/compiler_input_manifest.json").read_text(encoding="utf-8")
+    )
+    assert (
+        compiler["research_object_instances"][0]["decision"]["selected_candidate_id"]
+        == "research_candidate_A"
+    )
+    assert (
+        compiler["deployment_object_instances"][0]["decision"]["selected_candidate_id"]
+        == "production_candidate_B"
+    )
+    overlap = SceneAssemblyOverlapReport.model_validate_json(
+        (run_dir / "assembly/overlap_diagnostics.json").read_text(encoding="utf-8")
+    ).diagnostics[0]
+    assert overlap.measured_anchor_asset_ids == ["cup_measured", "cup_measured_part2"]
+    assert overlap.candidate_asset_ids == [
+        "production_candidate_B_visual",
+        "research_candidate_A_visual",
+    ]
+    assert set(overlap.per_asset_overlap) == set(overlap.candidate_asset_ids)
+
+
+def test_rigid_selection_evaluation_representation_and_license_are_source_bound(
+    phase5b_source_run: Path,
+) -> None:
+    raw = _rigid_source_manifest(phase5b_source_run)
+    manifest = normalize_assembly_manifest(raw, phase5b_source_run)
+    object_input = manifest.objects[0]
+    candidate = next(item for item in manifest.assets if item.asset_id == "candidate")
+    assert object_input.preferred_research_candidate_id == candidate.candidate_id
+    assert object_input.preferred_deployment_candidate_id is None
+    assert candidate.selected_upstream
+    assert candidate.observation_validation_passed
+    assert candidate.representation_id in {"official_pbr_glb", "official_visual_glb"}
+    assert candidate.source_native_asset_path is not None
+    assert candidate.candidate_selection is not None
+    assert candidate.candidate_evaluation is not None
+    assert candidate.candidate_generation is not None
+    assert candidate.license.research_evaluation_allowed
+    assert not candidate.license.production_selectable
+    assert candidate.object_to_source_world != IDENTITY_MATRIX4
+
+
+def test_local_candidate_assertions_cannot_override_upstream_sources(
+    phase5b_source_run: Path,
+) -> None:
+    raw = _rigid_source_manifest(phase5b_source_run)
+    candidate = raw["assets"][1]  # type: ignore[index]
+    candidate["representation_id"] = "stale_representation"  # type: ignore[index]
+    candidate["production_selectable"] = True  # type: ignore[index]
+    with pytest.raises(ValueError, match="rigid representation"):
+        normalize_assembly_manifest(raw, phase5b_source_run)
+
+
+def test_upstream_preferred_candidate_cannot_be_omitted_from_assembly(
+    phase5b_source_run: Path,
+) -> None:
+    raw = _rigid_source_manifest(phase5b_source_run)
+    raw["assets"] = raw["assets"][:1]  # type: ignore[index]
+    raw["objects"][0]["candidate_asset_ids"] = []  # type: ignore[index]
+    with pytest.raises(ValueError, match="omits an upstream preferred rigid candidate"):
+        normalize_assembly_manifest(raw, phase5b_source_run)
+
+
+def test_candidate_object_and_evaluation_identity_mismatch_fails_closed(
+    phase5b_source_run: Path,
+) -> None:
+    raw = _rigid_source_manifest(phase5b_source_run)
+    raw["assets"][1]["object_id"] = "wrong_object"  # type: ignore[index]
+    with pytest.raises(ValueError, match="belongs to"):
+        normalize_assembly_manifest(raw, phase5b_source_run)
+
+
+def test_camera_frame_digest_is_derived_and_mismatch_rejected(
+    phase5b_source_run: Path,
+) -> None:
+    raw = _rigid_source_manifest(phase5b_source_run)
+    raw["lineages"][0]["frame_sequence_digest"] = "f" * 64  # type: ignore[index]
+    with pytest.raises(ValueError, match="frame-sequence digest"):
+        normalize_assembly_manifest(raw, phase5b_source_run)
+
+
+def test_research_only_license_cannot_be_promoted_locally(
+    phase5b_source_run: Path,
+) -> None:
+    raw = _rigid_source_manifest(phase5b_source_run)
+    raw["assets"][1]["license"] = {  # type: ignore[index]
+        "license_id": "locally_promoted",
+        "license_name": "Local override",
+        "research_evaluation_allowed": True,
+        "production_selectable": True,
+        "commercial_review_status": "approved",
+        "restrictions": [],
+    }
+    with pytest.raises(ValueError, match="rigid candidate license"):
+        normalize_assembly_manifest(raw, phase5b_source_run)
+
+
+def test_articulated_selection_fit_evaluation_and_license_are_source_bound(
+    phase5c_source_run: Path,
+) -> None:
+    manifest = normalize_assembly_manifest(
+        _articulated_source_manifest(phase5c_source_run),
+        phase5c_source_run,
+    )
+    object_input = manifest.objects[0]
+    candidates = [item for item in manifest.assets if item.role.value == "articulated_visual"]
+    assert object_input.preferred_research_candidate_id == candidates[0].candidate_id
+    assert object_input.preferred_deployment_candidate_id == (
+        "cabinet_0001__measured_motion__baseline"
+    )
+    assert all(item.selected_upstream for item in candidates)
+    assert all(item.observation_validation_passed for item in candidates)
+    assert all(item.source.value == "retrieved" for item in candidates)
+    assert all(item.candidate_selection is not None for item in candidates)
+    assert all(item.candidate_evaluation is not None for item in candidates)
+    assert all(item.candidate_generation is not None for item in candidates)
+    assert all(item.kinematic_bundle is not None for item in candidates)
+    assert all(item.license.research_evaluation_allowed for item in candidates)
+    assert all(not item.license.production_selectable for item in candidates)
+
+
+def test_rejected_articulated_evaluation_cannot_be_promoted_locally(
+    phase5c_rejected_source_run: Path,
+) -> None:
+    raw = _articulated_source_manifest(phase5c_rejected_source_run)
+    candidate = raw["assets"][1]  # type: ignore[index]
+    candidate["selected_upstream"] = True  # type: ignore[index]
+    candidate["observation_validation_passed"] = True  # type: ignore[index]
+    with pytest.raises(ValueError, match="articulated candidate selected upstream"):
+        normalize_assembly_manifest(raw, phase5c_rejected_source_run)
+
+
+def test_selected_articulated_identity_reference_mismatch_fails_closed(
+    phase5c_source_run: Path,
+) -> None:
+    raw = _articulated_source_manifest(phase5c_source_run)
+    object_input = raw["objects"][0]  # type: ignore[index]
+    bundle = object_input["kinematic_bundle"]  # type: ignore[index]
+    object_input["selected_identity_manifest"] = {  # type: ignore[index]
+        **bundle,
+        "artifact_type": "selected_identity_manifest",
+    }
+    with pytest.raises(ValueError, match="identity reference"):
+        normalize_assembly_manifest(raw, phase5c_source_run)
+
+
+def test_articulated_candidate_link_and_object_identity_mismatch_fails_closed(
+    phase5c_source_run: Path,
+) -> None:
+    raw = _articulated_source_manifest(phase5c_source_run)
+    raw["assets"][1]["link_id"] = "stale_link"  # type: ignore[index]
+    with pytest.raises(ValueError, match="link identity"):
+        normalize_assembly_manifest(raw, phase5c_source_run)
+    raw = _articulated_source_manifest(phase5c_source_run)
+    raw["assets"][1]["object_id"] = "foreign_object"  # type: ignore[index]
+    with pytest.raises(ValueError, match="belongs to"):
+        normalize_assembly_manifest(raw, phase5c_source_run)
+
+
+def test_lineage_connection_requires_an_accepted_typed_alignment(
+    phase5c_source_run: Path,
+) -> None:
+    raw = _articulated_source_manifest(phase5c_source_run)
+    alignment_path = "reconstruction/articulation/state_alignment.json"
+    raw["lineages"].append(  # type: ignore[union-attr]
+        {
+            "lineage_id": "state_001_lineage",
+            "camera_reconstruction": _source_ref(
+                phase5c_source_run,
+                "assembly_binding/state_001_camera_reconstruction.json",
+                "camera_reconstruction",
+            ),
+            "source_scene_ir": raw["source_scene_ir"],
+            "connected_to_lineage_id": "lineage",
+            "accepted_alignment": _source_ref(
+                phase5c_source_run,
+                alignment_path,
+                "state_alignment",
+            ),
+            "alignment_state_id": "state_001",
+        }
+    )
+    normalized = normalize_assembly_manifest(raw, phase5c_source_run)
+    assert normalized.lineages[1].transform_connected_from_lineage == IDENTITY_MATRIX4
+    assert normalized.lineages[0].source_state_id == "state_000"
+    assert normalized.lineages[1].source_state_id == "state_001"
+    raw["assets"][0]["lineage_id"] = "state_001_lineage"  # type: ignore[index]
+    connected_asset = normalize_assembly_manifest(raw, phase5c_source_run)
+    assert connected_asset.assets[0].lineage_id == "state_001_lineage"
+    raw["assets"][0]["lineage_id"] = "lineage"  # type: ignore[index]
+    raw["lineages"][1]["source_state_id"] = "state_002"  # type: ignore[index]
+    with pytest.raises(ValueError, match="alignment source state"):
+        normalize_assembly_manifest(raw, phase5c_source_run)
+    raw["lineages"][1]["source_state_id"] = "state_001"  # type: ignore[index]
+
+    rejected = json.loads((phase5c_source_run / alignment_path).read_text(encoding="utf-8"))
+    transform = next(item for item in rejected["transforms"] if item["state_id"] == "state_001")
+    transform["accepted"] = False
+    transform["failure_reason"] = "synthetic rejected alignment"
+    rejected["accepted_alignment_state_ids"].remove("state_001")
+    rejected["aligned_state_count"] -= 1
+    rejected_path = phase5c_source_run / "assembly_binding/rejected_alignment.json"
+    rejected_path.write_text(
+        json.dumps(rejected, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    raw["lineages"][1]["accepted_alignment"] = _source_ref(  # type: ignore[index]
+        phase5c_source_run,
+        "assembly_binding/rejected_alignment.json",
+        "state_alignment",
+    )
+    with pytest.raises(ValueError, match="accepted alignment"):
+        normalize_assembly_manifest(raw, phase5c_source_run)
+
+
+def test_calibration_status_and_transform_are_derived_from_phase6a(
+    phase6a_source_run: Path,
+) -> None:
+    manifest = normalize_assembly_manifest(
+        _calibration_source_manifest(phase6a_source_run),
+        phase6a_source_run,
+    )
+    artifact = json.loads(
+        (phase6a_source_run / "calibration/world_calibration.json").read_text(encoding="utf-8")
+    )
+    assert manifest.calibration_status.value == artifact["status"]  # type: ignore[union-attr]
+    assert (
+        list(manifest.source_world_to_assembly_world or ())
+        == artifact["accepted_transform"]["matrix_canonical_from_colmap"]
+    )
+
+
+def test_local_calibration_status_or_transform_mismatch_fails_closed(
+    phase6a_source_run: Path,
+) -> None:
+    raw = _calibration_source_manifest(phase6a_source_run)
+    raw["calibration_status"] = "insufficient_evidence"
+    with pytest.raises(ValueError, match="calibration status"):
+        normalize_assembly_manifest(raw, phase6a_source_run)
+    raw = _calibration_source_manifest(phase6a_source_run)
+    raw["source_world_to_assembly_world"] = list(IDENTITY_MATRIX4)
+    with pytest.raises(ValueError, match="calibration transform"):
+        normalize_assembly_manifest(raw, phase6a_source_run)
+
+
+def test_canonical_wrapper_source_scene_mismatch_fails_closed(
+    phase6a_source_run: Path,
+    tmp_path: Path,
+) -> None:
+    for relative in (
+        "calibration/source/camera_reconstruction.json",
+        "calibration/source/scene_ir.json",
+        "calibration/world_calibration.json",
+        "calibration/canonical_scene_wrapper.json",
+    ):
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes((phase6a_source_run / relative).read_bytes())
+    wrapper_path = tmp_path / "calibration/canonical_scene_wrapper.json"
+    wrapper = json.loads(wrapper_path.read_text(encoding="utf-8"))
+    wrapper["source_scene_ir_sha256"] = "f" * 64
+    wrapper_path.write_text(
+        json.dumps(wrapper, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    raw = _calibration_source_manifest(tmp_path)
+    with pytest.raises(ValueError, match="primary lineage"):
+        normalize_assembly_manifest(raw, tmp_path)
 
 
 def test_cross_lineage_assets_fail_closed(tmp_path: Path) -> None:
