@@ -159,15 +159,6 @@ def _write_ascii_ply(path: Path, *, offset: float) -> None:
 def _fake_scene(context: StageContext) -> tuple[Path, Path]:
     camera_path = context.path("assembly/source/camera_reconstruction.json")
     camera_path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(
-        camera_path,
-        {
-            "schema_version": "0.1.0",
-            "frame_sequence_digest": "a" * 64,
-            "registered_frame_ids": ["frame_000000", "frame_000001"],
-        },
-    )
-    scene_path = context.path("assembly/source/scene_ir.json")
     confidence = {"score": 1.0, "method": "phase6b_fake"}
     provenance = {
         "adapter_name": "scene_assembly_inputs",
@@ -187,6 +178,44 @@ def _fake_scene(context: StageContext) -> tuple[Path, Path]:
         "scale_status": "scale_ambiguous",
         "transform_direction": "world_from_camera",
     }
+    atomic_write_json(
+        camera_path,
+        {
+            "camera_id": "phase6b_fake_camera",
+            "model": "PINHOLE",
+            "intrinsics": {
+                "width": 640,
+                "height": 480,
+                "fx": 500.0,
+                "fy": 500.0,
+                "cx": 320.0,
+                "cy": 240.0,
+                "distortion": [],
+            },
+            "poses": [
+                {
+                    "frame_id": frame_id,
+                    "transform_world_from_camera": {
+                        "translation": [float(index), 0.25, 1.0],
+                        "rotation_xyzw": [0.0, 0.0, 0.0, 1.0],
+                        "scale": [1.0, 1.0, 1.0],
+                    },
+                    "confidence": confidence,
+                }
+                for index, frame_id in enumerate(("frame_000000", "frame_000001"))
+            ],
+            "registered_frame_ids": ["frame_000000", "frame_000001"],
+            "unregistered_frame_ids": [],
+            "sparse_point_count": 20,
+            "average_reprojection_error": 0.1,
+            "confidence": confidence,
+            "coordinate_convention": convention,
+            "scale_status": "scale_ambiguous",
+            "frame_sequence_digest": "a" * 64,
+            "provenance": provenance,
+        },
+    )
+    scene_path = context.path("assembly/source/scene_ir.json")
     scene = SceneIR.model_validate(
         {
             "schema_version": "0.1.9",
@@ -198,10 +227,113 @@ def _fake_scene(context: StageContext) -> tuple[Path, Path]:
                 "source": "mock",
                 "provenance": [provenance],
             },
-            "cameras": [],
-            "frames": [],
-            "objects": [],
-            "geometry_assets": [],
+            "cameras": [
+                {
+                    "camera_id": "source_camera",
+                    "model": "PINHOLE",
+                    "intrinsics": {
+                        "width": 640,
+                        "height": 480,
+                        "fx": 500.0,
+                        "fy": 500.0,
+                        "cx": 320.0,
+                        "cy": 240.0,
+                        "distortion": [],
+                    },
+                    "poses": [
+                        {
+                            "frame_id": "frame_000000",
+                            "transform_world_from_camera": {
+                                "translation": [1.0, 2.0, 3.0],
+                                "rotation_xyzw": [0.0, 0.0, 0.3826834324, 0.9238795325],
+                                "scale": [1.0, 1.0, 1.0],
+                            },
+                            "confidence": confidence,
+                        }
+                    ],
+                    "coordinate_convention": convention,
+                    "scale_status": "scale_ambiguous",
+                    "provenance": provenance,
+                }
+            ],
+            "frames": [
+                {
+                    "frame_id": "frame_000000",
+                    "frame_path": "frames/frame_000000.png",
+                    "timestamp_s": 0.0,
+                    "camera_id": "source_camera",
+                    "observations": [],
+                }
+            ],
+            "objects": [
+                {
+                    "object_id": "source_rigid",
+                    "name": "Source rigid object",
+                    "asset_type": "rigid",
+                    "transform": {
+                        "translation": [4.0, 5.0, 6.0],
+                        "rotation_xyzw": [0.0, 0.2588190451, 0.0, 0.9659258263],
+                        "scale": [1.2, 1.2, 1.2],
+                    },
+                    "geometry_asset_ids": ["source_reference_mesh"],
+                    "physics": {"is_static": True},
+                    "provenance": [provenance],
+                    "confidence": confidence,
+                },
+                {
+                    "object_id": "source_articulated",
+                    "name": "Source articulated object",
+                    "asset_type": "articulated",
+                    "transform": {
+                        "translation": [-2.0, 1.0, 0.5],
+                        "rotation_xyzw": [0.0, 0.0, -0.2588190451, 0.9659258263],
+                        "scale": [1.7, 1.7, 1.7],
+                    },
+                    "physics": {"is_static": True},
+                    "articulation": {
+                        "articulation_id": "source_articulation",
+                        "links": [{"link_id": "source_base", "name": "Source base"}],
+                        "joints": [],
+                    },
+                    "provenance": [provenance],
+                    "confidence": confidence,
+                },
+            ],
+            "geometry_assets": [
+                {
+                    "asset_id": "source_reference_mesh",
+                    "asset_type": "rigid",
+                    "uri": "assembly/source/assets/cup_measured.ply",
+                    "format": "ply",
+                    "source": "measured",
+                    "coordinate_convention": convention,
+                    "scale_status": "scale_ambiguous",
+                    "source_space_geometry": True,
+                    "provenance": provenance,
+                },
+                {
+                    "asset_id": "global_scene_pbr",
+                    "asset_type": "static_structure",
+                    "uri": "reconstruction/global/scene.glb",
+                    "format": "glb",
+                    "source": "generated",
+                    "coordinate_convention": convention,
+                    "scale_status": "scale_ambiguous",
+                    "source_space_geometry": True,
+                    "provenance": provenance,
+                },
+                {
+                    "asset_id": "global_scene_mesh",
+                    "asset_type": "static_structure",
+                    "uri": "reconstruction/global/mesh.ply",
+                    "format": "ply",
+                    "source": "generated",
+                    "coordinate_convention": convention,
+                    "scale_status": "scale_ambiguous",
+                    "source_space_geometry": True,
+                    "provenance": provenance,
+                },
+            ],
             "material_assets": [],
             "collision_assets": [],
             "relations": [],
@@ -233,7 +365,7 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
         measured_geometry_path,
         {"object_id": "cup_0001", "path": "assembly/source/assets/cup_measured.ply"},
     )
-    global_path = context.path("assembly/source/assets/global_context.ply")
+    global_path = context.path("reconstruction/global/mesh.ply")
     _write_ascii_ply(global_path, offset=-0.25)
     candidate_path = context.path("assembly/source/assets/cup_candidate.ply")
     _write_ascii_ply(candidate_path, offset=0.05)
@@ -294,17 +426,112 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
         object_lineage = "foreign_lineage"
     elif mode == "accepted_state_alignment_lineage":
         alignment_path = context.path("assembly/source/state_alignment.json")
-        atomic_write_json(alignment_path, {"accepted": True, "state": "state_001"})
+        capture_path = context.path("assembly/source/articulation_capture_manifest.json")
+        child_camera_path = context.path("assembly/source/aligned_camera_reconstruction.json")
+        child_camera = json.loads(camera_path.read_text(encoding="utf-8"))
+        child_camera["frame_sequence_digest"] = "b" * 64
+        atomic_write_json(child_camera_path, child_camera)
+        lineage["source_state_id"] = "state_000"
+        state_common = {
+            "run_dir": "states/fake",
+            "part_track_ids": {"cabinet_body": "body_track", "drawer": "drawer_track"},
+            "phase5a_consistency_passed": True,
+            "ingest_manifest_sha256": "1" * 64,
+            "segmentation_tracking_sha256": "2" * 64,
+            "dense_depth_manifest_sha256": "3" * 64,
+            "measured_geometry_sha256": "4" * 64,
+            "part_mask_hashes": {"cabinet_body": "5" * 64, "drawer": "6" * 64},
+            "measured_part_cloud_hashes": {
+                "cabinet_body": "7" * 64,
+                "drawer": "8" * 64,
+            },
+            "registered_frame_ids": ["frame_000000", "frame_000001"],
+            "camera_evidence_path": "camera/reconstruction.json",
+            "segmentation_evidence_path": "observations/object_tracks.json",
+            "undistortion_evidence_path": "reconstruction/dense/undistortion_manifest.json",
+            "depth_evidence_path": "reconstruction/dense/depth_manifest.json",
+            "dense_map_hashes": {"frame_000000": "9" * 64},
+        }
+        atomic_write_json(
+            capture_path,
+            {
+                "schema_version": "0.2.0",
+                "articulated_object_id": "cabinet_0001",
+                "reference_state_id": "state_000",
+                "states": [
+                    {
+                        **state_common,
+                        "state_id": "state_000",
+                        "semantic_state_label": "closed",
+                        "frame_sequence_digest": "a" * 64,
+                        "camera_reconstruction_sha256": sha256_file(camera_path),
+                    },
+                    {
+                        **state_common,
+                        "state_id": "state_001",
+                        "semantic_state_label": "open",
+                        "frame_sequence_digest": "b" * 64,
+                        "camera_reconstruction_sha256": sha256_file(child_camera_path),
+                    },
+                ],
+                "prompt_manifest_sha256": "0" * 64,
+                "capture_state_count": 2,
+                "capture_evidence_tier": "two_state_motion_supported",
+            },
+        )
+        transform = {
+            "matrix_reference_from_state": list(IDENTITY_MATRIX4),
+            "inverse_matrix": list(IDENTITY_MATRIX4),
+            "scale": 1.0,
+            "rotation_determinant": 1.0,
+            "translation": [0.0, 0.0, 0.0],
+            "fitting_median_residual_scene_diagonal": 0.0,
+            "fitting_p90_residual_scene_diagonal": 0.0,
+            "heldout_static_depth_inlier_fraction": 1.0,
+            "static_correspondence_count": 500,
+            "excluded_movable_part_ids": ["drawer"],
+            "accepted": True,
+        }
+        atomic_write_json(
+            alignment_path,
+            {
+                "schema_version": "0.2.0",
+                "capture_manifest_sha256": sha256_file(capture_path),
+                "reference_state_id": "state_000",
+                "transforms": [
+                    {**transform, "state_id": "state_000"},
+                    {**transform, "state_id": "state_001"},
+                ],
+                "capture_state_count": 2,
+                "accepted_alignment_state_ids": ["state_000", "state_001"],
+                "aligned_state_count": 2,
+                "static_evidence_only": True,
+                "source_states_unchanged": True,
+                "runtime_seconds": 0.0,
+            },
+        )
         lineages.append(
             {
-                **lineage,
                 "lineage_id": "aligned_state_lineage",
                 "frame_sequence_digest": "b" * 64,
+                "camera_reconstruction": {
+                    "path": "assembly/source/aligned_camera_reconstruction.json",
+                    "sha256": sha256_file(child_camera_path),
+                    "artifact_type": "camera_reconstruction",
+                },
+                "source_scene_ir": reference,
+                "world_frame": "colmap_arbitrary",
+                "source_state_id": "state_001",
                 "connected_to_lineage_id": "fake_lineage",
                 "accepted_alignment": {
                     "path": "assembly/source/state_alignment.json",
                     "sha256": sha256_file(alignment_path),
                     "artifact_type": "state_alignment",
+                },
+                "alignment_capture_manifest": {
+                    "path": "assembly/source/articulation_capture_manifest.json",
+                    "sha256": sha256_file(capture_path),
+                    "artifact_type": "articulation_capture_manifest",
                 },
                 "alignment_state_id": "state_001",
                 "transform_connected_from_lineage": list(IDENTITY_MATRIX4),
@@ -367,6 +594,178 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
         "preview_material_loss",
     }
     if mode in global_modes:
+        phase3_path = context.path("assembly/source/global_scene_reconstruction.json")
+        worker_path = context.path("assembly/source/genrecon_worker_manifest.json")
+        global_source_path = context.path("assembly/source/global_context_source.json")
+        phase3_mesh_path = context.path("reconstruction/global/mesh.ply")
+        phase3_scene_path = context.path("reconstruction/global/scene.glb")
+        _write_ascii_ply(phase3_mesh_path, offset=-0.25)
+        phase3_scene_path.parent.mkdir(parents=True, exist_ok=True)
+        phase3_scene_path.write_bytes(b"glTF-phase6b-diagnostic-source\n")
+        phase3_repository = "https://github.com/kasothaphie/GenRecon"
+        phase3_commit = "eaf1468118d20469d17079a4a19737297d2ef87b"
+        runtime_revision = "1" * 40
+        runtime_revisions = {
+            "facebook/dinov3-vitl16-pretrain-lvd1689m": runtime_revision,
+            "microsoft/TRELLIS-image-large": "2" * 40,
+            "microsoft/TRELLIS.2-4B": "3" * 40,
+        }
+        working_transform = {
+            "strategy": "identity",
+            "matrix_colmap_to_working": [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            "matrix_working_to_colmap": [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            "determinant": 1.0,
+            "roundtrip_max_error": 0.0,
+            "semantic_status": "internal_unoriented_preprocessing",
+        }
+        atomic_write_json(
+            phase3_path,
+            {
+                "schema_version": "0.1.0",
+                "scene_asset_path": "reconstruction/global/scene.glb",
+                "mesh_asset_path": "reconstruction/global/mesh.ply",
+                "scene_ir_path": "scene_ir/scene.json",
+                "format": "glb",
+                "coordinate_convention": {
+                    "world_frame": "colmap_arbitrary",
+                    "alignment_status": "unoriented",
+                    "camera_axes": "x_right_y_down_z_forward",
+                    "linear_units": "arbitrary_units",
+                    "scale_status": "scale_ambiguous",
+                    "transform_direction": "world_from_camera",
+                },
+                "scale_status": "scale_ambiguous",
+                "manifest_sha256": "0" * 64,
+                "frame_sequence_digest": "a" * 64,
+                "camera_reconstruction_sha256": sha256_file(camera_path),
+                "camera_package_sha256": "4" * 64,
+                "input_frame_count": 2,
+                "registered_frame_count": 2,
+                "unregistered_frame_count": 0,
+                "eligible_frame_ids": ["frame_000000", "frame_000001"],
+                "actual_selected_frame_ids": ["frame_000000", "frame_000001"],
+                "mesh": {
+                    "vertex_count": 4,
+                    "face_count": 2,
+                    "disconnected_components": 1,
+                    "degenerate_faces": 0,
+                    "non_manifold_edge_count": 0,
+                    "finite_coordinates": True,
+                    "bounding_box_min": [-0.25, 0.0, 0.0],
+                    "bounding_box_max": [0.75, 1.0, 1.0],
+                    "bounding_box_extent": [1.0, 1.0, 1.0],
+                    "material_count": 1,
+                    "texture_count": 0,
+                    "glb_parse_status": "valid",
+                },
+                "chunk_count": 1,
+                "checkpoints": [],
+                "official_repository": phase3_repository,
+                "official_code_commit": phase3_commit,
+                "runtime_model_repository": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+                "runtime_model_revision": runtime_revision,
+                "runtime_repository_revisions": runtime_revisions,
+                "runtime_seconds": 0.01,
+                "peak_gpu_memory_bytes": 0,
+                "seed": 42,
+                "provenance": {
+                    "adapter_name": "scene_assembly_inputs",
+                    "adapter_version": "0.1.0",
+                    "configuration": {"fake": True},
+                    "input_artifact_paths": [],
+                    "output_artifact_paths": [
+                        "reconstruction/global/scene.glb",
+                        "reconstruction/global/mesh.ply",
+                    ],
+                    "confidence": {"score": 1.0, "method": "phase6b_fake"},
+                    "source": "generated",
+                    "timestamp": "2026-01-01T00:00:00Z",
+                },
+            },
+        )
+        atomic_write_json(
+            worker_path,
+            {
+                "schema_version": "0.1.0",
+                "official_repository": phase3_repository,
+                "official_code_commit": phase3_commit,
+                "submodule_commits": {},
+                "official_license": "MIT",
+                "checkpoint_records": [],
+                "runtime_model_repository": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+                "runtime_model_revision": runtime_revision,
+                "runtime_repository_revisions": runtime_revisions,
+                "worker_version": "phase6b-fixture",
+                "python_version": "3.12",
+                "torch_version": None,
+                "torchvision_version": None,
+                "cuda_version": None,
+                "device_name": "deterministic fixture",
+                "device": "fake",
+                "precision": "float32",
+                "seed": 42,
+                "request_sha256": "5" * 64,
+                "frame_sequence_digest": "a" * 64,
+                "camera_package_sha256": "4" * 64,
+                "registered_frame_ids": ["frame_000000", "frame_000001"],
+                "selected_frame_ids": ["frame_000000", "frame_000001"],
+                "working_transform": working_transform,
+                "reconstruct_return_code": 0,
+                "glb_conversion_return_code": 0,
+                "runtime_seconds": 0.01,
+                "peak_gpu_memory_bytes": 0,
+                "raw_output_paths": [],
+                "warnings": [],
+            },
+        )
+        atomic_write_json(
+            global_source_path,
+            {
+                "schema_version": "0.1.0",
+                "lineage_id": "fake_lineage",
+                "frame_sequence_digest": "a" * 64,
+                "camera_reconstruction_sha256": sha256_file(camera_path),
+                "coordinate_convention": {
+                    "world_frame": "colmap_arbitrary",
+                    "alignment_status": "unoriented",
+                    "camera_axes": "x_right_y_down_z_forward",
+                    "linear_units": "arbitrary_units",
+                    "scale_status": "scale_ambiguous",
+                    "transform_direction": "world_from_camera",
+                },
+                "phase3_reconstruction": {
+                    "path": "assembly/source/global_scene_reconstruction.json",
+                    "sha256": sha256_file(phase3_path),
+                    "artifact_type": "phase3_global_reconstruction",
+                },
+                "genrecon_worker_manifest": {
+                    "path": "assembly/source/genrecon_worker_manifest.json",
+                    "sha256": sha256_file(worker_path),
+                    "artifact_type": "global_context_manifest",
+                },
+                "source_scene_ir": reference,
+                "assets": [
+                    {
+                        "assembly_asset_id": "global_context",
+                        "source_geometry_asset_id": "global_scene_mesh",
+                        "source_native_asset_path": "reconstruction/global/mesh.ply",
+                        "sha256": sha256_file(global_path),
+                        "format": "ply",
+                        "source": "generated",
+                    }
+                ],
+            },
+        )
         assets.append(
             {
                 "asset_id": "global_context",
@@ -374,16 +773,37 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
                 "lineage_id": "fake_lineage",
                 "role": "global_context",
                 "source": "generated",
-                "asset_path": "assembly/source/assets/global_context.ply",
+                "asset_path": "reconstruction/global/mesh.ply",
                 "asset_sha256": sha256_file(global_path),
+                "source_native_asset_path": "reconstruction/global/mesh.ply",
                 "format": "ply",
                 "asset_native_space": "global_context",
                 "asset_to_object": identity,
                 "object_to_source_world": identity,
                 "bounds_native": [-0.25, 0.0, 0.0, 0.75, 1.0, 1.0],
-                "license": _license(
-                    production=mode != "deployment_bundle_excluding_research_asset"
-                ),
+                "global_scene_reconstruction": {
+                    "path": "assembly/source/global_scene_reconstruction.json",
+                    "sha256": sha256_file(phase3_path),
+                    "artifact_type": "phase3_global_reconstruction",
+                },
+                "global_context_source": {
+                    "path": "assembly/source/global_context_source.json",
+                    "sha256": sha256_file(global_source_path),
+                    "artifact_type": "global_context_source",
+                },
+                "license_source_record": {
+                    "path": "assembly/source/genrecon_worker_manifest.json",
+                    "sha256": sha256_file(worker_path),
+                    "artifact_type": "global_context_manifest",
+                },
+                "license": {
+                    **_license(production=mode != "deployment_bundle_excluding_research_asset"),
+                    "source_record": {
+                        "path": "assembly/source/genrecon_worker_manifest.json",
+                        "sha256": sha256_file(worker_path),
+                        "artifact_type": "global_context_manifest",
+                    },
+                },
             }
         )
     candidate_modes = {
@@ -614,7 +1034,6 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
         ]
     elif mode == "gravity_only_scene":
         calibration_status = "accepted_gravity_only"
-        world_transform = identity
     candidate_ids = [
         item["asset_id"]
         for item in assets
@@ -680,7 +1099,7 @@ def _fake_manifest(context: StageContext, mode: FakeAssemblyMode) -> SceneAssemb
         ),
     }
     raw = {
-        "schema_version": "0.2.0",
+        "schema_version": "0.3.0",
         "assembly_id": f"phase6b_fake_{mode}",
         "calibration_policy": "use_full_canonical_if_available",
         "primary_lineage_id": "fake_lineage",
@@ -777,6 +1196,11 @@ class AssemblyInputsAdapter:
             *(item.camera_reconstruction for item in manifest.lineages),
             *(item.source_scene_ir for item in manifest.lineages),
             *(item.accepted_alignment for item in manifest.lineages if item.accepted_alignment),
+            *(
+                item.alignment_capture_manifest
+                for item in manifest.lineages
+                if item.alignment_capture_manifest
+            ),
             manifest.calibration_artifact,
             manifest.canonical_wrapper,
             *(item.candidate_selection for item in manifest.assets if item.candidate_selection),
@@ -784,6 +1208,12 @@ class AssemblyInputsAdapter:
             *(item.candidate_generation for item in manifest.assets if item.candidate_generation),
             *(item.measured_geometry for item in manifest.assets if item.measured_geometry),
             *(item.kinematic_bundle for item in manifest.assets if item.kinematic_bundle),
+            *(
+                item.global_scene_reconstruction
+                for item in manifest.assets
+                if item.global_scene_reconstruction
+            ),
+            *(item.global_context_source for item in manifest.assets if item.global_context_source),
             *(item.license_source_record for item in manifest.assets if item.license_source_record),
             *(item.license.source_record for item in manifest.assets if item.license.source_record),
             *(

@@ -236,6 +236,9 @@ class WorldCalibrationSceneReference(StrictModel):
 
 
 class SceneAssemblySceneReference(StrictModel):
+    scene_data_space: Literal["source_world"] = "source_world"
+    source_scene_ir_path: str
+    source_scene_ir_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     assembly_plan_path: str
     assembly_plan_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     research_bundle_path: str
@@ -245,12 +248,23 @@ class SceneAssemblySceneReference(StrictModel):
     compiler_manifest_path: str
     compiler_manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     lineage_id: Identifier
-    world_mode: Literal[
+    assembly_world_mode: Literal[
         "source_arbitrary",
         "canonical_metric",
         "metric_unoriented",
         "gravity_aligned_arbitrary_scale",
     ]
+    source_world_to_assembly_world: Annotated[
+        tuple[float, ...],
+        Field(min_length=16, max_length=16),
+    ]
+    source_coordinate_convention: CoordinateConvention
+    assembly_coordinate_convention: CoordinateConvention
+    assembly_linear_units: Literal["meters", "arbitrary_units"]
+    assembly_alignment_status: Literal["canonical", "gravity_aligned", "unoriented"]
+    geometry_requires_assembly_transform: bool
+    camera_poses_require_assembly_transform: bool
+    object_roots_require_assembly_transform: bool
     calibration_status: str | None = None
     visual_only: Literal[True] = True
     collision_ready: Literal[False] = False
@@ -262,10 +276,50 @@ class SceneAssemblySceneReference(StrictModel):
         "research_bundle_path",
         "deployment_bundle_path",
         "compiler_manifest_path",
+        "source_scene_ir_path",
     )
     @classmethod
     def relative_assembly_paths(cls, value: str) -> str:
         return _relative_path(value)
+
+    @model_validator(mode="after")
+    def source_space_contract_is_explicit(self) -> Self:
+        identity = (
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        )
+        required = self.source_world_to_assembly_world != identity
+        if any(
+            flag is not required
+            for flag in (
+                self.geometry_requires_assembly_transform,
+                self.camera_poses_require_assembly_transform,
+                self.object_roots_require_assembly_transform,
+            )
+        ):
+            raise ValueError("Scene IR source-space transform flags disagree with world transform")
+        if self.assembly_coordinate_convention.linear_units.value != self.assembly_linear_units:
+            raise ValueError("Scene IR assembly units disagree with assembly coordinate contract")
+        if (
+            self.assembly_coordinate_convention.alignment_status.value
+            != self.assembly_alignment_status
+        ):
+            raise ValueError("Scene IR assembly alignment disagrees with coordinate contract")
+        return self
 
 
 class SceneMetadata(StrictModel):
@@ -694,6 +748,7 @@ class SceneIR(StrictModel):
         "0.1.7",
         "0.1.8",
         "0.1.9",
+        "0.1.10",
     ] = "0.1.1"
     metadata: SceneMetadata
     cameras: list[Camera] = Field(default_factory=list)

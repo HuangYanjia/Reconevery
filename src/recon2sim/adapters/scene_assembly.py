@@ -11,8 +11,14 @@ from recon2sim.adapters.base import (
     StageResult,
 )
 from recon2sim.artifacts import (
+    ArticulationCaptureManifest,
+    ArticulationStateAlignmentArtifact,
     BundleObjectAssemblyDecision,
+    CameraReconstruction,
     EndToEndConsistencyCheck,
+    GenReconWorkerManifest,
+    GlobalContextSourceManifest,
+    GlobalSceneReconstructionArtifact,
     ObjectAssemblyDecision,
     ObjectAssemblyDecisionSet,
     ObjectAssemblyDecisionStatus,
@@ -24,6 +30,7 @@ from recon2sim.artifacts import (
     SceneAssemblyBundle,
     SceneAssemblyBundleKind,
     SceneAssemblyCompilerManifest,
+    SceneAssemblyCoordinateContract,
     SceneAssemblyInputManifest,
     SceneAssemblyLayer,
     SceneAssemblyLicenseSummary,
@@ -34,6 +41,7 @@ from recon2sim.artifacts import (
     SceneAssemblyPlan,
     SceneAssemblyPreviewManifest,
     SceneAssemblySourceReference,
+    WorldCalibrationStatus,
 )
 from recon2sim.assembly import (
     IDENTITY_MATRIX4,
@@ -49,6 +57,7 @@ from recon2sim.assembly import (
 from recon2sim.calibration import sha256_file
 from recon2sim.ir import (
     AlignmentStatus,
+    CoordinateConvention,
     LinearUnits,
     ScaleStatus,
     SceneAssemblySceneReference,
@@ -73,6 +82,48 @@ def _is_identity(matrix: tuple[float, ...], *, tolerance: float = 1e-9) -> bool:
     return (
         max(abs(value - expected) for value, expected in zip(matrix, IDENTITY_MATRIX4, strict=True))
         <= tolerance
+    )
+
+
+def _assembly_coordinate_convention(
+    source: CoordinateConvention,
+    world_mode: str,
+) -> CoordinateConvention:
+    assembly = source.model_copy(deep=True)
+    if world_mode == "canonical_metric":
+        assembly.world_frame = WorldFrame.CANONICAL_X_FORWARD_Y_LEFT_Z_UP
+        assembly.linear_units = LinearUnits.METERS
+        assembly.alignment_status = AlignmentStatus.CANONICAL
+        assembly.scale_status = ScaleStatus.METRIC_SCALE_KNOWN
+    elif world_mode == "metric_unoriented":
+        assembly.linear_units = LinearUnits.METERS
+        assembly.alignment_status = AlignmentStatus.UNORIENTED
+        assembly.scale_status = ScaleStatus.METRIC_SCALE_KNOWN
+    elif world_mode == "gravity_aligned_arbitrary_scale":
+        assembly.linear_units = LinearUnits.ARBITRARY_UNITS
+        assembly.alignment_status = AlignmentStatus.GRAVITY_ALIGNED
+        assembly.scale_status = ScaleStatus.SCALE_AMBIGUOUS
+    return assembly
+
+
+def _coordinate_contract(
+    manifest: SceneAssemblyInputManifest,
+    plan: SceneAssemblyPlan,
+    source: SceneIR,
+) -> SceneAssemblyCoordinateContract:
+    required = not _is_identity(plan.world.source_world_to_assembly_world)
+    return SceneAssemblyCoordinateContract(
+        source_scene_ir=manifest.source_scene_ir,
+        source_coordinate_convention=source.metadata.coordinate_convention,
+        assembly_coordinate_convention=_assembly_coordinate_convention(
+            source.metadata.coordinate_convention,
+            plan.world.world_mode.value,
+        ),
+        source_world_to_assembly_world=plan.world.source_world_to_assembly_world,
+        apply_world_transform_at_compile_time=required,
+        geometry_requires_assembly_transform=required,
+        camera_poses_require_assembly_transform=required,
+        object_roots_require_assembly_transform=required,
     )
 
 
@@ -458,7 +509,7 @@ class SceneAssemblyPlanAdapter:
             },
         )
         plan_payload = {
-            "schema_version": "0.2.0",
+            "schema_version": "0.3.0",
             "input_manifest": _artifact_reference(
                 context,
                 "assembly/input_manifest.json",
@@ -799,6 +850,8 @@ class LayeredSceneBundleAdapter:
         plan = SceneAssemblyPlan.model_validate_json(
             context.path("assembly/assembly_plan.json").read_text(encoding="utf-8")
         )
+        source = _load_model(context, manifest.source_scene_ir.path, SceneIR)
+        coordinate_contract = _coordinate_contract(manifest, plan, source)
         research = _bundle(
             context,
             plan,
@@ -831,6 +884,7 @@ class LayeredSceneBundleAdapter:
         )
         compiler = SceneAssemblyCompilerManifest(
             world=plan.world,
+            coordinate_contract=coordinate_contract,
             research_bundle=_artifact_reference(
                 context,
                 "assembly/research_visual_bundle.json",
@@ -873,25 +927,11 @@ class LayeredSceneBundleAdapter:
                 "sim_ready": False,
             },
         )
-        source = _load_model(context, manifest.source_scene_ir.path, SceneIR)
         scene = source.model_copy(deep=True)
-        scene.schema_version = "0.1.9"
-        if plan.world.world_mode.value == "canonical_metric":
-            scene.metadata.coordinate_convention.world_frame = (
-                WorldFrame.CANONICAL_X_FORWARD_Y_LEFT_Z_UP
-            )
-            scene.metadata.coordinate_convention.linear_units = LinearUnits.METERS
-            scene.metadata.coordinate_convention.alignment_status = AlignmentStatus.CANONICAL
-            scene.metadata.coordinate_convention.scale_status = ScaleStatus.METRIC_SCALE_KNOWN
-        elif plan.world.world_mode.value == "metric_unoriented":
-            scene.metadata.coordinate_convention.linear_units = LinearUnits.METERS
-            scene.metadata.coordinate_convention.alignment_status = AlignmentStatus.UNORIENTED
-            scene.metadata.coordinate_convention.scale_status = ScaleStatus.METRIC_SCALE_KNOWN
-        elif plan.world.world_mode.value == "gravity_aligned_arbitrary_scale":
-            scene.metadata.coordinate_convention.linear_units = LinearUnits.ARBITRARY_UNITS
-            scene.metadata.coordinate_convention.alignment_status = AlignmentStatus.GRAVITY_ALIGNED
-            scene.metadata.coordinate_convention.scale_status = ScaleStatus.SCALE_AMBIGUOUS
+        scene.schema_version = "0.1.10"
         scene.metadata.scene_assembly = SceneAssemblySceneReference(
+            source_scene_ir_path=manifest.source_scene_ir.path,
+            source_scene_ir_sha256=manifest.source_scene_ir.sha256,
             assembly_plan_path="assembly/assembly_plan.json",
             assembly_plan_sha256=sha256_file(context.path("assembly/assembly_plan.json")),
             research_bundle_path="assembly/research_visual_bundle.json",
@@ -907,7 +947,21 @@ class LayeredSceneBundleAdapter:
                 context.path("assembly/compiler_input_manifest.json")
             ),
             lineage_id=manifest.primary_lineage_id,
-            world_mode=plan.world.world_mode.value,
+            assembly_world_mode=plan.world.world_mode.value,
+            source_world_to_assembly_world=plan.world.source_world_to_assembly_world,
+            source_coordinate_convention=coordinate_contract.source_coordinate_convention,
+            assembly_coordinate_convention=(coordinate_contract.assembly_coordinate_convention),
+            assembly_linear_units=plan.world.linear_units,
+            assembly_alignment_status=plan.world.alignment_status,
+            geometry_requires_assembly_transform=(
+                coordinate_contract.geometry_requires_assembly_transform
+            ),
+            camera_poses_require_assembly_transform=(
+                coordinate_contract.camera_poses_require_assembly_transform
+            ),
+            object_roots_require_assembly_transform=(
+                coordinate_contract.object_roots_require_assembly_transform
+            ),
             calibration_status=(
                 manifest.calibration_status.value
                 if manifest.calibration_status is not None
@@ -988,6 +1042,7 @@ class Phase6BConsistencyValidationAdapter:
                     lineage.camera_reconstruction,
                     lineage.source_scene_ir,
                     lineage.accepted_alignment,
+                    lineage.alignment_capture_manifest,
                 )
             ),
             *(
@@ -999,6 +1054,8 @@ class Phase6BConsistencyValidationAdapter:
                     asset.candidate_generation,
                     asset.measured_geometry,
                     asset.kinematic_bundle,
+                    asset.global_scene_reconstruction,
+                    asset.global_context_source,
                     asset.license_source_record,
                     asset.license.source_record,
                 )
@@ -1085,6 +1142,9 @@ class Phase6BConsistencyValidationAdapter:
         scene = SceneIR.model_validate_json(
             context.path("scene_ir/phase6b_layered_scene.json").read_text(encoding="utf-8")
         )
+        source_scene = SceneIR.model_validate_json(
+            context.path(*manifest.source_scene_ir.path.split("/")).read_text(encoding="utf-8")
+        )
         source_hashes = all(
             context.path(*asset.asset_path.split("/")).is_file()
             and sha256_file(context.path(*asset.asset_path.split("/"))) == asset.asset_sha256
@@ -1101,6 +1161,7 @@ class Phase6BConsistencyValidationAdapter:
                     lineage_record.camera_reconstruction,
                     lineage_record.source_scene_ir,
                     lineage_record.accepted_alignment,
+                    lineage_record.alignment_capture_manifest,
                 )
             ),
             *(
@@ -1112,6 +1173,8 @@ class Phase6BConsistencyValidationAdapter:
                     asset.candidate_generation,
                     asset.measured_geometry,
                     asset.kinematic_bundle,
+                    asset.global_scene_reconstruction,
+                    asset.global_context_source,
                     asset.license_source_record,
                     asset.license.source_record,
                 )
@@ -1148,6 +1211,77 @@ class Phase6BConsistencyValidationAdapter:
         used_lineages = {item.lineage_id for item in manifest.assets} | {
             item.lineage_id for item in manifest.objects
         }
+        lineages_by_id = {item.lineage_id: item for item in manifest.lineages}
+        alignment_capture_binding = True
+        for lineage_record in manifest.lineages:
+            if lineage_record.accepted_alignment is None:
+                continue
+            if (
+                lineage_record.alignment_capture_manifest is None
+                or lineage_record.connected_to_lineage_id is None
+                or lineage_record.alignment_state_id is None
+            ):
+                alignment_capture_binding = False
+                continue
+            alignment = ArticulationStateAlignmentArtifact.model_validate_json(
+                context.path(*lineage_record.accepted_alignment.path.split("/")).read_text(
+                    encoding="utf-8"
+                )
+            )
+            capture = ArticulationCaptureManifest.model_validate_json(
+                context.path(*lineage_record.alignment_capture_manifest.path.split("/")).read_text(
+                    encoding="utf-8"
+                )
+            )
+            parent = lineages_by_id[lineage_record.connected_to_lineage_id]
+            child_state = next(
+                (
+                    item
+                    for item in capture.states
+                    if item.state_id == lineage_record.alignment_state_id
+                ),
+                None,
+            )
+            reference_state = next(
+                (item for item in capture.states if item.state_id == alignment.reference_state_id),
+                None,
+            )
+            child_camera = CameraReconstruction.model_validate_json(
+                context.path(*lineage_record.camera_reconstruction.path.split("/")).read_text(
+                    encoding="utf-8"
+                )
+            )
+            parent_camera = CameraReconstruction.model_validate_json(
+                context.path(*parent.camera_reconstruction.path.split("/")).read_text(
+                    encoding="utf-8"
+                )
+            )
+            transform = next(
+                (
+                    item
+                    for item in alignment.transforms
+                    if item.state_id == lineage_record.alignment_state_id
+                ),
+                None,
+            )
+            alignment_capture_binding = alignment_capture_binding and bool(
+                alignment.capture_manifest_sha256
+                == lineage_record.alignment_capture_manifest.sha256
+                and child_state is not None
+                and reference_state is not None
+                and transform is not None
+                and transform.accepted
+                and lineage_record.source_state_id == child_state.state_id
+                and parent.source_state_id == reference_state.state_id
+                and lineage_record.camera_reconstruction.sha256
+                == child_state.camera_reconstruction_sha256
+                and child_camera.frame_sequence_digest == child_state.frame_sequence_digest
+                and parent.camera_reconstruction.sha256
+                == reference_state.camera_reconstruction_sha256
+                and parent_camera.frame_sequence_digest == reference_state.frame_sequence_digest
+                and lineage_record.transform_connected_from_lineage
+                == transform.matrix_reference_from_state
+            )
         world = resolve_world(manifest)
         world_matches = (
             plan.world == world and research.world == world and deployment.world == world
@@ -1244,6 +1378,71 @@ class Phase6BConsistencyValidationAdapter:
             for asset in manifest.assets
             if asset.license_source_record is not None
         )
+        global_context_geometry_binding = True
+        for asset in manifest.assets:
+            if asset.role is not SceneAssemblyAssetRole.GLOBAL_CONTEXT:
+                continue
+            if asset.global_context_source is None or asset.global_scene_reconstruction is None:
+                global_context_geometry_binding = False
+                continue
+            source_manifest = GlobalContextSourceManifest.model_validate_json(
+                context.path(*asset.global_context_source.path.split("/")).read_text(
+                    encoding="utf-8"
+                )
+            )
+            reconstruction = GlobalSceneReconstructionArtifact.model_validate_json(
+                context.path(*asset.global_scene_reconstruction.path.split("/")).read_text(
+                    encoding="utf-8"
+                )
+            )
+            worker = GenReconWorkerManifest.model_validate_json(
+                context.path(*source_manifest.genrecon_worker_manifest.path.split("/")).read_text(
+                    encoding="utf-8"
+                )
+            )
+            asset_source_scene = SceneIR.model_validate_json(
+                context.path(*source_manifest.source_scene_ir.path.split("/")).read_text(
+                    encoding="utf-8"
+                )
+            )
+            source_asset = next(
+                (
+                    item
+                    for item in source_manifest.assets
+                    if item.assembly_asset_id == asset.asset_id
+                ),
+                None,
+            )
+            global_context_geometry_binding = global_context_geometry_binding and bool(
+                source_manifest.lineage_id == asset.lineage_id
+                and source_manifest.phase3_reconstruction == asset.global_scene_reconstruction
+                and source_manifest.source_scene_ir
+                == lineages_by_id[asset.lineage_id].source_scene_ir
+                and source_manifest.coordinate_convention
+                == asset_source_scene.metadata.coordinate_convention
+                and source_manifest.genrecon_worker_manifest == asset.license_source_record
+                and reconstruction.frame_sequence_digest == source_manifest.frame_sequence_digest
+                and reconstruction.camera_reconstruction_sha256
+                == source_manifest.camera_reconstruction_sha256
+                and reconstruction.coordinate_convention == source_manifest.coordinate_convention
+                and worker.official_repository == reconstruction.official_repository
+                and worker.official_code_commit == reconstruction.official_code_commit
+                and worker.runtime_model_revision == reconstruction.runtime_model_revision
+                and worker.runtime_repository_revisions
+                == reconstruction.runtime_repository_revisions
+                and source_asset is not None
+                and source_asset.source_native_asset_path
+                == (
+                    reconstruction.scene_asset_path
+                    if source_asset.format == "glb"
+                    else reconstruction.mesh_asset_path
+                )
+                and asset.asset_path == source_asset.source_native_asset_path
+                and source_asset.source_native_asset_path == asset.source_native_asset_path
+                and source_asset.sha256 == asset.asset_sha256
+                and source_asset.format == asset.format
+                and source_asset.source.value == asset.source.value
+            )
         overlap_by_object = {item.object_id: item for item in overlap.diagnostics}
         derived_by_object = {item.object_id: item for item in source_derived_decisions}
         overlap_aggregation_complete = all(
@@ -1289,6 +1488,12 @@ class Phase6BConsistencyValidationAdapter:
                 decision.deployment_decision.articulated_model_source,
             )
         )
+        expected_coordinate_contract = _coordinate_contract(manifest, plan, source_scene)
+        compiler_coordinate_contract = (
+            compiler.coordinate_contract == expected_coordinate_contract
+            and compiler.coordinate_contract.source_world_to_assembly_world
+            == plan.world.source_world_to_assembly_world
+        )
         compiler_refs = (
             compiler.research_bundle.sha256
             == sha256_file(context.path("assembly/research_visual_bundle.json"))
@@ -1316,6 +1521,8 @@ class Phase6BConsistencyValidationAdapter:
         scene_reference = scene.metadata.scene_assembly
         scene_refs_ok = scene_reference is not None and all(
             (
+                scene_reference.source_scene_ir_path == manifest.source_scene_ir.path,
+                scene_reference.source_scene_ir_sha256 == manifest.source_scene_ir.sha256,
                 scene_reference.assembly_plan_sha256
                 == sha256_file(context.path(scene_reference.assembly_plan_path)),
                 scene_reference.research_bundle_sha256
@@ -1324,6 +1531,37 @@ class Phase6BConsistencyValidationAdapter:
                 == sha256_file(context.path(scene_reference.deployment_bundle_path)),
                 scene_reference.compiler_manifest_sha256
                 == sha256_file(context.path(scene_reference.compiler_manifest_path)),
+                scene_reference.assembly_world_mode == plan.world.world_mode.value,
+                scene_reference.source_world_to_assembly_world
+                == plan.world.source_world_to_assembly_world,
+                scene_reference.source_coordinate_convention
+                == expected_coordinate_contract.source_coordinate_convention,
+                scene_reference.assembly_coordinate_convention
+                == expected_coordinate_contract.assembly_coordinate_convention,
+                scene_reference.geometry_requires_assembly_transform
+                == expected_coordinate_contract.geometry_requires_assembly_transform,
+                scene_reference.camera_poses_require_assembly_transform
+                == expected_coordinate_contract.camera_poses_require_assembly_transform,
+                scene_reference.object_roots_require_assembly_transform
+                == expected_coordinate_contract.object_roots_require_assembly_transform,
+            )
+        )
+        scene_numeric_source_space = (
+            scene.metadata.coordinate_convention == source_scene.metadata.coordinate_convention
+            and scene.cameras == source_scene.cameras
+            and scene.frames == source_scene.frames
+            and scene.objects == source_scene.objects
+            and scene.geometry_assets == source_scene.geometry_assets
+            and scene.material_assets == source_scene.material_assets
+            and scene.collision_assets == source_scene.collision_assets
+            and scene.relations == source_scene.relations
+        )
+        gravity_only_source_preserved = not (
+            manifest.calibration_status is WorldCalibrationStatus.ACCEPTED_GRAVITY_ONLY
+            and (
+                plan.world.world_mode.value == "gravity_aligned_arbitrary_scale"
+                or plan.world.gravity_alignment_known
+                or not _is_identity(plan.world.source_world_to_assembly_world)
             )
         )
         no_collisions = not scene.collision_assets and all(
@@ -1344,6 +1582,11 @@ class Phase6BConsistencyValidationAdapter:
                 "coherent_lineage",
                 lineage.coherent and used_lineages <= connected,
                 "all assets belong to one connected reconstruction lineage",
+            ),
+            _check(
+                "capture_bound_state_alignment",
+                alignment_capture_binding,
+                "accepted lineage transforms match exact capture states, cameras, and digests",
             ),
             _check(
                 "exact_source_hashes",
@@ -1369,6 +1612,11 @@ class Phase6BConsistencyValidationAdapter:
                     in {"canonical_metric", "gravity_aligned_arbitrary_scale"}
                 ),
                 "gravity alignment is claimed only with accepted evidence",
+            ),
+            _check(
+                "gravity_only_source_preserving",
+                gravity_only_source_preserved,
+                "gravity-only evidence remains source-world without a typed orientation transform",
             ),
             _check(
                 "measured_anchors_retained",
@@ -1426,6 +1674,11 @@ class Phase6BConsistencyValidationAdapter:
                 "normalized license policy matches its exact source record",
             ),
             _check(
+                "global_context_geometry_binding",
+                global_context_geometry_binding,
+                "global context path/hash/lineage match the exact promoted Phase 3 source",
+            ),
+            _check(
                 "global_mesh_immutable",
                 plan.source_geometry_immutable and overlap.source_geometry_modified is False,
                 "global context remains immutable under layered_no_carve_v1",
@@ -1461,6 +1714,11 @@ class Phase6BConsistencyValidationAdapter:
                 "compiler manifest matches the exact dual bundles and assembled assets",
             ),
             _check(
+                "compiler_coordinate_contract",
+                compiler_coordinate_contract,
+                "compiler manifest states the exact source-to-assembly coordinate contract",
+            ),
+            _check(
                 "assembly_artifact_references",
                 assembly_references_ok,
                 "plan and bundles reference exact input, lineage, and plan bytes",
@@ -1469,6 +1727,11 @@ class Phase6BConsistencyValidationAdapter:
                 "scene_ir_identity",
                 scene_refs_ok,
                 "Phase 6B Scene IR references exact assembly artifacts",
+            ),
+            _check(
+                "scene_ir_source_space_contract",
+                scene_numeric_source_space,
+                "Phase 6B Scene IR retains source-space cameras, objects, and geometry metadata",
             ),
             _check(
                 "preview_outputs",

@@ -6441,8 +6441,11 @@ class SceneAssemblySourceArtifactType(StrEnum):
     WORLD_CALIBRATION = "world_calibration"
     CANONICAL_WRAPPER = "canonical_wrapper"
     STATE_ALIGNMENT = "state_alignment"
+    ARTICULATION_CAPTURE_MANIFEST = "articulation_capture_manifest"
     MEASURED_MOTION = "measured_motion"
     GLOBAL_CONTEXT_MANIFEST = "global_context_manifest"
+    PHASE3_GLOBAL_RECONSTRUCTION = "phase3_global_reconstruction"
+    GLOBAL_CONTEXT_SOURCE = "global_context_source"
 
 
 def _matrix4(value: tuple[float, ...]) -> tuple[float, ...]:
@@ -6504,6 +6507,7 @@ class SceneAssemblyLineageRecord(StrictModel):
     world_frame: WorldFrame
     connected_to_lineage_id: str | None = None
     accepted_alignment: SceneAssemblySourceReference | None = None
+    alignment_capture_manifest: SceneAssemblySourceReference | None = None
     alignment_state_id: str | None = None
     transform_connected_from_lineage: tuple[float, ...] | None = None
 
@@ -6529,16 +6533,75 @@ class SceneAssemblyLineageRecord(StrictModel):
             is not SceneAssemblySourceArtifactType.STATE_ALIGNMENT
         ):
             raise ValueError("lineage connection requires a typed state-alignment artifact")
+        if self.alignment_capture_manifest is not None and (
+            self.alignment_capture_manifest.artifact_type
+            is not SceneAssemblySourceArtifactType.ARTICULATION_CAPTURE_MANIFEST
+        ):
+            raise ValueError("lineage connection requires its typed capture manifest")
         values = (
             self.connected_to_lineage_id,
             self.accepted_alignment,
+            self.alignment_capture_manifest,
             self.alignment_state_id,
             self.transform_connected_from_lineage,
         )
         if any(value is not None for value in values) and any(value is None for value in values):
-            raise ValueError("lineage connections require ID, accepted artifact, and transform")
+            raise ValueError(
+                "lineage connections require ID, accepted alignment, "
+                "capture manifest, and transform"
+            )
         if self.connected_to_lineage_id == self.lineage_id:
             raise ValueError("a lineage cannot connect to itself")
+        return self
+
+
+class GlobalContextSourceAsset(StrictModel):
+    assembly_asset_id: str = Field(min_length=1)
+    source_geometry_asset_id: str = Field(min_length=1)
+    source_native_asset_path: str
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    format: Literal["glb", "ply"]
+    source: Literal[GeometrySourceType.GENERATED] = GeometrySourceType.GENERATED
+
+    @field_validator("source_native_asset_path")
+    @classmethod
+    def relative_global_context_path(cls, value: str) -> str:
+        return _relative_artifact_path(value)
+
+
+class GlobalContextSourceManifest(StrictModel):
+    schema_version: Literal["0.1.0"] = "0.1.0"
+    lineage_id: str = Field(min_length=1)
+    frame_sequence_digest: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    camera_reconstruction_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    coordinate_convention: CoordinateConvention
+    phase3_reconstruction: SceneAssemblySourceReference
+    genrecon_worker_manifest: SceneAssemblySourceReference
+    source_scene_ir: SceneAssemblySourceReference
+    assets: Annotated[list[GlobalContextSourceAsset], Field(min_length=1)]
+
+    @model_validator(mode="after")
+    def exact_global_context_sources(self) -> Self:
+        if (
+            self.phase3_reconstruction.artifact_type
+            is not SceneAssemblySourceArtifactType.PHASE3_GLOBAL_RECONSTRUCTION
+            or self.genrecon_worker_manifest.artifact_type
+            is not SceneAssemblySourceArtifactType.GLOBAL_CONTEXT_MANIFEST
+            or self.source_scene_ir.artifact_type
+            is not SceneAssemblySourceArtifactType.SOURCE_SCENE_IR
+        ):
+            raise ValueError("global-context manifest source references have incorrect types")
+        identities = [
+            (
+                asset.assembly_asset_id,
+                asset.source_geometry_asset_id,
+                asset.source_native_asset_path,
+                asset.format,
+            )
+            for asset in self.assets
+        ]
+        if len(identities) != len(set(identities)):
+            raise ValueError("global-context source assets must be unique")
         return self
 
 
@@ -6571,6 +6634,8 @@ class SceneAssemblyAssetRecord(StrictModel):
     articulation_id: str | None = None
     link_id: str | None = None
     kinematic_bundle: SceneAssemblySourceReference | None = None
+    global_scene_reconstruction: SceneAssemblySourceReference | None = None
+    global_context_source: SceneAssemblySourceReference | None = None
     license_source_record: SceneAssemblySourceReference | None = None
     license: SceneAssemblyLicenseRecord
     source_asset_immutable: Literal[True] = True
@@ -6642,6 +6707,23 @@ class SceneAssemblyAssetRecord(StrictModel):
                 is not SceneAssemblySourceArtifactType.MEASURED_GEOMETRY
             ):
                 raise ValueError("measured anchor source has an incorrect artifact type")
+        if self.role is SceneAssemblyAssetRole.GLOBAL_CONTEXT:
+            if (
+                self.source is not GeometrySourceType.GENERATED
+                or self.asset_native_space is not SceneAssemblyAssetSpace.GLOBAL_CONTEXT
+                or self.global_scene_reconstruction is None
+                or self.global_context_source is None
+            ):
+                raise ValueError(
+                    "global context requires generated geometry and exact Phase 3 source records"
+                )
+            if (
+                self.global_scene_reconstruction.artifact_type
+                is not SceneAssemblySourceArtifactType.PHASE3_GLOBAL_RECONSTRUCTION
+                or self.global_context_source.artifact_type
+                is not SceneAssemblySourceArtifactType.GLOBAL_CONTEXT_SOURCE
+            ):
+                raise ValueError("global-context source references have incorrect artifact types")
         if self.asset_native_space is SceneAssemblyAssetSpace.LINK_LOCAL and (
             self.articulation_id is None or self.link_id is None
         ):
@@ -6678,7 +6760,7 @@ class SceneAssemblyObjectInput(StrictModel):
 
 
 class SceneAssemblyInputManifest(StrictModel):
-    schema_version: Literal["0.2.0"] = "0.2.0"
+    schema_version: Literal["0.3.0"] = "0.3.0"
     assembly_id: str = Field(min_length=1)
     calibration_policy: SceneAssemblyCalibrationPolicy = (
         SceneAssemblyCalibrationPolicy.USE_FULL_CANONICAL_IF_AVAILABLE
@@ -6797,6 +6879,7 @@ class SceneAssemblyWorldRecord(StrictModel):
     metric_scale_known: bool
     gravity_alignment_known: bool
     world_wrapper_required: bool
+    warnings: list[str] = Field(default_factory=list)
 
     @field_validator("source_world_to_assembly_world")
     @classmethod
@@ -6892,7 +6975,7 @@ class SceneAssemblyLineageReport(StrictModel):
 
 
 class SceneAssemblyPlan(StrictModel):
-    schema_version: Literal["0.2.0"] = "0.2.0"
+    schema_version: Literal["0.3.0"] = "0.3.0"
     input_manifest: SceneAssemblyArtifactReference
     world: SceneAssemblyWorldRecord
     lineage_report: SceneAssemblyArtifactReference
@@ -6914,7 +6997,7 @@ class SceneAssemblyLicenseSummary(StrictModel):
 
 
 class SceneAssemblyBundle(StrictModel):
-    schema_version: Literal["0.2.0"] = "0.2.0"
+    schema_version: Literal["0.3.0"] = "0.3.0"
     bundle_id: str = Field(min_length=1)
     bundle_kind: SceneAssemblyBundleKind
     assembly_plan: SceneAssemblyArtifactReference
@@ -6965,9 +7048,65 @@ class SceneAssemblyOverlapReport(StrictModel):
     source_geometry_modified: Literal[False] = False
 
 
+class SceneAssemblyCoordinateContract(StrictModel):
+    scene_ir_data_space: Literal["source_world"] = "source_world"
+    source_scene_ir: SceneAssemblySourceReference
+    source_coordinate_convention: CoordinateConvention
+    assembly_coordinate_convention: CoordinateConvention
+    source_world_to_assembly_world: Annotated[
+        tuple[float, ...],
+        Field(min_length=16, max_length=16),
+    ]
+    reference_world_assets_are_source_space: Literal[True] = True
+    apply_world_transform_at_compile_time: bool
+    geometry_requires_assembly_transform: bool
+    camera_poses_require_assembly_transform: bool
+    object_roots_require_assembly_transform: bool
+
+    @field_validator("source_world_to_assembly_world")
+    @classmethod
+    def finite_coordinate_contract_transform(cls, value: tuple[float, ...]) -> tuple[float, ...]:
+        return _matrix4(value)
+
+    @model_validator(mode="after")
+    def compile_time_transform_flags_match(self) -> Self:
+        required = self.source_world_to_assembly_world != (
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        )
+        flags = (
+            self.apply_world_transform_at_compile_time,
+            self.geometry_requires_assembly_transform,
+            self.camera_poses_require_assembly_transform,
+            self.object_roots_require_assembly_transform,
+        )
+        if any(flag is not required for flag in flags):
+            raise ValueError("source-space compile-time transform flags disagree with transform")
+        if self.source_scene_ir.artifact_type is not (
+            SceneAssemblySourceArtifactType.SOURCE_SCENE_IR
+        ):
+            raise ValueError("coordinate contract requires an exact source Scene IR")
+        return self
+
+
 class SceneAssemblyCompilerManifest(StrictModel):
-    schema_version: Literal["0.2.0"] = "0.2.0"
+    schema_version: Literal["0.3.0"] = "0.3.0"
     world: SceneAssemblyWorldRecord
+    coordinate_contract: SceneAssemblyCoordinateContract
     research_bundle: SceneAssemblyArtifactReference
     deployment_bundle: SceneAssemblyArtifactReference
     assets: list[PlannedAssemblyAsset]

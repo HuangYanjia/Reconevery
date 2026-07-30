@@ -171,6 +171,11 @@ def connected_lineages(manifest: SceneAssemblyInputManifest) -> set[str]:
 def resolve_world(manifest: SceneAssemblyInputManifest) -> SceneAssemblyWorldRecord:
     policy = manifest.calibration_policy
     status = manifest.calibration_status
+    source_world_warnings = (
+        ["gravity_evidence_available_but_no_typed_orientation_transform"]
+        if status is WorldCalibrationStatus.ACCEPTED_GRAVITY_ONLY
+        else []
+    )
     if policy is SceneAssemblyCalibrationPolicy.PRESERVE_SOURCE_WORLD:
         return SceneAssemblyWorldRecord(
             world_mode=SceneAssemblyWorldMode.SOURCE_ARBITRARY,
@@ -183,6 +188,7 @@ def resolve_world(manifest: SceneAssemblyInputManifest) -> SceneAssemblyWorldRec
             metric_scale_known=False,
             gravity_alignment_known=False,
             world_wrapper_required=False,
+            warnings=source_world_warnings,
         )
     if policy is SceneAssemblyCalibrationPolicy.REQUIRE_FULL_CANONICAL and (
         status is not WorldCalibrationStatus.ACCEPTED_FULL_CANONICAL
@@ -221,22 +227,18 @@ def resolve_world(manifest: SceneAssemblyInputManifest) -> SceneAssemblyWorldRec
             world_wrapper_required=True,
         )
     if status is WorldCalibrationStatus.ACCEPTED_GRAVITY_ONLY:
-        if manifest.source_world_to_assembly_world is None:
-            raise ValueError("gravity-only assembly requires an accepted orientation transform")
-        scale = validate_proper_sim3(manifest.source_world_to_assembly_world)
-        if abs(scale - 1.0) > 1e-8:
-            raise ValueError("gravity-only assembly cannot introduce metric scale")
         return SceneAssemblyWorldRecord(
-            world_mode=SceneAssemblyWorldMode.GRAVITY_ALIGNED_ARBITRARY_SCALE,
+            world_mode=SceneAssemblyWorldMode.SOURCE_ARBITRARY,
             calibration_policy=policy,
             calibration_status=status,
-            source_world_to_assembly_world=manifest.source_world_to_assembly_world,
+            source_world_to_assembly_world=IDENTITY_MATRIX4,
             linear_units="arbitrary_units",
-            alignment_status="gravity_aligned",
+            alignment_status="unoriented",
             full_canonical_world_used=False,
             metric_scale_known=False,
-            gravity_alignment_known=True,
-            world_wrapper_required=True,
+            gravity_alignment_known=False,
+            world_wrapper_required=False,
+            warnings=source_world_warnings,
         )
     return SceneAssemblyWorldRecord(
         world_mode=SceneAssemblyWorldMode.SOURCE_ARBITRARY,

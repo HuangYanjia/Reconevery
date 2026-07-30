@@ -251,8 +251,11 @@
         "world_calibration",
         "canonical_wrapper",
         "state_alignment",
+        "articulation_capture_manifest",
         "measured_motion",
-        "global_context_manifest"
+        "global_context_manifest",
+        "phase3_global_reconstruction",
+        "global_context_source"
       ],
       "title": "SceneAssemblySourceArtifactType",
       "type": "string"
@@ -343,6 +346,13 @@
           "maxItems": 16,
           "minItems": 16,
           "title": "Source World To Assembly World",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
           "type": "array"
         },
         "world_mode": {
@@ -439,8 +449,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "0.2.0",
-      "default": "0.2.0",
+      "const": "0.3.0",
+      "default": "0.3.0",
       "title": "Schema Version",
       "type": "string"
     },

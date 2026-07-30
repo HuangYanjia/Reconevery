@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,12 @@ from recon2sim.artifacts import (
     SceneAssemblyOverlapReport,
     SceneAssemblyPlan,
 )
-from recon2sim.assembly import IDENTITY_MATRIX4, multiply_matrix4, transform_point
+from recon2sim.assembly import (
+    IDENTITY_MATRIX4,
+    multiply_matrix4,
+    resolve_world,
+    transform_point,
+)
 from recon2sim.assembly_sources import normalize_assembly_manifest
 from recon2sim.calibration import sha256_file
 from recon2sim.cli import app
@@ -29,6 +35,7 @@ CONFIG = ROOT / "configs/phase6b_e2e_fake.yaml"
 PHASE5B_CONFIG = ROOT / "configs/phase5b_e2e_fake.yaml"
 PHASE5C_CONFIG = ROOT / "configs/phase5c_e2e_fake.yaml"
 PHASE6A_CONFIG = ROOT / "configs/phase6a_e2e_fake.yaml"
+PHASE3_CONFIG = ROOT / "configs/phase3_e2e_fake.yaml"
 
 
 def _config(
@@ -56,10 +63,89 @@ def phase5b_source_run(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 @pytest.fixture(scope="module")
+def phase3_source_run(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    run_dir = tmp_path_factory.mktemp("phase6b-global-context-binding")
+    PipelineRunner(load_config(PHASE3_CONFIG), INPUT, run_dir).run()
+    return run_dir
+
+
+@pytest.fixture(scope="module")
 def phase6a_source_run(tmp_path_factory: pytest.TempPathFactory) -> Path:
     run_dir = tmp_path_factory.mktemp("phase6b-calibration-binding")
     PipelineRunner(load_config(PHASE6A_CONFIG), INPUT, run_dir).run()
     return run_dir
+
+
+@pytest.fixture(scope="module")
+def phase6a_gravity_only_source_run(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    config = load_config(PHASE6A_CONFIG)
+    world_stage = config.stages["world_calibration"]
+    world_adapter = world_stage.adapter.model_copy(
+        update={"config": {**world_stage.adapter.config, "fake_mode": "gravity_only"}}
+    )
+    config = config.model_copy(
+        update={
+            "stages": {
+                key: (
+                    value.model_copy(update={"adapter": world_adapter})
+                    if key == "world_calibration"
+                    else value
+                )
+                for key, value in config.stages.items()
+                if key != "phase6a_consistency_validation"
+            }
+        }
+    )
+    run_dir = tmp_path_factory.mktemp("phase6b-gravity-only-binding")
+    PipelineRunner(config, INPUT, run_dir).run()
+    return run_dir
+
+
+@pytest.fixture(scope="module")
+def phase6a_nonidentity_source_run(
+    tmp_path_factory: pytest.TempPathFactory,
+    phase6a_source_run: Path,
+) -> Path:
+    source_run = tmp_path_factory.mktemp("phase6b-nonidentity-scene-source")
+    PipelineRunner(
+        _config("source_arbitrary_measured_only"),
+        INPUT,
+        source_run,
+    ).run()
+    root = tmp_path_factory.mktemp("phase6b-full-canonical-nonidentity-binding")
+    for relative, source in (
+        (
+            "calibration/source/camera_reconstruction.json",
+            source_run / "assembly/source/camera_reconstruction.json",
+        ),
+        (
+            "calibration/source/scene_ir.json",
+            source_run / "assembly/source/scene_ir.json",
+        ),
+        (
+            "calibration/world_calibration.json",
+            phase6a_source_run / "calibration/world_calibration.json",
+        ),
+    ):
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(source.read_bytes())
+    wrapper = json.loads(
+        (phase6a_source_run / "calibration/canonical_scene_wrapper.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    wrapper["source_scene_ir_sha256"] = sha256_file(root / "calibration/source/scene_ir.json")
+    wrapper["source_camera_reconstruction_sha256"] = sha256_file(
+        root / "calibration/source/camera_reconstruction.json"
+    )
+    wrapper["asset_mappings"] = []
+    destination = root / "calibration/canonical_scene_wrapper.json"
+    destination.write_text(
+        json.dumps(wrapper, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    return root
 
 
 @pytest.fixture(scope="module")
@@ -132,6 +218,20 @@ def _materialize_phase5c_camera(root: Path, template_root: Path) -> None:
             json.dumps(camera, sort_keys=True, separators=(",", ":")) + "\n",
             encoding="utf-8",
         )
+        state["camera_reconstruction_sha256"] = sha256_file(path)
+    binding_capture_path = root / "assembly_binding/capture_manifest.json"
+    binding_capture_path.write_text(
+        json.dumps(capture, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    alignment = json.loads(
+        (root / "reconstruction/articulation/state_alignment.json").read_text(encoding="utf-8")
+    )
+    alignment["capture_manifest_sha256"] = sha256_file(binding_capture_path)
+    (root / "assembly_binding/state_alignment.json").write_text(
+        json.dumps(alignment, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _rigid_source_manifest(root: Path) -> dict[str, object]:
@@ -375,6 +475,61 @@ def _articulated_source_manifest(root: Path) -> dict[str, object]:
     }
 
 
+def _global_context_source_manifest(
+    root: Path,
+    *,
+    asset_format: str = "glb",
+) -> dict[str, object]:
+    metadata = json.loads(
+        (root / "reconstruction/global/metadata.json").read_text(encoding="utf-8")
+    )
+    asset_path = (
+        metadata["scene_asset_path"] if asset_format == "glb" else metadata["mesh_asset_path"]
+    )
+    camera_ref = _source_ref(root, "camera/reconstruction.json", "camera_reconstruction")
+    scene_ref = _source_ref(root, "scene_ir/scene.json", "source_scene_ir")
+    return {
+        "schema_version": "0.3.0",
+        "assembly_id": "global_context_source_binding",
+        "primary_lineage_id": "lineage",
+        "lineages": [
+            {
+                "lineage_id": "lineage",
+                "camera_reconstruction": camera_ref,
+                "source_scene_ir": scene_ref,
+            }
+        ],
+        "source_scene_ir": scene_ref,
+        "assets": [
+            {
+                "asset_id": "global_context",
+                "object_id": None,
+                "lineage_id": "lineage",
+                "role": "global_context",
+                "source": "generated",
+                "asset_path": asset_path,
+                "asset_sha256": sha256_file(root / asset_path),
+                "source_native_asset_path": asset_path,
+                "format": asset_format,
+                "asset_native_space": "global_context",
+                "asset_to_object": list(IDENTITY_MATRIX4),
+                "object_to_source_world": list(IDENTITY_MATRIX4),
+                "global_scene_reconstruction": _source_ref(
+                    root,
+                    "reconstruction/global/metadata.json",
+                    "phase3_global_reconstruction",
+                ),
+                "license_source_record": _source_ref(
+                    root,
+                    "reconstruction/global/worker_manifest.json",
+                    "global_context_manifest",
+                ),
+            }
+        ],
+        "objects": [],
+    }
+
+
 def _calibration_source_manifest(root: Path) -> dict[str, object]:
     camera_ref = _source_ref(
         root,
@@ -413,6 +568,114 @@ def _calibration_source_manifest(root: Path) -> dict[str, object]:
     }
 
 
+def _run_source_bound_calibration_assembly(
+    root: Path,
+    raw: dict[str, object],
+    *,
+    run_name: str,
+) -> Path:
+    payload = json.loads(json.dumps(raw))
+
+    def add_local_paths(value: object) -> None:
+        if isinstance(value, dict):
+            path = value.get("path")
+            if path is not None and value.get("artifact_type") is not None:
+                value["local_path"] = str(root / path)
+            for child in value.values():
+                add_local_paths(child)
+        elif isinstance(value, list):
+            for child in value:
+                add_local_paths(child)
+
+    add_local_paths(payload)
+    manifest_path = root / f"assembly_binding/{run_name}.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+    config = _config("source_arbitrary_measured_only")
+    stage = config.stages["scene_assembly_inputs"]
+    adapter = stage.adapter.model_copy(
+        update={
+            "config": {
+                **stage.adapter.config,
+                "fake_mode": None,
+                "manifest_path": str(manifest_path),
+            }
+        }
+    )
+    config = config.model_copy(
+        update={
+            "stages": {
+                **config.stages,
+                "scene_assembly_inputs": stage.model_copy(update={"adapter": adapter}),
+            }
+        }
+    )
+    run_dir = root / run_name
+    PipelineRunner(config, INPUT, run_dir).run()
+    return run_dir
+
+
+def _connected_articulated_source_manifest(
+    root: Path,
+    *,
+    child_camera_path: str = "assembly_binding/state_001_camera_reconstruction.json",
+    capture_path: str = "assembly_binding/capture_manifest.json",
+    alignment_path: str = "assembly_binding/state_alignment.json",
+    alignment_state_id: str = "state_001",
+) -> dict[str, object]:
+    raw = _articulated_source_manifest(root)
+    raw["lineages"].append(  # type: ignore[union-attr]
+        {
+            "lineage_id": "state_001_lineage",
+            "camera_reconstruction": _source_ref(
+                root,
+                child_camera_path,
+                "camera_reconstruction",
+            ),
+            "source_scene_ir": raw["source_scene_ir"],
+            "connected_to_lineage_id": "lineage",
+            "accepted_alignment": _source_ref(
+                root,
+                alignment_path,
+                "state_alignment",
+            ),
+            "alignment_capture_manifest": _source_ref(
+                root,
+                capture_path,
+                "articulation_capture_manifest",
+            ),
+            "alignment_state_id": alignment_state_id,
+        }
+    )
+    return raw
+
+
+def _write_capture_alignment_revision(
+    root: Path,
+    name: str,
+    mutate_capture: Callable[[dict[str, object]], None],
+) -> tuple[str, str]:
+    capture = json.loads(
+        (root / "assembly_binding/capture_manifest.json").read_text(encoding="utf-8")
+    )
+    mutate_capture(capture)
+    capture_relative = f"assembly_binding/{name}_capture.json"
+    (root / capture_relative).write_text(
+        json.dumps(capture, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    alignment = json.loads(
+        (root / "assembly_binding/state_alignment.json").read_text(encoding="utf-8")
+    )
+    alignment["capture_manifest_sha256"] = sha256_file(root / capture_relative)
+    alignment_relative = f"assembly_binding/{name}_alignment.json"
+    (root / alignment_relative).write_text(
+        json.dumps(alignment, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    return capture_relative, alignment_relative
+
+
 @pytest.mark.parametrize(
     ("mode", "world_mode", "metric", "gravity"),
     [
@@ -421,9 +684,9 @@ def _calibration_source_manifest(root: Path) -> dict[str, object]:
         ("metric_only_scene", "metric_unoriented", True, False),
         (
             "gravity_only_scene",
-            "gravity_aligned_arbitrary_scale",
+            "source_arbitrary",
             False,
-            True,
+            False,
         ),
     ],
 )
@@ -440,6 +703,11 @@ def test_calibration_optional_world_modes(
     assert plan.world.world_mode.value == world_mode
     assert plan.world.metric_scale_known is metric
     assert plan.world.gravity_alignment_known is gravity
+    if mode == "gravity_only_scene":
+        assert plan.world.source_world_to_assembly_world == IDENTITY_MATRIX4
+        assert plan.world.warnings == [
+            "gravity_evidence_available_but_no_typed_orientation_transform"
+        ]
 
 
 def test_fake_phase6b_dag_dual_bundle_resume_and_cli(tmp_path: Path) -> None:
@@ -468,7 +736,7 @@ def test_fake_phase6b_dag_dual_bundle_resume_and_cli(tmp_path: Path) -> None:
         (run_dir / "validation/phase6b_layered_scene_assembly.json").read_text(encoding="utf-8")
     )
     assert report.passed
-    assert len(report.checks) == 31
+    assert len(report.checks) == 36
     assert report.visual_scene_assembled
     assert not report.collision_generation_implemented
     assert not report.physics_identification_implemented
@@ -494,6 +762,14 @@ def test_scene_ir_has_exact_phase6b_references(tmp_path: Path) -> None:
     )
     reference = scene.metadata.scene_assembly
     assert reference is not None
+    assert reference.scene_data_space == "source_world"
+    assert reference.source_scene_ir_sha256 == sha256_file(run_dir / reference.source_scene_ir_path)
+    assert reference.source_coordinate_convention == scene.metadata.coordinate_convention
+    assert reference.assembly_world_mode == "source_arbitrary"
+    assert reference.source_world_to_assembly_world == IDENTITY_MATRIX4
+    assert not reference.geometry_requires_assembly_transform
+    assert not reference.camera_poses_require_assembly_transform
+    assert not reference.object_roots_require_assembly_transform
     assert reference.assembly_plan_sha256 == sha256_file(run_dir / reference.assembly_plan_path)
     assert reference.research_bundle_sha256 == sha256_file(run_dir / reference.research_bundle_path)
     assert reference.deployment_bundle_sha256 == sha256_file(
@@ -504,6 +780,66 @@ def test_scene_ir_has_exact_phase6b_references(tmp_path: Path) -> None:
     )
     assert not reference.collision_ready
     assert not reference.sim_ready
+
+
+@pytest.mark.parametrize(
+    ("mode", "requires_transform", "assembly_units", "assembly_alignment"),
+    [
+        ("full_canonical_scene", True, "meters", "canonical"),
+        ("metric_only_scene", True, "meters", "unoriented"),
+        ("gravity_only_scene", False, "arbitrary_units", "unoriented"),
+        ("source_arbitrary_measured_only", False, "arbitrary_units", "unoriented"),
+    ],
+)
+def test_layered_scene_ir_keeps_nonidentity_source_numeric_space(
+    tmp_path: Path,
+    mode: str,
+    requires_transform: bool,
+    assembly_units: str,
+    assembly_alignment: str,
+) -> None:
+    run_dir = _run(tmp_path, mode)
+    source = SceneIR.model_validate_json(
+        (run_dir / "assembly/source/scene_ir.json").read_text(encoding="utf-8")
+    )
+    layered = SceneIR.model_validate_json(
+        (run_dir / "scene_ir/phase6b_layered_scene.json").read_text(encoding="utf-8")
+    )
+    reference = layered.metadata.scene_assembly
+    assert reference is not None
+    assert layered.metadata.coordinate_convention == source.metadata.coordinate_convention
+    assert layered.cameras == source.cameras
+    assert layered.frames == source.frames
+    assert layered.objects == source.objects
+    assert layered.geometry_assets == source.geometry_assets
+    assert source.cameras[0].poses[0].transform_world_from_camera.translation == (
+        1.0,
+        2.0,
+        3.0,
+    )
+    assert source.objects[0].transform.translation == (4.0, 5.0, 6.0)
+    assert source.objects[1].transform.translation == (-2.0, 1.0, 0.5)
+    assert reference.scene_data_space == "source_world"
+    assert reference.assembly_linear_units == assembly_units
+    assert reference.assembly_alignment_status == assembly_alignment
+    assert reference.geometry_requires_assembly_transform is requires_transform
+    assert reference.camera_poses_require_assembly_transform is requires_transform
+    assert reference.object_roots_require_assembly_transform is requires_transform
+    compiler = json.loads(
+        (run_dir / "assembly/compiler_input_manifest.json").read_text(encoding="utf-8")
+    )
+    contract = compiler["coordinate_contract"]
+    assert contract["source_scene_ir"]["sha256"] == sha256_file(
+        run_dir / contract["source_scene_ir"]["path"]
+    )
+    assert contract[
+        "source_coordinate_convention"
+    ] == source.metadata.coordinate_convention.model_dump(mode="json")
+    assert contract["source_world_to_assembly_world"] == list(
+        reference.source_world_to_assembly_world
+    )
+    assert contract["reference_world_assets_are_source_space"]
+    assert contract["apply_world_transform_at_compile_time"] is requires_transform
 
 
 def test_measured_anchor_retained_when_articulated_candidate_rejected(
@@ -751,6 +1087,61 @@ def test_research_only_license_cannot_be_promoted_locally(
         normalize_assembly_manifest(raw, phase5b_source_run)
 
 
+@pytest.mark.parametrize("asset_format", ["glb", "ply"])
+def test_global_context_geometry_is_bound_to_phase3_output(
+    phase3_source_run: Path,
+    asset_format: str,
+) -> None:
+    manifest = normalize_assembly_manifest(
+        _global_context_source_manifest(phase3_source_run, asset_format=asset_format),
+        phase3_source_run,
+    )
+    asset = manifest.assets[0]
+    metadata = json.loads(
+        (phase3_source_run / "reconstruction/global/metadata.json").read_text(encoding="utf-8")
+    )
+    expected_path = (
+        metadata["scene_asset_path"] if asset_format == "glb" else metadata["mesh_asset_path"]
+    )
+    assert asset.source_native_asset_path == expected_path
+    assert asset.asset_path == expected_path
+    assert asset.global_scene_reconstruction is not None
+    assert asset.global_context_source is not None
+    assert asset.license.source_record == asset.license_source_record
+    assert asset.license.research_evaluation_allowed
+    assert not asset.license.production_selectable
+    assert asset.license.commercial_review_status == "not_reviewed"
+
+
+def test_global_context_rejects_representation_path_mismatch(
+    phase3_source_run: Path,
+) -> None:
+    raw = _global_context_source_manifest(phase3_source_run)
+    raw["assets"][0]["format"] = "ply"  # type: ignore[index]
+    with pytest.raises(ValueError, match="native representation|promoted Phase 3"):
+        normalize_assembly_manifest(raw, phase3_source_run)
+
+
+def test_global_context_rejects_correct_license_with_wrong_geometry_hash(
+    phase3_source_run: Path,
+) -> None:
+    raw = _global_context_source_manifest(phase3_source_run)
+    raw["assets"][0]["asset_sha256"] = sha256_file(  # type: ignore[index]
+        phase3_source_run / "reconstruction/global/mesh.ply"
+    )
+    with pytest.raises(ValueError, match="staged asset bytes"):
+        normalize_assembly_manifest(raw, phase3_source_run)
+
+
+def test_global_context_rejects_foreign_lineage(
+    phase3_source_run: Path,
+) -> None:
+    raw = _global_context_source_manifest(phase3_source_run)
+    raw["assets"][0]["lineage_id"] = "foreign_lineage"  # type: ignore[index]
+    with pytest.raises(ValueError, match="undeclared lineage"):
+        normalize_assembly_manifest(raw, phase3_source_run)
+
+
 def test_articulated_selection_fit_evaluation_and_license_are_source_bound(
     phase5c_source_run: Path,
 ) -> None:
@@ -816,26 +1207,7 @@ def test_articulated_candidate_link_and_object_identity_mismatch_fails_closed(
 def test_lineage_connection_requires_an_accepted_typed_alignment(
     phase5c_source_run: Path,
 ) -> None:
-    raw = _articulated_source_manifest(phase5c_source_run)
-    alignment_path = "reconstruction/articulation/state_alignment.json"
-    raw["lineages"].append(  # type: ignore[union-attr]
-        {
-            "lineage_id": "state_001_lineage",
-            "camera_reconstruction": _source_ref(
-                phase5c_source_run,
-                "assembly_binding/state_001_camera_reconstruction.json",
-                "camera_reconstruction",
-            ),
-            "source_scene_ir": raw["source_scene_ir"],
-            "connected_to_lineage_id": "lineage",
-            "accepted_alignment": _source_ref(
-                phase5c_source_run,
-                alignment_path,
-                "state_alignment",
-            ),
-            "alignment_state_id": "state_001",
-        }
-    )
+    raw = _connected_articulated_source_manifest(phase5c_source_run)
     normalized = normalize_assembly_manifest(raw, phase5c_source_run)
     assert normalized.lineages[1].transform_connected_from_lineage == IDENTITY_MATRIX4
     assert normalized.lineages[0].source_state_id == "state_000"
@@ -849,7 +1221,9 @@ def test_lineage_connection_requires_an_accepted_typed_alignment(
         normalize_assembly_manifest(raw, phase5c_source_run)
     raw["lineages"][1]["source_state_id"] = "state_001"  # type: ignore[index]
 
-    rejected = json.loads((phase5c_source_run / alignment_path).read_text(encoding="utf-8"))
+    rejected = json.loads(
+        (phase5c_source_run / "assembly_binding/state_alignment.json").read_text(encoding="utf-8")
+    )
     transform = next(item for item in rejected["transforms"] if item["state_id"] == "state_001")
     transform["accepted"] = False
     transform["failure_reason"] = "synthetic rejected alignment"
@@ -869,6 +1243,84 @@ def test_lineage_connection_requires_an_accepted_typed_alignment(
         normalize_assembly_manifest(raw, phase5c_source_run)
 
 
+def test_state_alignment_requires_capture_manifest_reference(
+    phase5c_source_run: Path,
+) -> None:
+    raw = _connected_articulated_source_manifest(phase5c_source_run)
+    del raw["lineages"][1]["alignment_capture_manifest"]  # type: ignore[index]
+    with pytest.raises(ValueError, match="articulation_capture_manifest"):
+        normalize_assembly_manifest(raw, phase5c_source_run)
+
+
+def test_state_alignment_rejects_camera_from_another_capture_state(
+    phase5c_source_run: Path,
+) -> None:
+    raw = _connected_articulated_source_manifest(
+        phase5c_source_run,
+        child_camera_path="assembly_binding/state_002_camera_reconstruction.json",
+    )
+    with pytest.raises(ValueError, match="child lineage camera hash/digest"):
+        normalize_assembly_manifest(raw, phase5c_source_run)
+
+
+def test_state_alignment_rejects_correct_camera_hash_with_wrong_frame_digest(
+    phase5c_source_run: Path,
+) -> None:
+    def wrong_digest(capture: dict[str, object]) -> None:
+        states = capture["states"]
+        assert isinstance(states, list)
+        state = next(item for item in states if item["state_id"] == "state_001")
+        state["frame_sequence_digest"] = "f" * 64
+
+    capture_path, alignment_path = _write_capture_alignment_revision(
+        phase5c_source_run,
+        "wrong_digest",
+        wrong_digest,
+    )
+    raw = _connected_articulated_source_manifest(
+        phase5c_source_run,
+        capture_path=capture_path,
+        alignment_path=alignment_path,
+    )
+    with pytest.raises(ValueError, match="child lineage camera hash/digest"):
+        normalize_assembly_manifest(raw, phase5c_source_run)
+
+
+def test_state_alignment_rejects_capture_sha_mismatch(
+    phase5c_source_run: Path,
+) -> None:
+    raw = _connected_articulated_source_manifest(
+        phase5c_source_run,
+        capture_path="reconstruction/articulation/capture_manifest.json",
+    )
+    with pytest.raises(ValueError, match="not bound to the referenced capture"):
+        normalize_assembly_manifest(raw, phase5c_source_run)
+
+
+def test_state_alignment_rejects_swapped_child_and_reference_states(
+    phase5c_source_run: Path,
+) -> None:
+    raw = _connected_articulated_source_manifest(
+        phase5c_source_run,
+        alignment_state_id="state_000",
+    )
+    with pytest.raises(ValueError, match="child lineage camera hash/digest"):
+        normalize_assembly_manifest(raw, phase5c_source_run)
+
+
+def test_state_alignment_rejects_wrong_reference_camera(
+    phase5c_source_run: Path,
+) -> None:
+    raw = _connected_articulated_source_manifest(phase5c_source_run)
+    raw["lineages"][0]["camera_reconstruction"] = _source_ref(  # type: ignore[index]
+        phase5c_source_run,
+        "assembly_binding/state_002_camera_reconstruction.json",
+        "camera_reconstruction",
+    )
+    with pytest.raises(ValueError, match="reference lineage camera hash/digest"):
+        normalize_assembly_manifest(raw, phase5c_source_run)
+
+
 def test_calibration_status_and_transform_are_derived_from_phase6a(
     phase6a_source_run: Path,
 ) -> None:
@@ -884,6 +1336,80 @@ def test_calibration_status_and_transform_are_derived_from_phase6a(
         list(manifest.source_world_to_assembly_world or ())
         == artifact["accepted_transform"]["matrix_canonical_from_colmap"]
     )
+
+
+def test_source_bound_gravity_only_calibration_preserves_source_world(
+    phase6a_gravity_only_source_run: Path,
+) -> None:
+    raw = _calibration_source_manifest(phase6a_gravity_only_source_run)
+    manifest = normalize_assembly_manifest(raw, phase6a_gravity_only_source_run)
+    assert manifest.calibration_status is not None
+    assert manifest.calibration_status.value == "accepted_gravity_only"
+    assert manifest.source_world_to_assembly_world is None
+    require_payload = manifest.model_dump(mode="json")
+    require_payload["calibration_policy"] = "require_full_canonical"
+    with pytest.raises(ValueError, match="requires an accepted full-canonical"):
+        resolve_world(SceneAssemblyInputManifest.model_validate(require_payload))
+    preserve_payload = manifest.model_dump(mode="json")
+    preserve_payload["calibration_policy"] = "preserve_source_world"
+    preserved = resolve_world(SceneAssemblyInputManifest.model_validate(preserve_payload))
+    assert preserved.world_mode.value == "source_arbitrary"
+    assert preserved.source_world_to_assembly_world == IDENTITY_MATRIX4
+    assert not preserved.gravity_alignment_known
+
+    run_dir = _run_source_bound_calibration_assembly(
+        phase6a_gravity_only_source_run,
+        raw,
+        run_name="phase6b",
+    )
+    plan = SceneAssemblyPlan.model_validate_json(
+        (run_dir / "assembly/assembly_plan.json").read_text(encoding="utf-8")
+    )
+    assert plan.world.world_mode.value == "source_arbitrary"
+    assert plan.world.source_world_to_assembly_world == IDENTITY_MATRIX4
+    assert not plan.world.gravity_alignment_known
+    assert plan.world.warnings == ["gravity_evidence_available_but_no_typed_orientation_transform"]
+
+
+def test_source_bound_full_canonical_keeps_nonidentity_scene_ir_in_source_space(
+    phase6a_nonidentity_source_run: Path,
+) -> None:
+    raw = _calibration_source_manifest(phase6a_nonidentity_source_run)
+    run_dir = _run_source_bound_calibration_assembly(
+        phase6a_nonidentity_source_run,
+        raw,
+        run_name="phase6b",
+    )
+    source = SceneIR.model_validate_json(
+        (run_dir / "calibration/source/scene_ir.json").read_text(encoding="utf-8")
+    )
+    layered = SceneIR.model_validate_json(
+        (run_dir / "scene_ir/phase6b_layered_scene.json").read_text(encoding="utf-8")
+    )
+    reference = layered.metadata.scene_assembly
+    assert reference is not None
+    assert reference.assembly_world_mode == "canonical_metric"
+    assert reference.assembly_linear_units == "meters"
+    assert reference.assembly_alignment_status == "canonical"
+    assert reference.source_world_to_assembly_world != IDENTITY_MATRIX4
+    assert reference.camera_poses_require_assembly_transform
+    assert reference.object_roots_require_assembly_transform
+    assert layered.metadata.coordinate_convention == source.metadata.coordinate_convention
+    assert layered.cameras == source.cameras
+    assert layered.objects == source.objects
+    assert source.cameras[0].poses[0].transform_world_from_camera.translation == (
+        1.0,
+        2.0,
+        3.0,
+    )
+    assert source.objects[0].transform.translation == (4.0, 5.0, 6.0)
+    compiler = json.loads(
+        (run_dir / "assembly/compiler_input_manifest.json").read_text(encoding="utf-8")
+    )
+    assert compiler["coordinate_contract"]["source_world_to_assembly_world"] == list(
+        reference.source_world_to_assembly_world
+    )
+    assert compiler["coordinate_contract"]["apply_world_transform_at_compile_time"]
 
 
 def test_local_calibration_status_or_transform_mismatch_fails_closed(

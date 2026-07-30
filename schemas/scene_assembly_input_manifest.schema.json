@@ -160,6 +160,28 @@
           "title": "Format",
           "type": "string"
         },
+        "global_context_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "global_scene_reconstruction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "kinematic_bundle": {
           "anyOf": [
             {
@@ -421,6 +443,17 @@
       "additionalProperties": false,
       "properties": {
         "accepted_alignment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "alignment_capture_manifest": {
           "anyOf": [
             {
               "$ref": "#/$defs/SceneAssemblySourceReference"
@@ -750,8 +783,11 @@
         "world_calibration",
         "canonical_wrapper",
         "state_alignment",
+        "articulation_capture_manifest",
         "measured_motion",
-        "global_context_manifest"
+        "global_context_manifest",
+        "phase3_global_reconstruction",
+        "global_context_source"
       ],
       "title": "SceneAssemblySourceArtifactType",
       "type": "string"
@@ -882,8 +918,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "0.2.0",
-      "default": "0.2.0",
+      "const": "0.3.0",
+      "default": "0.3.0",
       "title": "Schema Version",
       "type": "string"
     },

@@ -1,5 +1,14 @@
 {
   "$defs": {
+    "AlignmentStatus": {
+      "enum": [
+        "canonical",
+        "gravity_aligned",
+        "unoriented"
+      ],
+      "title": "AlignmentStatus",
+      "type": "string"
+    },
     "BundleObjectAssemblyDecision": {
       "additionalProperties": false,
       "properties": {
@@ -52,6 +61,57 @@
       "title": "BundleObjectAssemblyDecision",
       "type": "object"
     },
+    "CameraAxes": {
+      "enum": [
+        "unspecified",
+        "x_right_y_down_z_forward"
+      ],
+      "title": "CameraAxes",
+      "type": "string"
+    },
+    "CoordinateConvention": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "$ref": "#/$defs/AlignmentStatus",
+          "default": "canonical"
+        },
+        "camera_axes": {
+          "$ref": "#/$defs/CameraAxes",
+          "default": "unspecified"
+        },
+        "handedness": {
+          "const": "right",
+          "default": "right",
+          "title": "Handedness",
+          "type": "string"
+        },
+        "linear_units": {
+          "$ref": "#/$defs/LinearUnits",
+          "default": "meters"
+        },
+        "quaternion_order": {
+          "const": "xyzw",
+          "default": "xyzw",
+          "title": "Quaternion Order",
+          "type": "string"
+        },
+        "scale_status": {
+          "$ref": "#/$defs/ScaleStatus",
+          "default": "metric_scale_known"
+        },
+        "transform_direction": {
+          "$ref": "#/$defs/TransformDirection",
+          "default": "world_from_camera"
+        },
+        "world_frame": {
+          "$ref": "#/$defs/WorldFrame",
+          "default": "canonical_x_forward_y_left_z_up"
+        }
+      },
+      "title": "CoordinateConvention",
+      "type": "object"
+    },
     "GeometrySourceType": {
       "enum": [
         "measured",
@@ -62,6 +122,14 @@
         "mock"
       ],
       "title": "GeometrySourceType",
+      "type": "string"
+    },
+    "LinearUnits": {
+      "enum": [
+        "meters",
+        "arbitrary_units"
+      ],
+      "title": "LinearUnits",
       "type": "string"
     },
     "ObjectAssemblyDecision": {
@@ -155,6 +223,15 @@
       ],
       "title": "PlannedAssemblyAsset",
       "type": "object"
+    },
+    "ScaleStatus": {
+      "enum": [
+        "metric_scale_known",
+        "scale_ambiguous",
+        "externally_scaled"
+      ],
+      "title": "ScaleStatus",
+      "type": "string"
     },
     "SceneAssemblyArtifactReference": {
       "additionalProperties": false,
@@ -310,6 +387,28 @@
           ],
           "title": "Format",
           "type": "string"
+        },
+        "global_context_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "global_scene_reconstruction": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "kinematic_bundle": {
           "anyOf": [
@@ -508,6 +607,69 @@
       "title": "SceneAssemblyCalibrationPolicy",
       "type": "string"
     },
+    "SceneAssemblyCoordinateContract": {
+      "additionalProperties": false,
+      "properties": {
+        "apply_world_transform_at_compile_time": {
+          "title": "Apply World Transform At Compile Time",
+          "type": "boolean"
+        },
+        "assembly_coordinate_convention": {
+          "$ref": "#/$defs/CoordinateConvention"
+        },
+        "camera_poses_require_assembly_transform": {
+          "title": "Camera Poses Require Assembly Transform",
+          "type": "boolean"
+        },
+        "geometry_requires_assembly_transform": {
+          "title": "Geometry Requires Assembly Transform",
+          "type": "boolean"
+        },
+        "object_roots_require_assembly_transform": {
+          "title": "Object Roots Require Assembly Transform",
+          "type": "boolean"
+        },
+        "reference_world_assets_are_source_space": {
+          "const": true,
+          "default": true,
+          "title": "Reference World Assets Are Source Space",
+          "type": "boolean"
+        },
+        "scene_ir_data_space": {
+          "const": "source_world",
+          "default": "source_world",
+          "title": "Scene Ir Data Space",
+          "type": "string"
+        },
+        "source_coordinate_convention": {
+          "$ref": "#/$defs/CoordinateConvention"
+        },
+        "source_scene_ir": {
+          "$ref": "#/$defs/SceneAssemblySourceReference"
+        },
+        "source_world_to_assembly_world": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 16,
+          "minItems": 16,
+          "title": "Source World To Assembly World",
+          "type": "array"
+        }
+      },
+      "required": [
+        "source_scene_ir",
+        "source_coordinate_convention",
+        "assembly_coordinate_convention",
+        "source_world_to_assembly_world",
+        "apply_world_transform_at_compile_time",
+        "geometry_requires_assembly_transform",
+        "camera_poses_require_assembly_transform",
+        "object_roots_require_assembly_transform"
+      ],
+      "title": "SceneAssemblyCoordinateContract",
+      "type": "object"
+    },
     "SceneAssemblyLicenseRecord": {
       "additionalProperties": false,
       "properties": {
@@ -589,8 +751,11 @@
         "world_calibration",
         "canonical_wrapper",
         "state_alignment",
+        "articulation_capture_manifest",
         "measured_motion",
-        "global_context_manifest"
+        "global_context_manifest",
+        "phase3_global_reconstruction",
+        "global_context_source"
       ],
       "title": "SceneAssemblySourceArtifactType",
       "type": "string"
@@ -683,6 +848,13 @@
           "title": "Source World To Assembly World",
           "type": "array"
         },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        },
         "world_mode": {
           "$ref": "#/$defs/SceneAssemblyWorldMode"
         },
@@ -706,6 +878,13 @@
       "title": "SceneAssemblyWorldRecord",
       "type": "object"
     },
+    "TransformDirection": {
+      "enum": [
+        "world_from_camera"
+      ],
+      "title": "TransformDirection",
+      "type": "string"
+    },
     "WorldCalibrationStatus": {
       "enum": [
         "accepted_full_canonical",
@@ -720,6 +899,14 @@
       ],
       "title": "WorldCalibrationStatus",
       "type": "string"
+    },
+    "WorldFrame": {
+      "enum": [
+        "canonical_x_forward_y_left_z_up",
+        "colmap_arbitrary"
+      ],
+      "title": "WorldFrame",
+      "type": "string"
     }
   },
   "additionalProperties": false,
@@ -730,6 +917,9 @@
       },
       "title": "Assets",
       "type": "array"
+    },
+    "coordinate_contract": {
+      "$ref": "#/$defs/SceneAssemblyCoordinateContract"
     },
     "deployment_articulated_hierarchies": {
       "additionalProperties": {
@@ -780,8 +970,8 @@
       "type": "array"
     },
     "schema_version": {
-      "const": "0.2.0",
-      "default": "0.2.0",
+      "const": "0.3.0",
+      "default": "0.3.0",
       "title": "Schema Version",
       "type": "string"
     },
@@ -816,6 +1006,7 @@
   },
   "required": [
     "world",
+    "coordinate_contract",
     "research_bundle",
     "deployment_bundle",
     "assets",

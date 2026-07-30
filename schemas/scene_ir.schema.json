@@ -1525,6 +1525,26 @@
     "SceneAssemblySceneReference": {
       "additionalProperties": false,
       "properties": {
+        "assembly_alignment_status": {
+          "enum": [
+            "canonical",
+            "gravity_aligned",
+            "unoriented"
+          ],
+          "title": "Assembly Alignment Status",
+          "type": "string"
+        },
+        "assembly_coordinate_convention": {
+          "$ref": "#/$defs/CoordinateConvention"
+        },
+        "assembly_linear_units": {
+          "enum": [
+            "meters",
+            "arbitrary_units"
+          ],
+          "title": "Assembly Linear Units",
+          "type": "string"
+        },
         "assembly_plan_path": {
           "title": "Assembly Plan Path",
           "type": "string"
@@ -1532,6 +1552,16 @@
         "assembly_plan_sha256": {
           "pattern": "^[0-9a-f]{64}$",
           "title": "Assembly Plan Sha256",
+          "type": "string"
+        },
+        "assembly_world_mode": {
+          "enum": [
+            "source_arbitrary",
+            "canonical_metric",
+            "metric_unoriented",
+            "gravity_aligned_arbitrary_scale"
+          ],
+          "title": "Assembly World Mode",
           "type": "string"
         },
         "calibration_status": {
@@ -1545,6 +1575,10 @@
           ],
           "default": null,
           "title": "Calibration Status"
+        },
+        "camera_poses_require_assembly_transform": {
+          "title": "Camera Poses Require Assembly Transform",
+          "type": "boolean"
         },
         "collision_ready": {
           "const": false,
@@ -1570,11 +1604,19 @@
           "title": "Deployment Bundle Sha256",
           "type": "string"
         },
+        "geometry_requires_assembly_transform": {
+          "title": "Geometry Requires Assembly Transform",
+          "type": "boolean"
+        },
         "lineage_id": {
           "minLength": 1,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
           "title": "Lineage Id",
           "type": "string"
+        },
+        "object_roots_require_assembly_transform": {
+          "title": "Object Roots Require Assembly Transform",
+          "type": "boolean"
         },
         "physical_validation": {
           "const": "not_implemented",
@@ -1591,30 +1633,49 @@
           "title": "Research Bundle Sha256",
           "type": "string"
         },
+        "scene_data_space": {
+          "const": "source_world",
+          "default": "source_world",
+          "title": "Scene Data Space",
+          "type": "string"
+        },
         "sim_ready": {
           "const": false,
           "default": false,
           "title": "Sim Ready",
           "type": "boolean"
         },
+        "source_coordinate_convention": {
+          "$ref": "#/$defs/CoordinateConvention"
+        },
+        "source_scene_ir_path": {
+          "title": "Source Scene Ir Path",
+          "type": "string"
+        },
+        "source_scene_ir_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Scene Ir Sha256",
+          "type": "string"
+        },
+        "source_world_to_assembly_world": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 16,
+          "minItems": 16,
+          "title": "Source World To Assembly World",
+          "type": "array"
+        },
         "visual_only": {
           "const": true,
           "default": true,
           "title": "Visual Only",
           "type": "boolean"
-        },
-        "world_mode": {
-          "enum": [
-            "source_arbitrary",
-            "canonical_metric",
-            "metric_unoriented",
-            "gravity_aligned_arbitrary_scale"
-          ],
-          "title": "World Mode",
-          "type": "string"
         }
       },
       "required": [
+        "source_scene_ir_path",
+        "source_scene_ir_sha256",
         "assembly_plan_path",
         "assembly_plan_sha256",
         "research_bundle_path",
@@ -1624,7 +1685,15 @@
         "compiler_manifest_path",
         "compiler_manifest_sha256",
         "lineage_id",
-        "world_mode"
+        "assembly_world_mode",
+        "source_world_to_assembly_world",
+        "source_coordinate_convention",
+        "assembly_coordinate_convention",
+        "assembly_linear_units",
+        "assembly_alignment_status",
+        "geometry_requires_assembly_transform",
+        "camera_poses_require_assembly_transform",
+        "object_roots_require_assembly_transform"
       ],
       "title": "SceneAssemblySceneReference",
       "type": "object"
@@ -2062,7 +2131,8 @@
         "0.1.6",
         "0.1.7",
         "0.1.8",
-        "0.1.9"
+        "0.1.9",
+        "0.1.10"
       ],
       "title": "Schema Version",
       "type": "string"

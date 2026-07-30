@@ -24,11 +24,16 @@ The default calibration policy is `use_full_canonical_if_available`.
 | --- | --- | --- | --- |
 | `accepted_full_canonical` | `canonical_metric` | meters | canonical |
 | `accepted_metric_only` | `metric_unoriented` | meters | unoriented |
-| `accepted_gravity_only` | `gravity_aligned_arbitrary_scale` | arbitrary | gravity aligned |
+| `accepted_gravity_only` | `source_arbitrary` | arbitrary | unoriented |
 | insufficient or rejected | `source_arbitrary` | arbitrary | unoriented |
 
 `require_full_canonical` fails closed unless Phase 6A accepted a full canonical
-world. `preserve_source_world` always uses an identity world wrapper.
+world. `preserve_source_world` always uses an identity world wrapper. Phase 6A's
+current `accepted_gravity_only` contract intentionally has no accepted transform,
+so the default policy preserves source coordinates and records
+`gravity_evidence_available_but_no_typed_orientation_transform`. A future
+`gravity_aligned_arbitrary_scale` mode requires a separate exact typed orientation
+transform; Phase 6B never derives one locally from unbound evidence.
 
 ## Stages
 
@@ -45,7 +50,11 @@ visual assets. Machine-local paths are removed from the canonical manifest. A
 source normalization pass parses exact Phase 5B rigid selection/evaluation/native
 representation records, Phase 5C selected/fitted/evaluated articulation records,
 license sources, cameras, accepted alignments, and Phase 6A calibration/wrapper
-records. Duplicated local semantic flags are rejected on disagreement.
+records. An accepted Phase 5C alignment is also bound to its exact capture manifest,
+child/reference state IDs, camera hashes, and frame-sequence digests. Global context
+is bound to the promoted Phase 3 reconstruction metadata, Scene IR representation,
+worker/license record, and exact GLB or PLY bytes. Duplicated local semantic flags
+are rejected on disagreement.
 
 `scene_assembly_plan` validates one coherent lineage, resolves the optional
 calibration policy, chooses independent research and deployment visual decisions
@@ -66,6 +75,12 @@ applied through both paths.
 overlap diagnostics, a simulator-neutral compiler input manifest, and a Phase 6B
 Scene IR reference. Both bundles remain visual-only and non-simulation-ready.
 
+The Phase 6B Scene IR preserves the source Scene IR coordinate metadata and all
+numeric camera/object/world-space values. Its assembly reference states the exact
+source-to-assembly transform and whether geometry, camera poses, and object roots
+require that transform. The assembly plan and compiler manifest define the assembly
+world; they never relabel untransformed source coordinates as meters or canonical.
+
 `assembly_previews` runs in an isolated worker. Preview settings affect only this
 stage and downstream validation, not the assembly plan.
 
@@ -81,8 +96,9 @@ Every source record declares:
 - an accepted typed inter-lineage transform when applicable.
 
 Unconnected lineage IDs are rejected. Phase 5C state lineages may be connected only
-by accepted state-alignment records. Merely finding assets under the same filesystem
-root is not lineage evidence.
+by accepted state-alignment records whose capture manifest, child and reference
+state IDs, camera hashes, and frame-sequence digests all match. Merely finding assets
+under the same filesystem root is not lineage evidence.
 
 ## Object Decisions
 
@@ -115,7 +131,9 @@ their exact upstream license-bearing artifact.
 
 Canonical JSON outputs live below `assembly/`. Preview PNGs and GLBs are diagnostic
 outputs. `scene_ir/phase6b_layered_scene.json` retains the source Scene IR and adds
-exact assembly path/hash references.
+exact assembly path/hash references plus an explicit source/assembly coordinate
+contract. `compiler_input_manifest.json` repeats the source convention, assembly
+convention, exact source-to-assembly transform, and compile-time transform flags.
 
 All outputs state:
 

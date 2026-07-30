@@ -148,6 +148,10 @@ lineage. It supports full, partial, rejected, or absent calibration, preserves
 measured anchors and articulated local quantities, and reports overlap without
 carving the global mesh. Research and deployment decisions are independently bound
 to exact upstream selection, evaluation, representation, license, lineage, and
-calibration artifacts. The result is a visual-only compiler input manifest, not a
-simulator export. SceneSmith, collision generation, physics identification, and
-simulation validation remain later work.
+calibration artifacts. State alignment is capture/camera/digest-bound; global
+context is Phase 3 geometry-bound. The Scene IR remains source-space while the
+compiler manifest carries the exact assembly coordinate contract. Gravity-only
+evidence is not treated as an applied orientation until Phase 6A exposes a typed
+transform. The result is a visual-only compiler input manifest, not a simulator
+export. SceneSmith, collision generation, physics identification, and simulation
+validation remain later work.

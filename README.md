@@ -348,8 +348,9 @@ Phase 6B assembles one coherent reconstruction lineage without editing source
 geometry. It retains measured anchors, layers only observation-validated rigid or
 articulated visuals, and records unresolved objects instead of selecting a failing
 candidate. Full Phase 6A calibration is used when available; partial or rejected
-calibration retains truthful metric-unoriented, gravity-only, or source-arbitrary
-semantics.
+calibration retains truthful metric-unoriented or source-arbitrary semantics.
+Gravity-only evidence remains source-arbitrary until Phase 6A provides an exact
+typed orientation transform.
 
 Two canonical JSON bundles are emitted: a research visual bundle and a stricter
 deployment-eligible bundle. Research-only or unreviewed assets never enter the
@@ -357,8 +358,12 @@ deployment bundle. Each bundle has its own source-derived object decision, so a
 validated research candidate may differ from the validated production candidate.
 Rigid and articulated candidates, licenses, representations, calibration, and
 lineage transforms are resolved from exact upstream typed artifacts rather than
-local Boolean assertions. Preview GLBs are diagnostics; the compiler input manifest
-is simulator-neutral and contains no collisions or physical properties.
+local Boolean assertions. State alignment is bound to its exact capture-state
+camera/digest chain, and global context is bound to the exact promoted Phase 3
+geometry. The layered Scene IR retains source-space numeric values; the compiler
+manifest carries the exact source-to-assembly coordinate contract. Preview GLBs are
+diagnostics; the compiler input manifest is simulator-neutral and contains no
+collisions or physical properties.
 
 ```bash
 uv run recon2sim run \

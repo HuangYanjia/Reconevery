@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Literal
 
@@ -21,6 +20,7 @@ from recon2sim.artifacts import (
     ArticulatedPartStateGeometryManifest,
     ArticulatedSelectedIdentityManifest,
     ArticulatedSourceFamily,
+    ArticulationCaptureManifest,
     ArticulationFittingManifest,
     ArticulationStateAlignmentArtifact,
     CameraReconstruction,
@@ -32,6 +32,10 @@ from recon2sim.artifacts import (
     CanonicalSceneWrapper,
     CompletionLicenseRecord,
     FittedArticulatedKinematicModel,
+    GenReconWorkerManifest,
+    GlobalContextSourceAsset,
+    GlobalContextSourceManifest,
+    GlobalSceneReconstructionArtifact,
     MeasuredObjectGeometryArtifact,
     SceneAssemblyAssetRole,
     SceneAssemblyAssetSpace,
@@ -45,6 +49,7 @@ from recon2sim.artifacts import (
 from recon2sim.assembly import IDENTITY_MATRIX4
 from recon2sim.calibration import sha256_file, stable_digest
 from recon2sim.ir import GeometrySourceType, SceneIR
+from recon2sim.storage import atomic_write_json
 
 
 def _reference(value: object, expected: SceneAssemblySourceArtifactType) -> dict[str, object]:
@@ -178,6 +183,19 @@ def _normalize_lineages(raw: dict[str, Any], root: Path) -> None:
                 SceneAssemblySourceArtifactType.STATE_ALIGNMENT,
                 ArticulationStateAlignmentArtifact,
             )
+            capture_ref = _reference(
+                value.get("alignment_capture_manifest"),
+                SceneAssemblySourceArtifactType.ARTICULATION_CAPTURE_MANIFEST,
+            )
+            capture = _load(
+                root,
+                capture_ref,
+                SceneAssemblySourceArtifactType.ARTICULATION_CAPTURE_MANIFEST,
+                ArticulationCaptureManifest,
+            )
+            capture_reference = SceneAssemblySourceReference.model_validate(capture_ref)
+            if alignment.capture_manifest_sha256 != capture_reference.sha256:
+                raise ValueError("state alignment is not bound to the referenced capture manifest")
             state_id = value.get("alignment_state_id")
             transform = next(
                 (item for item in alignment.transforms if item.state_id == state_id),
@@ -185,6 +203,26 @@ def _normalize_lineages(raw: dict[str, Any], root: Path) -> None:
             )
             if transform is None or not transform.accepted:
                 raise ValueError("lineage connection does not reference an accepted alignment")
+            child_state = next(
+                (item for item in capture.states if item.state_id == state_id),
+                None,
+            )
+            reference_state = next(
+                (item for item in capture.states if item.state_id == alignment.reference_state_id),
+                None,
+            )
+            if child_state is None or reference_state is None:
+                raise ValueError("state alignment IDs are absent from its capture manifest")
+            camera_reference = SceneAssemblySourceReference.model_validate(
+                value["camera_reconstruction"]
+            )
+            if (
+                camera_reference.sha256 != child_state.camera_reconstruction_sha256
+                or camera.frame_sequence_digest != child_state.frame_sequence_digest
+            ):
+                raise ValueError(
+                    "child lineage camera hash/digest does not match the capture state"
+                )
             _assert_or_set(
                 value,
                 "source_state_id",
@@ -194,6 +232,22 @@ def _normalize_lineages(raw: dict[str, Any], root: Path) -> None:
             parent = lineages_by_id.get(str(value.get("connected_to_lineage_id")))
             if parent is None:
                 raise ValueError("lineage alignment target lineage is not declared")
+            parent_camera = _load(
+                root,
+                parent.get("camera_reconstruction"),
+                SceneAssemblySourceArtifactType.CAMERA_RECONSTRUCTION,
+                CameraReconstruction,
+            )
+            parent_camera_reference = SceneAssemblySourceReference.model_validate(
+                parent["camera_reconstruction"]
+            )
+            if (
+                parent_camera_reference.sha256 != reference_state.camera_reconstruction_sha256
+                or parent_camera.frame_sequence_digest != reference_state.frame_sequence_digest
+            ):
+                raise ValueError(
+                    "reference lineage camera hash/digest does not match the capture state"
+                )
             _assert_or_set(
                 parent,
                 "source_state_id",
@@ -288,38 +342,142 @@ def _normalize_measured_assets(
 
 
 def _normalize_global_context_assets(
+    raw: dict[str, Any],
     root: Path,
     assets_by_id: dict[str, dict[str, Any]],
 ) -> None:
+    lineages = {
+        str(value["lineage_id"]): value for value in raw["lineages"] if isinstance(value, dict)
+    }
     for asset in assets_by_id.values():
         if asset.get("role") != SceneAssemblyAssetRole.GLOBAL_CONTEXT.value:
             continue
-        source_ref = _reference(
+        reconstruction_ref = _reference(
+            asset.get("global_scene_reconstruction"),
+            SceneAssemblySourceArtifactType.PHASE3_GLOBAL_RECONSTRUCTION,
+        )
+        reconstruction = _load(
+            root,
+            reconstruction_ref,
+            SceneAssemblySourceArtifactType.PHASE3_GLOBAL_RECONSTRUCTION,
+            GlobalSceneReconstructionArtifact,
+        )
+        worker_ref = _reference(
             asset.get("license_source_record"),
             SceneAssemblySourceArtifactType.GLOBAL_CONTEXT_MANIFEST,
         )
-        reference = SceneAssemblySourceReference.model_validate(source_ref)
-        source_path = root / reference.path
-        if not source_path.is_file() or sha256_file(source_path) != reference.sha256:
-            raise ValueError("global-context source manifest hash mismatch")
-        manifest = json.loads(source_path.read_text(encoding="utf-8"))
-        if not isinstance(manifest, dict):
-            raise ValueError("global-context source manifest must be a mapping")
-        repository = manifest.get("official_repository")
-        commit = manifest.get("official_code_commit")
-        code_license = manifest.get("official_license")
-        if not all(
-            isinstance(value, str) and value for value in (repository, commit, code_license)
+        worker = _load(
+            root,
+            worker_ref,
+            SceneAssemblySourceArtifactType.GLOBAL_CONTEXT_MANIFEST,
+            GenReconWorkerManifest,
+        )
+        lineage = lineages.get(str(asset.get("lineage_id")))
+        if lineage is None:
+            raise ValueError("global-context asset has an undeclared lineage")
+        camera_ref = SceneAssemblySourceReference.model_validate(lineage["camera_reconstruction"])
+        scene_ref = SceneAssemblySourceReference.model_validate(lineage["source_scene_ir"])
+        scene = _load(
+            root,
+            lineage["source_scene_ir"],
+            SceneAssemblySourceArtifactType.SOURCE_SCENE_IR,
+            SceneIR,
+        )
+        if (
+            reconstruction.frame_sequence_digest != lineage["frame_sequence_digest"]
+            or reconstruction.camera_reconstruction_sha256 != camera_ref.sha256
+            or reconstruction.coordinate_convention != scene.metadata.coordinate_convention
+            or worker.frame_sequence_digest != reconstruction.frame_sequence_digest
+            or worker.official_repository != reconstruction.official_repository
+            or worker.official_code_commit != reconstruction.official_code_commit
+            or worker.runtime_model_revision != reconstruction.runtime_model_revision
+            or worker.runtime_repository_revisions != reconstruction.runtime_repository_revisions
         ):
-            raise ValueError("global-context source manifest lacks backend/license identity")
+            raise ValueError("global-context Phase 3 lineage/backend identity mismatch")
+        raw_asset_format = asset.get("format")
+        if raw_asset_format not in {"glb", "ply"}:
+            raise ValueError("global-context format is absent from the Phase 3 artifact")
+        asset_format: Literal["glb", "ply"] = raw_asset_format
+        expected_native_path = (
+            reconstruction.scene_asset_path
+            if asset_format == "glb"
+            else reconstruction.mesh_asset_path
+        )
+        _assert_or_set(
+            asset,
+            "source_native_asset_path",
+            expected_native_path,
+            label="global-context native representation",
+        )
+        _assert_or_set(
+            asset,
+            "asset_path",
+            expected_native_path,
+            label="global-context promoted Phase 3 geometry path",
+        )
+        source_geometry = next(
+            (
+                value
+                for value in scene.geometry_assets
+                if value.uri == expected_native_path
+                and value.format == asset_format
+                and value.source is GeometrySourceType.GENERATED
+            ),
+            None,
+        )
+        if (
+            source_geometry is None
+            or source_geometry.coordinate_convention != reconstruction.coordinate_convention
+        ):
+            raise ValueError("global-context geometry is absent from the exact Phase 3 Scene IR")
+        staged_path = root / str(asset["asset_path"])
+        staged_sha256 = sha256_file(staged_path)
+        if staged_sha256 != asset.get("asset_sha256"):
+            raise ValueError("global-context geometry hash differs from staged asset bytes")
+        source_manifest = GlobalContextSourceManifest(
+            lineage_id=str(asset["lineage_id"]),
+            frame_sequence_digest=reconstruction.frame_sequence_digest,
+            camera_reconstruction_sha256=reconstruction.camera_reconstruction_sha256,
+            coordinate_convention=reconstruction.coordinate_convention,
+            phase3_reconstruction=SceneAssemblySourceReference.model_validate(reconstruction_ref),
+            genrecon_worker_manifest=SceneAssemblySourceReference.model_validate(worker_ref),
+            source_scene_ir=scene_ref,
+            assets=[
+                GlobalContextSourceAsset(
+                    assembly_asset_id=str(asset["asset_id"]),
+                    source_geometry_asset_id=source_geometry.asset_id,
+                    source_native_asset_path=expected_native_path,
+                    sha256=staged_sha256,
+                    format=asset_format,
+                )
+            ],
+        )
+        manifest_path = (
+            "assembly/source/global_context_sources/"
+            f"{stable_digest(source_manifest.model_dump(mode='json'))}.json"
+        )
+        atomic_write_json(root / manifest_path, source_manifest)
+        source_reference = SceneAssemblySourceReference(
+            path=manifest_path,
+            sha256=sha256_file(root / manifest_path),
+            artifact_type=SceneAssemblySourceArtifactType.GLOBAL_CONTEXT_SOURCE,
+        )
+        _assert_or_set(
+            asset,
+            "global_context_source",
+            source_reference.model_dump(mode="json"),
+            label="global-context source manifest",
+        )
         derived = SceneAssemblyLicenseRecord(
-            license_id=f"genrecon:{commit}:{code_license}",
-            license_name=f"GenRecon {code_license} code; generated output review pending",
+            license_id=(f"genrecon:{worker.official_code_commit}:{worker.official_license}"),
+            license_name=(
+                f"GenRecon {worker.official_license} code; generated output review pending"
+            ),
             research_evaluation_allowed=True,
             production_selectable=False,
             commercial_review_status="not_reviewed",
             restrictions=["model-output deployment review required"],
-            source_record=reference,
+            source_record=SceneAssemblySourceReference.model_validate(worker_ref),
         ).model_dump(mode="json")
         _assert_or_set(
             asset,
@@ -1009,7 +1167,7 @@ def _normalize_calibration(raw: dict[str, Any], root: Path) -> None:
 
 def normalize_assembly_manifest(raw: dict[str, Any], root: Path) -> SceneAssemblyInputManifest:
     normalized = dict(raw)
-    normalized["schema_version"] = "0.2.0"
+    normalized["schema_version"] = "0.3.0"
     _normalize_lineages(normalized, root)
     primary = next(
         (
@@ -1033,7 +1191,7 @@ def normalize_assembly_manifest(raw: dict[str, Any], root: Path) -> SceneAssembl
         raise ValueError("assembly assets and objects must be lists")
     assets_by_id = {str(value["asset_id"]): value for value in assets}
     _normalize_measured_assets(normalized, root, assets_by_id)
-    _normalize_global_context_assets(root, assets_by_id)
+    _normalize_global_context_assets(normalized, root, assets_by_id)
     for item in objects:
         if not isinstance(item, dict):
             raise ValueError("assembly object input must be a mapping")
