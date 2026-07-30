@@ -172,3 +172,35 @@ meter metadata alone. Consumers must verify and apply the referenced wrapper to
 source-space geometry. The exact O/U/R derivation remains auditable through the
 Scene IR calibration record instead of being reduced to unbound up, forward,
 and origin values.
+
+# Phase 6B layered scene
+
+`scene_ir/phase6b_layered_scene.json` retains the source Scene IR and adds exact
+path/hash references for the assembly plan, research bundle, deployment-eligible
+bundle, compiler input manifest, and source Scene IR. Its top-level coordinate
+metadata and all numeric cameras, object roots, geometry relations, and articulations
+remain in source space. The assembly reference separately records the assembly world
+mode, coordinate convention, exact source-to-assembly transform, and whether
+geometry, cameras, and object roots require that transform.
+
+Consequently, full-canonical or metric-only assembly does not relabel untransformed
+source numbers as meters. `accepted_gravity_only` also remains source-arbitrary
+because Phase 6A currently supplies evidence but no accepted orientation transform.
+
+Reference-world measured assets receive the assembly world wrapper directly.
+Candidate-base and link-local visuals remain under their object hierarchy, so the
+wrapper is applied at the root exactly once. Measured anchors remain authoritative
+evidence even when a validated visual completion is present.
+
+The Scene IR is visual-only. It records unresolved objects, candidate evaluations,
+and license exclusions while keeping `collision_ready=false`,
+`physical_validation=not_implemented`, and `sim_ready=false`. Diagnostic preview
+GLBs are not canonical geometry or future collision inputs.
+
+The referenced plan and compiler manifest preserve independent research and
+deployment object decisions. Candidate identity, representation, license, fitted
+articulation, lineage, and calibration values are normalized from exact upstream
+typed artifacts. Scene IR references never promote a local manifest assertion into
+selection or calibration evidence. Phase 5C state connections include the exact
+capture-state camera/digest chain, and global-context representations include the
+exact Phase 3 source geometry identity.

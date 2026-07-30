@@ -1,0 +1,494 @@
+{
+  "$defs": {
+    "BundleObjectAssemblyDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "articulated_model_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "rationale": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Rationale",
+          "type": "array"
+        },
+        "selected_candidate_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Candidate Id"
+        },
+        "selected_visual_asset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Selected Visual Asset Ids",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/ObjectAssemblyDecisionStatus"
+        }
+      },
+      "required": [
+        "status",
+        "rationale"
+      ],
+      "title": "BundleObjectAssemblyDecision",
+      "type": "object"
+    },
+    "ObjectAssemblyDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/BundleObjectAssemblyDecision"
+        },
+        "measured_anchor_asset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Measured Anchor Asset Ids",
+          "type": "array"
+        },
+        "measured_motion": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SceneAssemblySourceReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "object_id": {
+          "minLength": 1,
+          "title": "Object Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "object_id",
+        "measured_anchor_asset_ids",
+        "decision"
+      ],
+      "title": "ObjectAssemblyDecision",
+      "type": "object"
+    },
+    "ObjectAssemblyDecisionStatus": {
+      "enum": [
+        "selected_deployment_candidate",
+        "selected_research_candidate",
+        "measured_only",
+        "global_context_only",
+        "deferred_no_valid_candidate",
+        "deferred_license_blocked",
+        "deferred_articulated_unresolved",
+        "ignored"
+      ],
+      "title": "ObjectAssemblyDecisionStatus",
+      "type": "string"
+    },
+    "SceneAssemblyArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "title": "SceneAssemblyArtifactReference",
+      "type": "object"
+    },
+    "SceneAssemblyAssetRole": {
+      "enum": [
+        "measured_anchor",
+        "visual_completion",
+        "global_context",
+        "articulated_visual",
+        "diagnostic"
+      ],
+      "title": "SceneAssemblyAssetRole",
+      "type": "string"
+    },
+    "SceneAssemblyBundleKind": {
+      "enum": [
+        "research",
+        "deployment_eligible"
+      ],
+      "title": "SceneAssemblyBundleKind",
+      "type": "string"
+    },
+    "SceneAssemblyCalibrationPolicy": {
+      "enum": [
+        "use_full_canonical_if_available",
+        "require_full_canonical",
+        "preserve_source_world"
+      ],
+      "title": "SceneAssemblyCalibrationPolicy",
+      "type": "string"
+    },
+    "SceneAssemblyLayer": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Asset Ids",
+          "type": "array"
+        },
+        "included_in_deployment": {
+          "title": "Included In Deployment",
+          "type": "boolean"
+        },
+        "included_in_research": {
+          "title": "Included In Research",
+          "type": "boolean"
+        },
+        "layer_id": {
+          "minLength": 1,
+          "title": "Layer Id",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/SceneAssemblyAssetRole"
+        }
+      },
+      "required": [
+        "layer_id",
+        "role",
+        "asset_ids",
+        "included_in_research",
+        "included_in_deployment"
+      ],
+      "title": "SceneAssemblyLayer",
+      "type": "object"
+    },
+    "SceneAssemblyLicenseSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "excluded_asset_reasons": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Excluded Asset Reasons",
+          "type": "object"
+        },
+        "included_license_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Included License Ids",
+          "type": "array"
+        },
+        "production_asset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Production Asset Ids",
+          "type": "array"
+        },
+        "research_only_asset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Research Only Asset Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "included_license_ids",
+        "excluded_asset_reasons",
+        "research_only_asset_ids",
+        "production_asset_ids"
+      ],
+      "title": "SceneAssemblyLicenseSummary",
+      "type": "object"
+    },
+    "SceneAssemblySourceArtifactType": {
+      "enum": [
+        "camera_reconstruction",
+        "source_scene_ir",
+        "measured_geometry",
+        "rigid_selection",
+        "rigid_evaluation",
+        "rigid_registration",
+        "rigid_generation",
+        "representation_parity",
+        "articulated_selection",
+        "articulated_candidate_manifest",
+        "articulated_evaluation",
+        "articulated_fitting",
+        "articulated_link_assignment",
+        "selected_identity_manifest",
+        "kinematic_bundle",
+        "license_record",
+        "world_calibration",
+        "canonical_wrapper",
+        "state_alignment",
+        "articulation_capture_manifest",
+        "measured_motion",
+        "global_context_manifest",
+        "phase3_global_reconstruction",
+        "global_context_source"
+      ],
+      "title": "SceneAssemblySourceArtifactType",
+      "type": "string"
+    },
+    "SceneAssemblySourceReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_type": {
+          "$ref": "#/$defs/SceneAssemblySourceArtifactType"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "artifact_type"
+      ],
+      "title": "SceneAssemblySourceReference",
+      "type": "object"
+    },
+    "SceneAssemblyWorldMode": {
+      "enum": [
+        "source_arbitrary",
+        "canonical_metric",
+        "metric_unoriented",
+        "gravity_aligned_arbitrary_scale"
+      ],
+      "title": "SceneAssemblyWorldMode",
+      "type": "string"
+    },
+    "SceneAssemblyWorldRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "alignment_status": {
+          "enum": [
+            "canonical",
+            "gravity_aligned",
+            "unoriented"
+          ],
+          "title": "Alignment Status",
+          "type": "string"
+        },
+        "calibration_policy": {
+          "$ref": "#/$defs/SceneAssemblyCalibrationPolicy"
+        },
+        "calibration_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldCalibrationStatus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "full_canonical_world_used": {
+          "title": "Full Canonical World Used",
+          "type": "boolean"
+        },
+        "gravity_alignment_known": {
+          "title": "Gravity Alignment Known",
+          "type": "boolean"
+        },
+        "linear_units": {
+          "enum": [
+            "meters",
+            "arbitrary_units"
+          ],
+          "title": "Linear Units",
+          "type": "string"
+        },
+        "metric_scale_known": {
+          "title": "Metric Scale Known",
+          "type": "boolean"
+        },
+        "source_world_to_assembly_world": {
+          "items": {
+            "type": "number"
+          },
+          "maxItems": 16,
+          "minItems": 16,
+          "title": "Source World To Assembly World",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        },
+        "world_mode": {
+          "$ref": "#/$defs/SceneAssemblyWorldMode"
+        },
+        "world_wrapper_required": {
+          "title": "World Wrapper Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "world_mode",
+        "calibration_policy",
+        "calibration_status",
+        "source_world_to_assembly_world",
+        "linear_units",
+        "alignment_status",
+        "full_canonical_world_used",
+        "metric_scale_known",
+        "gravity_alignment_known",
+        "world_wrapper_required"
+      ],
+      "title": "SceneAssemblyWorldRecord",
+      "type": "object"
+    },
+    "WorldCalibrationStatus": {
+      "enum": [
+        "accepted_full_canonical",
+        "accepted_metric_only",
+        "accepted_gravity_only",
+        "rejected_inconsistent_metric_evidence",
+        "rejected_inconsistent_gravity_evidence",
+        "rejected_heldout_validation",
+        "insufficient_forward_evidence",
+        "insufficient_origin_evidence",
+        "insufficient_evidence"
+      ],
+      "title": "WorldCalibrationStatus",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assembly_plan": {
+      "$ref": "#/$defs/SceneAssemblyArtifactReference"
+    },
+    "asset_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Asset Ids",
+      "type": "array"
+    },
+    "bundle_id": {
+      "minLength": 1,
+      "title": "Bundle Id",
+      "type": "string"
+    },
+    "bundle_kind": {
+      "$ref": "#/$defs/SceneAssemblyBundleKind"
+    },
+    "collision_ready": {
+      "const": false,
+      "default": false,
+      "title": "Collision Ready",
+      "type": "boolean"
+    },
+    "layers": {
+      "items": {
+        "$ref": "#/$defs/SceneAssemblyLayer"
+      },
+      "title": "Layers",
+      "type": "array"
+    },
+    "license_summary": {
+      "$ref": "#/$defs/SceneAssemblyLicenseSummary"
+    },
+    "lineage_id": {
+      "minLength": 1,
+      "title": "Lineage Id",
+      "type": "string"
+    },
+    "object_decisions": {
+      "items": {
+        "$ref": "#/$defs/ObjectAssemblyDecision"
+      },
+      "title": "Object Decisions",
+      "type": "array"
+    },
+    "physical_validation": {
+      "const": "not_implemented",
+      "default": "not_implemented",
+      "title": "Physical Validation",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "0.3.0",
+      "default": "0.3.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "sim_ready": {
+      "const": false,
+      "default": false,
+      "title": "Sim Ready",
+      "type": "boolean"
+    },
+    "unresolved_object_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unresolved Object Ids",
+      "type": "array"
+    },
+    "visual_only": {
+      "const": true,
+      "default": true,
+      "title": "Visual Only",
+      "type": "boolean"
+    },
+    "world": {
+      "$ref": "#/$defs/SceneAssemblyWorldRecord"
+    }
+  },
+  "required": [
+    "bundle_id",
+    "bundle_kind",
+    "assembly_plan",
+    "world",
+    "lineage_id",
+    "asset_ids",
+    "object_decisions",
+    "layers",
+    "license_summary",
+    "unresolved_object_ids"
+  ],
+  "title": "SceneAssemblyBundle",
+  "type": "object"
+}

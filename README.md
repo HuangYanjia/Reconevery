@@ -341,3 +341,38 @@ Fake acceptance validates contracts only. Real full-canonical acceptance require
 physically measured metric source plus held-out gravity, forward, and origin
 evidence. Source cameras and geometry remain immutable; collisions, dynamics, and
 simulation readiness remain unimplemented.
+
+## Phase 6B: layered scene assembly
+
+Phase 6B assembles one coherent reconstruction lineage without editing source
+geometry. It retains measured anchors, layers only observation-validated rigid or
+articulated visuals, and records unresolved objects instead of selecting a failing
+candidate. Full Phase 6A calibration is used when available; partial or rejected
+calibration retains truthful metric-unoriented or source-arbitrary semantics.
+Gravity-only evidence remains source-arbitrary until Phase 6A provides an exact
+typed orientation transform.
+
+Two canonical JSON bundles are emitted: a research visual bundle and a stricter
+deployment-eligible bundle. Research-only or unreviewed assets never enter the
+deployment bundle. Each bundle has its own source-derived object decision, so a
+validated research candidate may differ from the validated production candidate.
+Rigid and articulated candidates, licenses, representations, calibration, and
+lineage transforms are resolved from exact upstream typed artifacts rather than
+local Boolean assertions. State alignment is bound to its exact capture-state
+camera/digest chain, and global context is bound to the exact promoted Phase 3
+geometry. The layered Scene IR retains source-space numeric values; the compiler
+manifest carries the exact source-to-assembly coordinate contract. Preview GLBs are
+diagnostics; the compiler input manifest is simulator-neutral and contains no
+collisions or physical properties.
+
+```bash
+uv run recon2sim run \
+  --input examples/tabletop \
+  --config configs/phase6b_e2e_fake.yaml \
+  --run-dir runs/phase6b_e2e_fake
+uv run recon2sim assembly inspect runs/phase6b_e2e_fake
+uv run recon2sim validation verify-phase6b runs/phase6b_e2e_fake
+```
+
+Phase 6B does not carve global meshes, fill holes, run SceneSmith, export a
+simulator scene, or claim simulation readiness.

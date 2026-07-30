@@ -58,7 +58,11 @@ from recon2sim.artifacts import (
     Phase5BConsistencyReport,
     Phase5CConsistencyReport,
     Phase6AConsistencyReport,
+    Phase6BConsistencyReport,
     Sam3WorkerManifest,
+    SceneAssemblyBundle,
+    SceneAssemblyLineageReport,
+    SceneAssemblyPlan,
     SegmentationDiagnostics,
     SegmentationPromptManifest,
     SegmentationTrackingArtifact,
@@ -125,6 +129,10 @@ calibration_app = typer.Typer(
     help="Inspect and export evidence-grounded metric world calibration.",
     no_args_is_help=True,
 )
+assembly_app = typer.Typer(
+    help="Inspect and export calibration-optional visual scene assemblies.",
+    no_args_is_help=True,
+)
 app.add_typer(adapters_app, name="adapters")
 app.add_typer(ingest_app, name="ingest")
 app.add_typer(camera_app, name="camera")
@@ -137,6 +145,7 @@ app.add_typer(dense_app, name="dense")
 app.add_typer(completion_app, name="completion")
 app.add_typer(articulation_app, name="articulation")
 app.add_typer(calibration_app, name="calibration")
+app.add_typer(assembly_app, name="assembly")
 
 
 @app.command()
@@ -2684,3 +2693,234 @@ def verify_phase6a(
         failed = [item.check_id for item in report.checks if not item.passed]
         raise typer.BadParameter(f"Phase 6A consistency verification failed: {failed}")
     typer.echo(f"Phase 6A world-calibration consistency passed ({len(report.checks)} checks)")
+
+
+def _assembly_plan(run_dir: Path) -> SceneAssemblyPlan:
+    return _artifact_model(
+        run_dir,
+        "assembly/assembly_plan.json",
+        SceneAssemblyPlan,
+    )
+
+
+def _assembly_bundle(run_dir: Path, *, deployment: bool) -> SceneAssemblyBundle:
+    name = "deployment_eligible_visual_bundle.json" if deployment else "research_visual_bundle.json"
+    return _artifact_model(run_dir, f"assembly/{name}", SceneAssemblyBundle)
+
+
+@assembly_app.command("inspect")
+def inspect_assembly(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    plan = _assembly_plan(run_dir)
+    typer.echo(
+        json.dumps(
+            {
+                "world": plan.world.model_dump(mode="json"),
+                "decisions": [item.model_dump(mode="json") for item in plan.decisions],
+                "layers": [item.model_dump(mode="json") for item in plan.layers],
+                "global_scene_policy": plan.global_scene_policy,
+            },
+            indent=2,
+        )
+    )
+
+
+@assembly_app.command("inspect-object")
+def inspect_assembly_object(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Assembly object ID.")],
+) -> None:
+    plan = _assembly_plan(run_dir)
+    decision = next((item for item in plan.decisions if item.object_id == object_id), None)
+    if decision is None:
+        raise typer.BadParameter(f"assembly has no object {object_id!r}")
+    asset_ids = set(
+        decision.measured_anchor_asset_ids
+        + decision.research_decision.selected_visual_asset_ids
+        + decision.deployment_decision.selected_visual_asset_ids
+    )
+    assets = [
+        item.model_dump(mode="json") for item in plan.assets if item.asset.asset_id in asset_ids
+    ]
+    typer.echo(
+        json.dumps(
+            {"decision": decision.model_dump(mode="json"), "assets": assets},
+            indent=2,
+        )
+    )
+
+
+@assembly_app.command("explain-object")
+def explain_assembly_object(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    object_id: Annotated[str, typer.Argument(help="Assembly object ID.")],
+) -> None:
+    decision = next(
+        (item for item in _assembly_plan(run_dir).decisions if item.object_id == object_id),
+        None,
+    )
+    if decision is None:
+        raise typer.BadParameter(f"assembly has no object {object_id!r}")
+    typer.echo(
+        json.dumps(
+            {
+                "object_id": decision.object_id,
+                "research_decision": decision.research_decision.model_dump(mode="json"),
+                "deployment_decision": decision.deployment_decision.model_dump(mode="json"),
+                "measured_anchor_asset_ids": decision.measured_anchor_asset_ids,
+            },
+            indent=2,
+        )
+    )
+
+
+@assembly_app.command("inspect-lineage")
+def inspect_assembly_lineage(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "assembly/lineage_report.json",
+        SceneAssemblyLineageReport,
+    )
+    typer.echo(json.dumps(report.model_dump(mode="json"), indent=2))
+
+
+@assembly_app.command("inspect-license")
+def inspect_assembly_license(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    typer.echo(
+        json.dumps(
+            {
+                "research": _assembly_bundle(
+                    run_dir,
+                    deployment=False,
+                ).license_summary.model_dump(mode="json"),
+                "deployment": _assembly_bundle(
+                    run_dir,
+                    deployment=True,
+                ).license_summary.model_dump(mode="json"),
+            },
+            indent=2,
+        )
+    )
+
+
+@assembly_app.command("render-previews")
+def render_assembly_previews(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    names = (
+        "global_context",
+        "measured_anchors",
+        "research_assembly",
+        "deployment_assembly",
+        "object_decision_grid",
+        "overlap_heatmap",
+        "articulated_snapshot",
+    )
+    missing = [
+        name for name in names if not (run_dir / "assembly/previews" / f"{name}.png").is_file()
+    ]
+    if missing:
+        raise typer.BadParameter(f"assembly previews are missing: {missing}")
+    typer.echo(f"validated {len(names)} visual-only assembly previews")
+
+
+def _export_assembly_file(run_dir: Path, relative: str, output: Path) -> None:
+    source = run_dir / relative
+    if not source.is_file():
+        raise typer.BadParameter(f"assembly artifact is missing: {relative}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, output)
+    typer.echo(f"exported {relative} to {output}")
+
+
+@assembly_app.command("export-research-bundle")
+def export_research_assembly_bundle(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    _export_assembly_file(run_dir, "assembly/research_visual_bundle.json", output)
+
+
+@assembly_app.command("export-deployment-bundle")
+def export_deployment_assembly_bundle(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    _export_assembly_file(
+        run_dir,
+        "assembly/deployment_eligible_visual_bundle.json",
+        output,
+    )
+
+
+@assembly_app.command("export-compiler-manifest")
+def export_assembly_compiler_manifest(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    _export_assembly_file(run_dir, "assembly/compiler_input_manifest.json", output)
+
+
+@validation_app.command("inspect-phase6b")
+def inspect_phase6b(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase6b_layered_scene_assembly.json",
+        Phase6BConsistencyReport,
+    )
+    typer.echo(json.dumps(report.model_dump(mode="json"), indent=2))
+
+
+@validation_app.command("verify-phase6b")
+def verify_phase6b(
+    run_dir: Annotated[
+        Path,
+        typer.Argument(exists=True, file_okay=False, dir_okay=True),
+    ],
+) -> None:
+    report = _artifact_model(
+        run_dir,
+        "validation/phase6b_layered_scene_assembly.json",
+        Phase6BConsistencyReport,
+    )
+    if not report.passed:
+        failed = [item.check_id for item in report.checks if not item.passed]
+        raise typer.BadParameter(f"Phase 6B consistency verification failed: {failed}")
+    typer.echo(f"Phase 6B layered-scene consistency passed ({len(report.checks)} checks)")

@@ -231,3 +231,27 @@ fiducial derivation, typed known-distance roles, exact Scene IR wrapper identity
 and the no-collision/no-physics boundary.
 
 The core adapters import no NumPy, SciPy, OpenCV, AprilTag, Open3D, or trimesh.
+
+## Phase 6B adapters
+
+`scene_assembly_inputs` selectively materializes declared typed inputs, verifies
+exact hashes, strips machine-local paths from the canonical manifest, and derives
+selection, evaluation, representation, license, lineage, and calibration semantics
+from promoted Phase 5B/5C/6A artifacts. Accepted Phase 5C state alignment also
+requires the exact capture manifest plus matching child/reference cameras and frame
+digests. Global context requires the exact promoted Phase 3 metadata, Scene IR
+representation, geometry bytes, and GenRecon worker/license identity.
+`scene_assembly_plan` enforces connected lineage, resolves the calibration policy,
+chooses independent explainable research and deployment decisions per object, and
+writes explicit transform chains without loading geometry.
+
+`layered_scene_bundle` emits research and deployment-eligible bundles, overlap
+diagnostics, a compiler input manifest, and `scene_ir/phase6b_layered_scene.json`.
+The compiler manifest has distinct research/deployment object and articulated
+hierarchy views plus an explicit source/assembly coordinate contract. The Scene IR
+retains source-space camera and object numbers and declares when the compiler must
+apply the assembly transform. `assembly_previews` invokes the isolated scene-assembly worker for
+diagnostic PNG and GLB output. `phase6b_consistency_validation` rederives bundle
+decisions and verifies exact identities, world claims, lineage, license separation,
+anchor retention, transform ownership, source immutability, and the
+no-collision/no-physics boundary.

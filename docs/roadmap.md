@@ -140,3 +140,18 @@ Phase 5B now covers ordinary rigid/static visual candidates from official SAM 3D
 Objects and TRELLIS.2 with measured registration, held-out evaluation, and
 license-aware selection. Collision generation, physical validation, SceneSmith, and
 simulator compilation remain future work.
+
+## Phase 6B layered scene assembly
+
+Phase 6B builds research and deployment-eligible visual bundles from one coherent
+lineage. It supports full, partial, rejected, or absent calibration, preserves
+measured anchors and articulated local quantities, and reports overlap without
+carving the global mesh. Research and deployment decisions are independently bound
+to exact upstream selection, evaluation, representation, license, lineage, and
+calibration artifacts. State alignment is capture/camera/digest-bound; global
+context is Phase 3 geometry-bound. The Scene IR remains source-space while the
+compiler manifest carries the exact assembly coordinate contract. Gravity-only
+evidence is not treated as an applied orientation until Phase 6A exposes a typed
+transform. The result is a visual-only compiler input manifest, not a simulator
+export. SceneSmith, collision generation, physics identification, and simulation
+validation remain later work.

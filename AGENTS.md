@@ -158,3 +158,21 @@ reference-world measured assets receive one wrapper transform. Compose articulat
 roots only; leave local joints unchanged and record the exact local-prismatic-to-meter
 scale in the wrapper. Never scale revolute angles. Phase 6A must not add
 collisions, physical properties, simulator export, or simulation-ready claims.
+
+Phase 6B assembly accepts only typed promoted artifacts from one coherent scene
+lineage, unless an accepted typed transform explicitly connects another lineage.
+Full, partial, rejected, and absent Phase 6A calibration must map to distinct world
+claims without relabeling source-space Scene IR numbers. Gravity-only evidence stays
+source-arbitrary until Phase 6A supplies an exact typed orientation transform. Keep
+global context immutable under
+`layered_no_carve_v1`; retain measured anchors even when a validated visual
+candidate is layered. Research-only and unreviewed assets must be absent from the
+deployment-eligible bundle. Derive separate research and deployment decisions from
+exact upstream selection, evaluation, representation, license, camera, alignment,
+and calibration artifacts; local manifests may only point to or redundantly assert
+those values. Never insert rejected candidates, double-apply world or articulated
+transforms, generate collision/physics data, run SceneSmith, or mark a Phase 6B
+bundle simulation-ready.
+Bind Phase 5C state connections to the exact capture manifest and both state-camera
+hash/digest identities. Bind global-context GLB/PLY bytes to the promoted Phase 3
+reconstruction, Scene IR representation, and worker/license identity.
