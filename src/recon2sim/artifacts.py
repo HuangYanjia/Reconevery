@@ -6718,9 +6718,7 @@ class SceneAssemblyInputManifest(StrictModel):
             raise ValueError("assembly object IDs must be unique")
         known_assets = set(asset_ids)
         known_lineages = set(lineage_ids)
-        lineage_neighbors: dict[str, set[str]] = {
-            lineage_id: set() for lineage_id in lineage_ids
-        }
+        lineage_neighbors: dict[str, set[str]] = {lineage_id: set() for lineage_id in lineage_ids}
         for lineage in self.lineages:
             if lineage.connected_to_lineage_id is not None:
                 lineage_neighbors[lineage.lineage_id].add(lineage.connected_to_lineage_id)
